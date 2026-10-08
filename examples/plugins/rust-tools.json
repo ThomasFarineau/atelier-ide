@@ -1,0 +1,11 @@
+{
+  "id": "rust-tools",
+  "name": "Rust Tools",
+  "version": "1.0.0",
+  "description": "Vérifier, tester et formater le projet Cargo courant.",
+  "commands": [
+    { "name": "Cargo check", "program": "cargo", "args": ["check"] },
+    { "name": "Cargo test", "program": "cargo", "args": ["test"] },
+    { "name": "Cargo fmt", "program": "cargo", "args": ["fmt"] }
+  ]
+}
