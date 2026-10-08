@@ -1,0 +1,13 @@
+:root {
+  color-scheme: dark;
+  font-family: system-ui, sans-serif;
+  background: #17181c;
+  color: #f0edf8;
+}
+body { display: grid; min-height: 90vh; place-items: center; }
+main { max-width: 620px; padding: 48px; }
+.badge { color: #9678ff; font-size: 12px; letter-spacing: 3px; }
+h1 { font-size: clamp(32px, 6vw, 56px); }
+p { color: #aaa5b8; line-height: 1.7; }
+button { background: #9678ff; color: #17181c; border: 0; border-radius: 8px; padding: 14px 24px; cursor: pointer; }
+button:hover { background: #b5a0ff; }
