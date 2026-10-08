@@ -1,3 +1,24 @@
+# Rust
 /target
-/.forge
+**/*.rs.bk
+*.pdb
 
+# Forge IDE (données locales du projet)
+/.forge
+examples/demo/target
+
+# Éditeurs / IDE
+.idea/
+.vscode/
+*.iml
+*.swp
+*~
+
+# Système
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environnement
+.env
+.env.*
