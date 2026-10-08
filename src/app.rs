@@ -194,7 +194,7 @@ impl Ide {
         };
         visuals.panel_fill = p.island;
         visuals.window_fill = p.island;
-        visuals.window_stroke = Stroke::new(1.0, p.border);
+        visuals.window_stroke = Stroke::new(1.0_f32, p.border);
         visuals.window_corner_radius = CornerRadius::same(12);
         visuals.menu_corner_radius = CornerRadius::same(10);
         visuals.extreme_bg_color = p.background;
@@ -204,7 +204,7 @@ impl Ide {
         visuals.widgets.inactive.bg_fill = p.hover;
         visuals.widgets.hovered.weak_bg_fill = p.border;
         visuals.widgets.hovered.bg_fill = p.border;
-        visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, p.border);
+        visuals.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, p.border);
         for widget in [
             &mut visuals.widgets.noninteractive,
             &mut visuals.widgets.inactive,
@@ -281,7 +281,7 @@ impl Ide {
         let p = palette(self.settings.theme);
         egui::Frame::new()
             .fill(p.island)
-            .stroke(Stroke::new(1.0, p.border))
+            .stroke(Stroke::new(1.0_f32, p.border))
             .corner_radius(CornerRadius::same(ISLAND_RADIUS))
             .inner_margin(Margin::same(8))
             .outer_margin(Margin::same(3))
@@ -869,7 +869,7 @@ impl Ide {
             };
             painter.add(egui::Shape::line(
                 points,
-                Stroke::new(1.4, visuals.weak_text_color()),
+                Stroke::new(1.4_f32, visuals.weak_text_color()),
             ));
         }
         x += 16.0;
