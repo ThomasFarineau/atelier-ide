@@ -23,7 +23,7 @@ pub struct PluginCommand {
 }
 
 pub fn load(root: &Path) -> (Vec<Plugin>, Vec<String>) {
-    let directory = root.join(".forge/plugins");
+    let directory = root.join(".atelier/plugins");
     let mut plugins = Vec::new();
     let mut errors = Vec::new();
     let Ok(entries) = fs::read_dir(directory) else {
