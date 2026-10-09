@@ -3,8 +3,8 @@
 
 use super::builtins;
 use crate::languages::{Diagnostic, Severity};
-use std::ops::Range;
 use std::cell::Cell;
+use std::ops::Range;
 use tree_sitter::{Node, Parser, Tree};
 
 /// The flavour of the language a document is written in. The syntax trees differ, the rest of
@@ -290,18 +290,38 @@ impl Builder<'_> {
     fn declare(&mut self, scope: usize, decl: Decl) {
         // A `var` declared twice, or a function redeclared, keeps one entry.
         let decls = &mut self.scopes[scope].decls;
-        if !decls.iter().any(|d| d.name == decl.name && d.kind == decl.kind && d.name_range == decl.name_range) {
+        if !decls
+            .iter()
+            .any(|d| d.name == decl.name && d.kind == decl.kind && d.name_range == decl.name_range)
+        {
             decls.push(decl);
         }
     }
 
     /// Declares every name bound by a pattern (`a`, `{ a, b: c }`, `[a, ...rest]`, `a = 1`).
-    fn bind(&mut self, pattern: Node, scope: usize, kind: DeclKind, node: Range<usize>, value: Option<Range<usize>>, owner: Option<Range<usize>>) {
+    fn bind(
+        &mut self,
+        pattern: Node,
+        scope: usize,
+        kind: DeclKind,
+        node: Range<usize>,
+        value: Option<Range<usize>>,
+        owner: Option<Range<usize>>,
+    ) {
         self.bind_typed(pattern, scope, kind, node, value, owner, None);
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn bind_typed(&mut self, pattern: Node, scope: usize, kind: DeclKind, node: Range<usize>, value: Option<Range<usize>>, owner: Option<Range<usize>>, annot: Option<Range<usize>>) {
+    fn bind_typed(
+        &mut self,
+        pattern: Node,
+        scope: usize,
+        kind: DeclKind,
+        node: Range<usize>,
+        value: Option<Range<usize>>,
+        owner: Option<Range<usize>>,
+        annot: Option<Range<usize>>,
+    ) {
         match pattern.kind() {
             "identifier" | "shorthand_property_identifier_pattern" => {
                 let decl = Decl {
@@ -319,18 +339,29 @@ impl Builder<'_> {
             }
             // TypeScript: `name: Type`, `name?: Type`, `name = default`
             "required_parameter" | "optional_parameter" => {
-                let Some(name) = pattern.child_by_field_name("pattern").or_else(|| pattern.child_by_field_name("name")) else {
+                let Some(name) = pattern
+                    .child_by_field_name("pattern")
+                    .or_else(|| pattern.child_by_field_name("name"))
+                else {
                     return;
                 };
                 let default = pattern.child_by_field_name("value").map(|v| v.byte_range());
                 let annot = pattern.child_by_field_name("type").map(|t| t.byte_range());
-                let value = if name.kind() == "identifier" { default } else { None };
+                let value = if name.kind() == "identifier" {
+                    default
+                } else {
+                    None
+                };
                 self.bind_typed(name, scope, kind, node, value, owner, annot);
             }
             "assignment_pattern" | "object_assignment_pattern" => {
                 if let Some(left) = pattern.child_by_field_name("left") {
                     let default = pattern.child_by_field_name("right").map(|r| r.byte_range());
-                    let value = if left.kind() == "identifier" { default } else { None };
+                    let value = if left.kind() == "identifier" {
+                        default
+                    } else {
+                        None
+                    };
                     self.bind_typed(left, scope, kind, node, value, owner, annot);
                 }
             }
@@ -339,7 +370,11 @@ impl Builder<'_> {
                     self.bind(value, scope, kind, node, None, owner);
                 }
             }
-            "object_pattern" | "array_pattern" | "rest_pattern" | "formal_parameters" | "parenthesized_expression" => {
+            "object_pattern"
+            | "array_pattern"
+            | "rest_pattern"
+            | "formal_parameters"
+            | "parenthesized_expression" => {
                 let mut cursor = pattern.walk();
                 for child in pattern.named_children(&mut cursor) {
                     self.bind(child, scope, kind, node.clone(), None, owner.clone());
@@ -354,10 +389,24 @@ impl Builder<'_> {
         if let Some(parameters) = function.child_by_field_name("parameters") {
             let mut cursor = parameters.walk();
             for parameter in parameters.named_children(&mut cursor) {
-                self.bind(parameter, scope, DeclKind::Param, function.byte_range(), None, owner.clone());
+                self.bind(
+                    parameter,
+                    scope,
+                    DeclKind::Param,
+                    function.byte_range(),
+                    None,
+                    owner.clone(),
+                );
             }
         } else if let Some(parameter) = function.child_by_field_name("parameter") {
-            self.bind(parameter, scope, DeclKind::Param, function.byte_range(), None, owner);
+            self.bind(
+                parameter,
+                scope,
+                DeclKind::Param,
+                function.byte_range(),
+                None,
+                owner,
+            );
         }
     }
 
@@ -392,7 +441,10 @@ impl Builder<'_> {
                     self.visit_children(body, inner);
                 }
             }
-            "function_expression" | "generator_function" | "arrow_function" | "method_definition" => {
+            "function_expression"
+            | "generator_function"
+            | "arrow_function"
+            | "method_definition" => {
                 let inner = self.scope(node.byte_range(), Some(scope), true);
                 if let Some(name) = node.child_by_field_name("name")
                     && matches!(node.kind(), "function_expression" | "generator_function")
@@ -418,7 +470,11 @@ impl Builder<'_> {
                     }
                 }
             }
-            "interface_declaration" | "type_alias_declaration" | "enum_declaration" | "function_signature" | "internal_module" => {
+            "interface_declaration"
+            | "type_alias_declaration"
+            | "enum_declaration"
+            | "function_signature"
+            | "internal_module" => {
                 let kind = match node.kind() {
                     "interface_declaration" => DeclKind::Interface,
                     "type_alias_declaration" => DeclKind::TypeAlias,
@@ -435,7 +491,11 @@ impl Builder<'_> {
                         value: (kind == DeclKind::Function).then(|| node.byte_range()),
                         ..Default::default()
                     };
-                    let target = if kind == DeclKind::Function { self.function_scope(scope) } else { scope };
+                    let target = if kind == DeclKind::Function {
+                        self.function_scope(scope)
+                    } else {
+                        scope
+                    };
                     self.declare(target, decl);
                 }
                 if kind == DeclKind::Namespace {
@@ -479,8 +539,14 @@ impl Builder<'_> {
                     }
                     let value = declarator.child_by_field_name("value");
                     if let Some(name) = declarator.child_by_field_name("name") {
-                        let direct = if name.kind() == "identifier" { value.map(|v| v.byte_range()) } else { None };
-                        let annot = declarator.child_by_field_name("type").map(|t| t.byte_range());
+                        let direct = if name.kind() == "identifier" {
+                            value.map(|v| v.byte_range())
+                        } else {
+                            None
+                        };
+                        let annot = declarator
+                            .child_by_field_name("type")
+                            .map(|t| t.byte_range());
                         self.bind_typed(name, target, kind, node.byte_range(), direct, None, annot);
                     }
                     if let Some(value) = value {
@@ -500,12 +566,19 @@ impl Builder<'_> {
                     }
                 }
             }
-            "statement_block" | "for_statement" | "for_in_statement" | "switch_statement" | "class_static_block" => {
-                let inner = self.scope(node.byte_range(), Some(scope), node.kind() == "class_static_block");
+            "statement_block" | "for_statement" | "for_in_statement" | "switch_statement"
+            | "class_static_block" => {
+                let inner = self.scope(
+                    node.byte_range(),
+                    Some(scope),
+                    node.kind() == "class_static_block",
+                );
                 if node.kind() == "for_in_statement"
                     && let Some(left) = node.child_by_field_name("left")
                 {
-                    let keyword = node.child_by_field_name("kind").map_or("", |k| slice(k, self.src));
+                    let keyword = node
+                        .child_by_field_name("kind")
+                        .map_or("", |k| slice(k, self.src));
                     let (kind, target) = match keyword {
                         "var" => (DeclKind::Var, self.function_scope(scope)),
                         "const" => (DeclKind::Const, inner),
@@ -513,10 +586,15 @@ impl Builder<'_> {
                     };
                     self.bind(left, target, kind, node.byte_range(), None, None);
                     // `for (const x of items)`: x is an element of items.
-                    let of = node.child_by_field_name("operator").is_some_and(|o| slice(o, self.src) == "of");
+                    let of = node
+                        .child_by_field_name("operator")
+                        .is_some_and(|o| slice(o, self.src) == "of");
                     if of && let Some(right) = node.child_by_field_name("right") {
                         for decl in &mut self.scopes[target].decls {
-                            if decl.name_range.start >= left.start_byte() && decl.name_range.end <= left.end_byte() && left.kind() == "identifier" {
+                            if decl.name_range.start >= left.start_byte()
+                                && decl.name_range.end <= left.end_byte()
+                                && left.kind() == "identifier"
+                            {
                                 decl.element_of = Some(right.byte_range());
                             }
                         }
@@ -527,7 +605,14 @@ impl Builder<'_> {
             "catch_clause" => {
                 let inner = self.scope(node.byte_range(), Some(scope), false);
                 if let Some(parameter) = node.child_by_field_name("parameter") {
-                    self.bind(parameter, inner, DeclKind::Catch, node.byte_range(), None, None);
+                    self.bind(
+                        parameter,
+                        inner,
+                        DeclKind::Catch,
+                        node.byte_range(),
+                        None,
+                        None,
+                    );
                 }
                 if let Some(body) = node.child_by_field_name("body") {
                     self.visit_children(body, inner);
@@ -544,7 +629,10 @@ impl Builder<'_> {
                 "identifier" => self.import_name(part, scope, source, "default", &node),
                 "namespace_import" => {
                     let mut inner = part.walk();
-                    if let Some(name) = part.named_children(&mut inner).find(|c| c.kind() == "identifier") {
+                    if let Some(name) = part
+                        .named_children(&mut inner)
+                        .find(|c| c.kind() == "identifier")
+                    {
                         self.import_name(name, scope, source, "*", &node);
                     }
                 }
@@ -554,8 +642,12 @@ impl Builder<'_> {
                         if specifier.kind() != "import_specifier" {
                             continue;
                         }
-                        let imported = specifier.child_by_field_name("name").map(|n| slice(n, self.src).to_string());
-                        let local = specifier.child_by_field_name("alias").or_else(|| specifier.child_by_field_name("name"));
+                        let imported = specifier
+                            .child_by_field_name("name")
+                            .map(|n| slice(n, self.src).to_string());
+                        let local = specifier
+                            .child_by_field_name("alias")
+                            .or_else(|| specifier.child_by_field_name("name"));
                         if let (Some(local), Some(imported)) = (local, imported) {
                             self.import_name(local, scope, source, &imported, &node);
                         }
@@ -566,7 +658,14 @@ impl Builder<'_> {
         }
     }
 
-    fn import_name(&mut self, name: Node, scope: usize, source: &str, imported: &str, node: &Range<usize>) {
+    fn import_name(
+        &mut self,
+        name: Node,
+        scope: usize,
+        source: &str,
+        imported: &str,
+        node: &Range<usize>,
+    ) {
         let decl = Decl {
             name: slice(name, self.src).to_string(),
             kind: DeclKind::Import,
@@ -604,7 +703,9 @@ impl Analysis {
 
     /// The node of exactly this byte range.
     pub fn node_at_range(&self, range: &Range<usize>) -> Option<Node<'_>> {
-        let mut node = self.root().descendant_for_byte_range(range.start, range.end)?;
+        let mut node = self
+            .root()
+            .descendant_for_byte_range(range.start, range.end)?;
         while node.byte_range() != *range {
             node = node.parent()?;
         }
@@ -680,23 +781,33 @@ impl Analysis {
                 if declared != Ty::Unknown {
                     declared
                 } else {
-                    node.named_child(0).map_or(Ty::Unknown, |inner| self.ty(inner, at, depth + 1))
+                    node.named_child(0)
+                        .map_or(Ty::Unknown, |inner| self.ty(inner, at, depth + 1))
                 }
             }
-            "satisfies_expression" => node.named_child(0).map_or(Ty::Unknown, |inner| self.ty(inner, at, depth + 1)),
+            "satisfies_expression" => node
+                .named_child(0)
+                .map_or(Ty::Unknown, |inner| self.ty(inner, at, depth + 1)),
             "type_assertion" => node
                 .named_child(0)
                 .and_then(|arguments| arguments.named_child(0))
                 .map_or(Ty::Unknown, |t| self.ty_from_type(t, at, depth + 1)),
-            "non_null_expression" => node.named_child(0).map_or(Ty::Unknown, |inner| self.ty(inner, at, depth + 1)),
+            "non_null_expression" => node
+                .named_child(0)
+                .map_or(Ty::Unknown, |inner| self.ty(inner, at, depth + 1)),
             "regex" => Ty::Builtin("RegExp"),
             "object" => Ty::Object(node.byte_range()),
-            "function_expression" | "arrow_function" | "generator_function" => Ty::Function(node.byte_range()),
+            "function_expression" | "arrow_function" | "generator_function" => {
+                Ty::Function(node.byte_range())
+            }
             "class" => Ty::Class(node.byte_range()),
             "parenthesized_expression" => node
                 .named_child(0)
                 .map_or(Ty::Unknown, |inner| self.ty(inner, at, depth + 1)),
-            "await_expression" => match node.named_child(0).map(|inner| self.ty(inner, at, depth + 1)) {
+            "await_expression" => match node
+                .named_child(0)
+                .map(|inner| self.ty(inner, at, depth + 1))
+            {
                 Some(Ty::PromiseOf(inner)) => *inner,
                 _ => Ty::Unknown,
             },
@@ -706,10 +817,16 @@ impl Analysis {
                     .map_or("", |o| slice(o, src));
                 match op {
                     "-" | "*" | "/" | "%" | "**" | "&" | "|" | "^" | "<<" | ">>" | ">>>" => Ty::Num,
-                    "==" | "===" | "!=" | "!==" | "<" | ">" | "<=" | ">=" | "instanceof" | "in" => Ty::Bool,
+                    "==" | "===" | "!=" | "!==" | "<" | ">" | "<=" | ">=" | "instanceof" | "in" => {
+                        Ty::Bool
+                    }
                     "+" => {
-                        let left = node.child_by_field_name("left").map_or(Ty::Unknown, |l| self.ty(l, at, depth + 1));
-                        let right = node.child_by_field_name("right").map_or(Ty::Unknown, |r| self.ty(r, at, depth + 1));
+                        let left = node
+                            .child_by_field_name("left")
+                            .map_or(Ty::Unknown, |l| self.ty(l, at, depth + 1));
+                        let right = node
+                            .child_by_field_name("right")
+                            .map_or(Ty::Unknown, |r| self.ty(r, at, depth + 1));
                         match (left, right) {
                             (Ty::Str, _) | (_, Ty::Str) => Ty::Str,
                             (Ty::Num, Ty::Num) => Ty::Num,
@@ -739,19 +856,29 @@ impl Analysis {
             }
             "call_expression" => self.ty_of_call(node, at, depth),
             "member_expression" => {
-                let (Some(object), Some(property)) =
-                    (node.child_by_field_name("object"), node.child_by_field_name("property"))
-                else {
+                let (Some(object), Some(property)) = (
+                    node.child_by_field_name("object"),
+                    node.child_by_field_name("property"),
+                ) else {
                     return Ty::Unknown;
                 };
                 let object = self.ty(object, at, depth + 1);
-                match self.props_of(&object, at).into_iter().find(|p| p.name == slice(property, src)) {
-                    Some(p) if p.method && !matches!(p.ty, Ty::Function(_)) => Ty::Builtin("Function"),
+                match self
+                    .props_of(&object, at)
+                    .into_iter()
+                    .find(|p| p.name == slice(property, src))
+                {
+                    Some(p) if p.method && !matches!(p.ty, Ty::Function(_)) => {
+                        Ty::Builtin("Function")
+                    }
                     Some(p) => p.ty,
                     None => Ty::Unknown,
                 }
             }
-            "subscript_expression" => match node.child_by_field_name("object").map(|o| self.ty(o, at, depth + 1)) {
+            "subscript_expression" => match node
+                .child_by_field_name("object")
+                .map(|o| self.ty(o, at, depth + 1))
+            {
                 Some(Ty::ArrayOf(element)) => *element,
                 _ => Ty::Unknown,
             },
@@ -782,9 +909,10 @@ impl Analysis {
         }
         if callee.kind() == "member_expression" {
             // A method: its own result type for a local one, the documented one for a built-in.
-            let (Some(object), Some(property)) =
-                (callee.child_by_field_name("object"), callee.child_by_field_name("property"))
-            else {
+            let (Some(object), Some(property)) = (
+                callee.child_by_field_name("object"),
+                callee.child_by_field_name("property"),
+            ) else {
                 return Ty::Unknown;
             };
             let object = self.ty(object, at, depth + 1);
@@ -793,13 +921,17 @@ impl Analysis {
                 // The methods whose result is made of the elements.
                 match method {
                     "at" | "find" | "findLast" | "pop" | "shift" => return (**element).clone(),
-                    "filter" | "slice" | "concat" | "sort" | "reverse" | "toSorted" | "toReversed" | "toSpliced" | "splice" | "with" => return object.clone(),
+                    "filter" | "slice" | "concat" | "sort" | "reverse" | "toSorted"
+                    | "toReversed" | "toSpliced" | "splice" | "with" => return object.clone(),
                     "map" | "flatMap" => {
                         let callback = node
                             .child_by_field_name("arguments")
                             .and_then(|a| a.named_child(0))
-                            .filter(|c| matches!(c.kind(), "arrow_function" | "function_expression"));
-                        return match callback.map(|c| self.return_type(&c.byte_range(), depth + 1)) {
+                            .filter(|c| {
+                                matches!(c.kind(), "arrow_function" | "function_expression")
+                            });
+                        return match callback.map(|c| self.return_type(&c.byte_range(), depth + 1))
+                        {
                             Some(result) if result != Ty::Unknown => Ty::ArrayOf(Box::new(result)),
                             _ => Ty::Array,
                         };
@@ -873,7 +1005,11 @@ impl Analysis {
             for child in node.named_children(&mut cursor) {
                 match child.kind() {
                     "return_statement" => return Some(child),
-                    "function_declaration" | "function_expression" | "arrow_function" | "class_declaration" | "method_definition" => {}
+                    "function_declaration"
+                    | "function_expression"
+                    | "arrow_function"
+                    | "class_declaration"
+                    | "method_definition" => {}
                     _ => {
                         if let Some(found) = find_return(child) {
                             return Some(found);
@@ -885,7 +1021,9 @@ impl Analysis {
         }
         find_return(body)
             .and_then(|r| r.named_child(0))
-            .map_or(Ty::Unknown, |value| self.ty(value, value.start_byte(), depth + 1))
+            .map_or(Ty::Unknown, |value| {
+                self.ty(value, value.start_byte(), depth + 1)
+            })
     }
 
     fn this_type(&self, node: Node) -> Ty {
@@ -895,14 +1033,19 @@ impl Analysis {
                 "method_definition" | "field_definition" => {
                     if let Some(body) = parent.parent() {
                         return match body.kind() {
-                            "class_body" => body.parent().map_or(Ty::Unknown, |c| Ty::Instance(c.byte_range())),
+                            "class_body" => body
+                                .parent()
+                                .map_or(Ty::Unknown, |c| Ty::Instance(c.byte_range())),
                             "object" => Ty::Object(body.byte_range()),
                             _ => Ty::Unknown,
                         };
                     }
                     return Ty::Unknown;
                 }
-                "function_declaration" | "function_expression" | "generator_function" | "generator_function_declaration" => {
+                "function_declaration"
+                | "function_expression"
+                | "generator_function"
+                | "generator_function_declaration" => {
                     return Ty::Unknown;
                 }
                 _ => current = parent.parent(),
@@ -953,22 +1096,30 @@ impl Analysis {
             return ty;
         }
         match decl.kind {
-            DeclKind::Interface => self.node_at_range(&decl.node).map_or(Ty::Unknown, |n| Ty::Interface(n.byte_range())),
-            DeclKind::Enum => self.node_at_range(&decl.node).map_or(Ty::Unknown, |n| Ty::Enum(n.byte_range())),
+            DeclKind::Interface => self
+                .node_at_range(&decl.node)
+                .map_or(Ty::Unknown, |n| Ty::Interface(n.byte_range())),
+            DeclKind::Enum => self
+                .node_at_range(&decl.node)
+                .map_or(Ty::Unknown, |n| Ty::Enum(n.byte_range())),
             DeclKind::TypeAlias | DeclKind::Namespace => Ty::Unknown,
             DeclKind::Class => self
                 .node_at_range(&decl.node)
                 .map_or(Ty::Unknown, |n| Ty::Class(n.byte_range())),
             DeclKind::Function => Ty::Function(decl.node.clone()),
             DeclKind::Import => match &decl.import {
-                Some((module, imported)) if imported == "default" || imported == "*" => Ty::Module(module.clone()),
+                Some((module, imported)) if imported == "default" || imported == "*" => {
+                    Ty::Module(module.clone())
+                }
                 _ => Ty::Unknown,
             },
             _ => decl
                 .value
                 .as_ref()
                 .and_then(|range| self.node_at_range(range))
-                .map_or(Ty::Unknown, |value| self.ty(value, decl.node.start, depth + 1)),
+                .map_or(Ty::Unknown, |value| {
+                    self.ty(value, decl.node.start, depth + 1)
+                }),
         }
     }
 
@@ -1004,7 +1155,10 @@ impl Analysis {
         let mut node = self.node_at_range(node_range)?;
         // The comment sits before the statement: `export`, `const x = …`.
         while let Some(parent) = node.parent() {
-            if matches!(parent.kind(), "export_statement" | "lexical_declaration" | "variable_declaration") {
+            if matches!(
+                parent.kind(),
+                "export_statement" | "lexical_declaration" | "variable_declaration"
+            ) {
                 node = parent;
             } else {
                 break;
@@ -1019,7 +1173,10 @@ impl Analysis {
             return None;
         }
         // Only blank space may separate the comment from the declaration.
-        if !self.text[previous.end_byte()..node.start_byte()].trim().is_empty() {
+        if !self.text[previous.end_byte()..node.start_byte()]
+            .trim()
+            .is_empty()
+        {
             return None;
         }
         let body = comment.trim_start_matches("/**").trim_end_matches("*/");
@@ -1106,14 +1263,28 @@ impl Analysis {
         for member in object.named_children(&mut cursor) {
             match member.kind() {
                 "pair" => {
-                    let (Some(key), Some(value)) = (member.child_by_field_name("key"), member.child_by_field_name("value")) else {
+                    let (Some(key), Some(value)) = (
+                        member.child_by_field_name("key"),
+                        member.child_by_field_name("value"),
+                    ) else {
                         continue;
                     };
                     let name = slice(key, src).trim_matches(['"', '\'']).to_string();
                     let ty = self.ty(value, at, depth + 1);
                     let method = matches!(ty, Ty::Function(_));
-                    let detail = if method { self.signature(&value) } else { self.show(&ty) };
-                    props.push(Prop { name, method, detail, doc: String::new(), ty, def: Some(key.byte_range()) });
+                    let detail = if method {
+                        self.signature(&value)
+                    } else {
+                        self.show(&ty)
+                    };
+                    props.push(Prop {
+                        name,
+                        method,
+                        detail,
+                        doc: String::new(),
+                        ty,
+                        def: Some(key.byte_range()),
+                    });
                 }
                 "method_definition" => {
                     if let Some(name) = member.child_by_field_name("name") {
@@ -1130,7 +1301,14 @@ impl Analysis {
                 "shorthand_property_identifier" => {
                     let name = slice(member, src).to_string();
                     let ty = self.ty_of_name(&name, at, depth + 1);
-                    props.push(Prop { detail: self.show(&ty), name, method: false, doc: String::new(), ty, def: Some(member.byte_range()) });
+                    props.push(Prop {
+                        detail: self.show(&ty),
+                        name,
+                        method: false,
+                        doc: String::new(),
+                        ty,
+                        def: Some(member.byte_range()),
+                    });
                 }
                 "spread_element" if depth < 3 => {
                     if let Some(inner) = member.named_child(0)
@@ -1146,27 +1324,50 @@ impl Analysis {
         props
     }
 
-
     /// `constructor(private id: number)` declares the property `id`.
-    fn parameter_properties(&self, member: Node, range: &Range<usize>, at: usize, depth: usize, props: &mut Vec<Prop>) {
+    fn parameter_properties(
+        &self,
+        member: Node,
+        range: &Range<usize>,
+        at: usize,
+        depth: usize,
+        props: &mut Vec<Prop>,
+    ) {
         let src = self.text.as_str();
-        let Some(parameters) = member.child_by_field_name("parameters") else { return };
+        let Some(parameters) = member.child_by_field_name("parameters") else {
+            return;
+        };
         let mut walker = parameters.walk();
         for parameter in parameters.named_children(&mut walker) {
-            if !matches!(parameter.kind(), "required_parameter" | "optional_parameter") {
+            if !matches!(
+                parameter.kind(),
+                "required_parameter" | "optional_parameter"
+            ) {
                 continue;
             }
             let mut inner = parameter.walk();
             let kids: Vec<_> = parameter.children(&mut inner).collect();
-            let access = kids.iter().find(|c| c.kind() == "accessibility_modifier").map(|c| slice(*c, src));
-            let readonly = kids.iter().any(|c| !c.is_named() && slice(*c, src) == "readonly");
+            let access = kids
+                .iter()
+                .find(|c| c.kind() == "accessibility_modifier")
+                .map(|c| slice(*c, src));
+            let readonly = kids
+                .iter()
+                .any(|c| !c.is_named() && slice(*c, src) == "readonly");
             if access.is_none() && !readonly {
                 continue;
             }
-            if matches!(access, Some("private" | "protected")) && !(range.start <= at && at <= range.end) {
+            if matches!(access, Some("private" | "protected"))
+                && !(range.start <= at && at <= range.end)
+            {
                 continue;
             }
-            let Some(name) = parameter.child_by_field_name("pattern").filter(|n| n.kind() == "identifier") else { continue };
+            let Some(name) = parameter
+                .child_by_field_name("pattern")
+                .filter(|n| n.kind() == "identifier")
+            else {
+                continue;
+            };
             let ty = parameter
                 .child_by_field_name("type")
                 .map_or(Ty::Unknown, |t| self.ty_from_type(t, at, depth + 1));
@@ -1181,7 +1382,13 @@ impl Analysis {
         }
     }
 
-    fn class_props(&self, range: &Range<usize>, statics: bool, at: usize, depth: usize) -> Vec<Prop> {
+    fn class_props(
+        &self,
+        range: &Range<usize>,
+        statics: bool,
+        at: usize,
+        depth: usize,
+    ) -> Vec<Prop> {
         let mut props: Vec<Prop> = Vec::new();
         let Some(class) = self.node_at_range(range) else {
             return props;
@@ -1190,18 +1397,23 @@ impl Analysis {
         if let Some(body) = class.child_by_field_name("body") {
             let mut cursor = body.walk();
             for member in body.named_children(&mut cursor) {
-                let is_static = member.children(&mut member.walk()).any(|c| !c.is_named() && slice(c, src) == "static");
+                let is_static = member
+                    .children(&mut member.walk())
+                    .any(|c| !c.is_named() && slice(c, src) == "static");
                 // `private` and `protected` members are seen from inside the class only.
                 let hidden = {
                     let mut inner = member.walk();
-                    let restricted = member
-                        .children(&mut inner)
-                        .any(|c| c.kind() == "accessibility_modifier" && matches!(slice(c, src), "private" | "protected"));
+                    let restricted = member.children(&mut inner).any(|c| {
+                        c.kind() == "accessibility_modifier"
+                            && matches!(slice(c, src), "private" | "protected")
+                    });
                     restricted && !(range.start <= at && at <= range.end)
                 };
                 if !statics
                     && member.kind() == "method_definition"
-                    && member.child_by_field_name("name").is_some_and(|n| slice(n, src) == "constructor")
+                    && member
+                        .child_by_field_name("name")
+                        .is_some_and(|n| slice(n, src) == "constructor")
                 {
                     self.constructor_assignments(member, &mut props, at, depth);
                 }
@@ -1210,7 +1422,9 @@ impl Analysis {
                 }
                 match member.kind() {
                     "abstract_method_signature" | "method_signature" => {
-                        let Some(name) = member.child_by_field_name("name") else { continue };
+                        let Some(name) = member.child_by_field_name("name") else {
+                            continue;
+                        };
                         props.push(Prop {
                             name: slice(name, src).to_string(),
                             method: true,
@@ -1221,7 +1435,9 @@ impl Analysis {
                         });
                     }
                     "method_definition" => {
-                        let Some(name) = member.child_by_field_name("name") else { continue };
+                        let Some(name) = member.child_by_field_name("name") else {
+                            continue;
+                        };
                         let name = slice(name, src);
                         if name == "constructor" || name.starts_with('#') {
                             if name == "constructor" && !statics {
@@ -1229,20 +1445,33 @@ impl Analysis {
                             }
                             continue;
                         }
-                        let accessor = member
-                            .children(&mut member.walk())
-                            .any(|c| matches!(slice(c, src), "get" | "set") && c.start_byte() < member.child_by_field_name("name").map_or(0, |n| n.start_byte()));
+                        let accessor = member.children(&mut member.walk()).any(|c| {
+                            matches!(slice(c, src), "get" | "set")
+                                && c.start_byte()
+                                    < member
+                                        .child_by_field_name("name")
+                                        .map_or(0, |n| n.start_byte())
+                        });
                         props.push(Prop {
                             name: name.to_string(),
                             method: !accessor,
                             detail: self.signature(&member),
                             doc: self.jsdoc_before(&member.byte_range()).unwrap_or_default(),
-                            ty: if accessor { Ty::Unknown } else { Ty::Function(member.byte_range()) },
+                            ty: if accessor {
+                                Ty::Unknown
+                            } else {
+                                Ty::Function(member.byte_range())
+                            },
                             def: member.child_by_field_name("name").map(|n| n.byte_range()),
                         });
                     }
                     "field_definition" | "public_field_definition" => {
-                        let Some(name) = member.child_by_field_name("property").or_else(|| member.child_by_field_name("name")) else { continue };
+                        let Some(name) = member
+                            .child_by_field_name("property")
+                            .or_else(|| member.child_by_field_name("name"))
+                        else {
+                            continue;
+                        };
                         let name_node = name;
                         let name = slice(name, src);
                         if name.starts_with('#') {
@@ -1262,10 +1491,17 @@ impl Analysis {
                         props.push(Prop {
                             name: name.to_string(),
                             method,
-                            detail: if method { String::new() } else { self.show(&ty) },
+                            detail: if method {
+                                String::new()
+                            } else {
+                                self.show(&ty)
+                            },
                             doc: self.jsdoc_before(&member.byte_range()).unwrap_or_default(),
                             ty,
-                            def: member.child_by_field_name("property").or_else(|| member.child_by_field_name("name")).map(|n| n.byte_range()),
+                            def: member
+                                .child_by_field_name("property")
+                                .or_else(|| member.child_by_field_name("name"))
+                                .map(|n| n.byte_range()),
                         });
                     }
                     _ => {}
@@ -1274,7 +1510,9 @@ impl Analysis {
         }
         // Inherited members of a local base class.
         if depth < 4
-            && let Some(heritage) = class.children(&mut class.walk()).find(|c| c.kind() == "class_heritage")
+            && let Some(heritage) = class
+                .children(&mut class.walk())
+                .find(|c| c.kind() == "class_heritage")
             && let Some(base) = heritage.named_child(0)
             && let Ty::Class(base_range) = self.ty(base, at, depth + 1)
             && base_range != *range
@@ -1289,7 +1527,13 @@ impl Analysis {
     }
 
     /// `this.name = value` in a constructor declares the property `name`.
-    fn constructor_assignments(&self, constructor: Node, props: &mut Vec<Prop>, at: usize, depth: usize) {
+    fn constructor_assignments(
+        &self,
+        constructor: Node,
+        props: &mut Vec<Prop>,
+        at: usize,
+        depth: usize,
+    ) {
         let src = self.text.as_str();
         fn walk<'t>(node: Node<'t>, out: &mut Vec<Node<'t>>) {
             let mut cursor = node.walk();
@@ -1297,7 +1541,10 @@ impl Analysis {
                 if child.kind() == "assignment_expression" {
                     out.push(child);
                 }
-                if !matches!(child.kind(), "function_declaration" | "function_expression" | "class_declaration") {
+                if !matches!(
+                    child.kind(),
+                    "function_declaration" | "function_expression" | "class_declaration"
+                ) {
                     walk(child, out);
                 }
             }
@@ -1305,19 +1552,35 @@ impl Analysis {
         let mut assignments = Vec::new();
         walk(constructor, &mut assignments);
         for assignment in assignments {
-            let (Some(left), Some(right)) = (assignment.child_by_field_name("left"), assignment.child_by_field_name("right")) else {
+            let (Some(left), Some(right)) = (
+                assignment.child_by_field_name("left"),
+                assignment.child_by_field_name("right"),
+            ) else {
                 continue;
             };
-            if left.kind() != "member_expression" || left.child_by_field_name("object").is_none_or(|o| o.kind() != "this") {
+            if left.kind() != "member_expression"
+                || left
+                    .child_by_field_name("object")
+                    .is_none_or(|o| o.kind() != "this")
+            {
                 continue;
             }
-            let Some(property) = left.child_by_field_name("property") else { continue };
+            let Some(property) = left.child_by_field_name("property") else {
+                continue;
+            };
             let name = slice(property, src).to_string();
             if props.iter().any(|p| p.name == name) {
                 continue;
             }
             let ty = self.ty(right, at, depth + 1);
-            props.push(Prop { detail: self.show(&ty), method: false, name, doc: String::new(), ty, def: Some(property.byte_range()) });
+            props.push(Prop {
+                detail: self.show(&ty),
+                method: false,
+                name,
+                doc: String::new(),
+                ty,
+                def: Some(property.byte_range()),
+            });
         }
     }
 
@@ -1327,7 +1590,10 @@ impl Analysis {
         let params = node
             .child_by_field_name("parameters")
             .map(|p| collapse(slice(p, src)))
-            .or_else(|| node.child_by_field_name("parameter").map(|p| format!("({})", slice(p, src))))
+            .or_else(|| {
+                node.child_by_field_name("parameter")
+                    .map(|p| format!("({})", slice(p, src)))
+            })
             .unwrap_or_else(|| "()".into());
         match node.child_by_field_name("return_type") {
             Some(annotation) => format!("{params}: {}", self.annotation_text(annotation)),
@@ -1346,7 +1612,11 @@ impl Analysis {
             Ty::Array => "any[]".into(),
             Ty::ArrayOf(element) => {
                 let inner = self.show(element);
-                if inner.contains([' ', '|', '&']) { format!("({inner})[]") } else { format!("{inner}[]") }
+                if inner.contains([' ', '|', '&']) {
+                    format!("({inner})[]")
+                } else {
+                    format!("{inner}[]")
+                }
             }
             Ty::PromiseOf(inner) => format!("Promise<{}>", self.show(inner)),
             Ty::Interface(range) => self
@@ -1356,14 +1626,34 @@ impl Analysis {
             Ty::Enum(range) => self
                 .node_at_range(range)
                 .and_then(|n| n.child_by_field_name("name"))
-                .map_or_else(|| "enum".to_string(), |n| format!("typeof {}", slice(n, &self.text))),
-            Ty::Intersection(parts) => parts.iter().map(|p| self.show(p)).collect::<Vec<_>>().join(" & "),
-            Ty::Function(range) => self.node_at_range(range).map_or("Function".into(), |n| self.signature(&n)),
+                .map_or_else(
+                    || "enum".to_string(),
+                    |n| format!("typeof {}", slice(n, &self.text)),
+                ),
+            Ty::Intersection(parts) => parts
+                .iter()
+                .map(|p| self.show(p))
+                .collect::<Vec<_>>()
+                .join(" & "),
+            Ty::Function(range) => self
+                .node_at_range(range)
+                .map_or("Function".into(), |n| self.signature(&n)),
             Ty::Object(range) => {
-                let names: Vec<String> = self.object_props(range, range.start, 0).into_iter().take(4).map(|p| p.name).collect();
-                if names.is_empty() { "{}".into() } else { format!("{{ {} }}", names.join(", ")) }
+                let names: Vec<String> = self
+                    .object_props(range, range.start, 0)
+                    .into_iter()
+                    .take(4)
+                    .map(|p| p.name)
+                    .collect();
+                if names.is_empty() {
+                    "{}".into()
+                } else {
+                    format!("{{ {} }}", names.join(", "))
+                }
             }
-            Ty::Class(range) => self.class_name(range).map_or("typeof class".into(), |n| format!("typeof {n}")),
+            Ty::Class(range) => self
+                .class_name(range)
+                .map_or("typeof class".into(), |n| format!("typeof {n}")),
             Ty::Instance(range) => self.class_name(range).unwrap_or_else(|| "object".into()),
             Ty::Builtin(name) => (*name).to_string(),
             Ty::Static(name) => format!("typeof {name}"),
@@ -1373,7 +1663,9 @@ impl Analysis {
 
     fn class_name(&self, range: &Range<usize>) -> Option<String> {
         let class = self.node_at_range(range)?;
-        class.child_by_field_name("name").map(|n| slice(n, &self.text).to_string())
+        class
+            .child_by_field_name("name")
+            .map(|n| slice(n, &self.text).to_string())
     }
 }
 
@@ -1439,34 +1731,122 @@ pub fn module_member_names(name: &str) -> Vec<String> {
 fn module_props(name: &str) -> Vec<Prop> {
     let table: &[(&str, &str, &str)] = match name.trim_start_matches("node:") {
         "path" => &[
-            ("basename", "(path: string, suffix?: string): string", "Dernier segment d'un chemin."),
+            (
+                "basename",
+                "(path: string, suffix?: string): string",
+                "Dernier segment d'un chemin.",
+            ),
             ("dirname", "(path: string): string", "Dossier d'un chemin."),
-            ("extname", "(path: string): string", "Extension d'un chemin."),
-            ("isAbsolute", "(path: string): boolean", "Indique si le chemin est absolu."),
-            ("join", "(...paths: string[]): string", "Assemble des segments de chemin."),
-            ("normalize", "(path: string): string", "Normalise un chemin."),
+            (
+                "extname",
+                "(path: string): string",
+                "Extension d'un chemin.",
+            ),
+            (
+                "isAbsolute",
+                "(path: string): boolean",
+                "Indique si le chemin est absolu.",
+            ),
+            (
+                "join",
+                "(...paths: string[]): string",
+                "Assemble des segments de chemin.",
+            ),
+            (
+                "normalize",
+                "(path: string): string",
+                "Normalise un chemin.",
+            ),
             ("parse", "(path: string): object", "Décompose un chemin."),
-            ("relative", "(from: string, to: string): string", "Chemin relatif entre deux chemins."),
-            ("resolve", "(...paths: string[]): string", "Chemin absolu résolu."),
+            (
+                "relative",
+                "(from: string, to: string): string",
+                "Chemin relatif entre deux chemins.",
+            ),
+            (
+                "resolve",
+                "(...paths: string[]): string",
+                "Chemin absolu résolu.",
+            ),
             ("sep", "string", "Séparateur de chemin de la plateforme."),
         ],
         "fs" => &[
-            ("appendFile", "(path, data, callback): void", "Ajoute des données à un fichier."),
-            ("copyFile", "(src, dest, callback): void", "Copie un fichier."),
-            ("existsSync", "(path: string): boolean", "Indique si le chemin existe."),
-            ("mkdir", "(path, options, callback): void", "Crée un dossier."),
-            ("mkdirSync", "(path: string, options?: object): string | undefined", "Crée un dossier."),
-            ("promises", "object", "Version à promesses de l'API fichiers."),
-            ("readFile", "(path, options, callback): void", "Lit un fichier."),
-            ("readFileSync", "(path: string, options?: string | object): string | Buffer", "Lit un fichier."),
-            ("readdir", "(path, options, callback): void", "Liste un dossier."),
-            ("readdirSync", "(path: string, options?: object): string[]", "Liste un dossier."),
-            ("rmSync", "(path: string, options?: object): void", "Supprime un fichier ou un dossier."),
-            ("stat", "(path, callback): void", "Informations sur un fichier."),
-            ("statSync", "(path: string): Stats", "Informations sur un fichier."),
+            (
+                "appendFile",
+                "(path, data, callback): void",
+                "Ajoute des données à un fichier.",
+            ),
+            (
+                "copyFile",
+                "(src, dest, callback): void",
+                "Copie un fichier.",
+            ),
+            (
+                "existsSync",
+                "(path: string): boolean",
+                "Indique si le chemin existe.",
+            ),
+            (
+                "mkdir",
+                "(path, options, callback): void",
+                "Crée un dossier.",
+            ),
+            (
+                "mkdirSync",
+                "(path: string, options?: object): string | undefined",
+                "Crée un dossier.",
+            ),
+            (
+                "promises",
+                "object",
+                "Version à promesses de l'API fichiers.",
+            ),
+            (
+                "readFile",
+                "(path, options, callback): void",
+                "Lit un fichier.",
+            ),
+            (
+                "readFileSync",
+                "(path: string, options?: string | object): string | Buffer",
+                "Lit un fichier.",
+            ),
+            (
+                "readdir",
+                "(path, options, callback): void",
+                "Liste un dossier.",
+            ),
+            (
+                "readdirSync",
+                "(path: string, options?: object): string[]",
+                "Liste un dossier.",
+            ),
+            (
+                "rmSync",
+                "(path: string, options?: object): void",
+                "Supprime un fichier ou un dossier.",
+            ),
+            (
+                "stat",
+                "(path, callback): void",
+                "Informations sur un fichier.",
+            ),
+            (
+                "statSync",
+                "(path: string): Stats",
+                "Informations sur un fichier.",
+            ),
             ("unlink", "(path, callback): void", "Supprime un fichier."),
-            ("writeFile", "(path, data, callback): void", "Écrit un fichier."),
-            ("writeFileSync", "(path: string, data: string | Buffer): void", "Écrit un fichier."),
+            (
+                "writeFile",
+                "(path, data, callback): void",
+                "Écrit un fichier.",
+            ),
+            (
+                "writeFileSync",
+                "(path: string, data: string | Buffer): void",
+                "Écrit un fichier.",
+            ),
         ],
         "os" => &[
             ("EOL", "string", "Fin de ligne de la plateforme."),
@@ -1487,7 +1867,13 @@ fn module_props(name: &str) -> Vec<Prop> {
             method: sig.starts_with('('),
             detail: (*sig).to_string(),
             doc: (*doc).to_string(),
-            ty: if *name == "promises" { Ty::Unknown } else if sig.ends_with(": string") { Ty::Str } else { Ty::Unknown },
+            ty: if *name == "promises" {
+                Ty::Unknown
+            } else if sig.ends_with(": string") {
+                Ty::Str
+            } else {
+                Ty::Unknown
+            },
             def: None,
         })
         .collect()
@@ -1521,9 +1907,19 @@ mod tests {
         let text = "function outer(p) {\n  var a = 1;\n  if (p) { let b = 2; var c = 3; }\n  return a;\n  //here\n}\nconst top = 1;\n";
         let analysis = Analysis::new(text).unwrap();
         let at = text.find("//here").unwrap();
-        let names: Vec<&str> = analysis.visible(at).iter().map(|d| d.name.as_str()).collect();
-        assert!(names.contains(&"p") && names.contains(&"a") && names.contains(&"c"), "{names:?}");
-        assert!(names.contains(&"outer") && names.contains(&"top"), "{names:?}");
+        let names: Vec<&str> = analysis
+            .visible(at)
+            .iter()
+            .map(|d| d.name.as_str())
+            .collect();
+        assert!(
+            names.contains(&"p") && names.contains(&"a") && names.contains(&"c"),
+            "{names:?}"
+        );
+        assert!(
+            names.contains(&"outer") && names.contains(&"top"),
+            "{names:?}"
+        );
         assert!(!names.contains(&"b"), "block scoped: {names:?}");
         let inside = text.find("let b").unwrap();
         assert!(analysis.visible(inside).iter().any(|d| d.name == "b"));
@@ -1533,7 +1929,11 @@ mod tests {
     fn destructuring_imports_and_catch_are_declared() {
         let text = "import def, { a, b as c } from './m.js';\nimport * as ns from 'x';\nconst { d, e: [f, ...g], h = 1 } = obj;\ntry {} catch (err) { //in\n}\n";
         let analysis = Analysis::new(text).unwrap();
-        let names: Vec<&str> = analysis.visible(text.find("//in").unwrap()).iter().map(|d| d.name.as_str()).collect();
+        let names: Vec<&str> = analysis
+            .visible(text.find("//in").unwrap())
+            .iter()
+            .map(|d| d.name.as_str())
+            .collect();
         for expected in ["def", "a", "c", "ns", "d", "f", "g", "h", "err"] {
             assert!(names.contains(&expected), "{expected} in {names:?}");
         }
@@ -1565,15 +1965,29 @@ mod tests {
         let Ty::Instance(range) = analysis.ty_of_name("d", at, 0) else {
             panic!("a Dog instance");
         };
-        let names: Vec<String> = analysis.props_of(&Ty::Instance(range), at).into_iter().map(|p| p.name).collect();
+        let names: Vec<String> = analysis
+            .props_of(&Ty::Instance(range), at)
+            .into_iter()
+            .map(|p| p.name)
+            .collect();
         for expected in ["bark", "speak", "legs", "name", "hasOwnProperty"] {
-            assert!(names.contains(&expected.to_string()), "{expected} in {names:?}");
+            assert!(
+                names.contains(&expected.to_string()),
+                "{expected} in {names:?}"
+            );
         }
         let Ty::Class(class) = analysis.ty_of_name("Animal", at, 0) else {
             panic!("a class");
         };
-        let statics: Vec<String> = analysis.props_of(&Ty::Class(class), at).into_iter().map(|p| p.name).collect();
-        assert!(statics.contains(&"create".to_string()) && !statics.contains(&"speak".to_string()), "{statics:?}");
+        let statics: Vec<String> = analysis
+            .props_of(&Ty::Class(class), at)
+            .into_iter()
+            .map(|p| p.name)
+            .collect();
+        assert!(
+            statics.contains(&"create".to_string()) && !statics.contains(&"speak".to_string()),
+            "{statics:?}"
+        );
     }
 
     #[test]

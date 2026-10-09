@@ -128,7 +128,11 @@ fn selected_text(screen: &vt100::Screen, from: (u16, u16), to: (u16, u16)) -> St
     let mut out = String::new();
     for row in from.0..=to.0 {
         let start = if row == from.0 { from.1 } else { 0 };
-        let end = if row == to.0 { to.1 } else { cols.saturating_sub(1) };
+        let end = if row == to.0 {
+            to.1
+        } else {
+            cols.saturating_sub(1)
+        };
         let mut line = String::new();
         for col in start..=end {
             match screen.cell(row, col) {
@@ -160,12 +164,20 @@ impl Selection {
 }
 
 /// Draws the terminal in the available space and handles the mouse and the keyboard.
-pub fn show(ui: &mut Ui, term: &mut Terminal, selection: &mut Selection, t: &Theme) -> egui::Response {
+pub fn show(
+    ui: &mut Ui,
+    term: &mut Terminal,
+    selection: &mut Selection,
+    t: &Theme,
+) -> egui::Response {
     let font = FontId::monospace(FONT_SIZE);
     let (row_h, char_w) = ui.fonts_mut(|f| (f.row_height(&font).ceil(), f.glyph_width(&font, 'M')));
     let size = ui.available_size();
     let (rect, response) = ui.allocate_exact_size(size, Sense::click_and_drag());
-    term.resize((rect.height() / row_h) as u16, (rect.width() / char_w) as u16);
+    term.resize(
+        (rect.height() / row_h) as u16,
+        (rect.width() / char_w) as u16,
+    );
     let (rows, cols) = term.screen_ref().size();
 
     if response.clicked() || response.drag_started() || term.want_focus {
@@ -189,8 +201,12 @@ pub fn show(ui: &mut Ui, term: &mut Terminal, selection: &mut Selection, t: &The
 
     // Mouse selection.
     let cell_at = |p: Pos2| -> (u16, u16) {
-        let row = ((p.y - rect.top()) / row_h).floor().clamp(0.0, rows as f32 - 1.0) as u16;
-        let col = ((p.x - rect.left()) / char_w).floor().clamp(0.0, cols as f32 - 1.0) as u16;
+        let row = ((p.y - rect.top()) / row_h)
+            .floor()
+            .clamp(0.0, rows as f32 - 1.0) as u16;
+        let col = ((p.x - rect.left()) / char_w)
+            .floor()
+            .clamp(0.0, cols as f32 - 1.0) as u16;
         (row, col)
     };
     if let Some(p) = response.interact_pointer_pos() {
@@ -231,7 +247,8 @@ pub fn show(ui: &mut Ui, term: &mut Terminal, selection: &mut Selection, t: &The
                 }
                 Event::Paste(text) => {
                     // A pasted line may hold several commands: not tracked.
-                    term.typed = (!text.contains(['\n', '\r'])).then(|| term.typed.clone().unwrap_or_default() + &text);
+                    term.typed = (!text.contains(['\n', '\r']))
+                        .then(|| term.typed.clone().unwrap_or_default() + &text);
                     if bracketed {
                         send.extend(b"\x1b[200~");
                         send.extend(text.replace("\r\n", "\r").replace('\n', "\r").into_bytes());
@@ -269,7 +286,11 @@ pub fn show(ui: &mut Ui, term: &mut Terminal, selection: &mut Selection, t: &The
                     } else if key == Key::Enter && !modifiers.shift && !modifiers.alt {
                         // Starting a known AI: the IDE offers to connect it first, and sends the
                         // Enter when the user has answered.
-                        let agent = term.typed.as_deref().and_then(crate::plugins::builtins::mcp::agents::detect).filter(|_| term.ai_watch);
+                        let agent = term
+                            .typed
+                            .as_deref()
+                            .and_then(crate::plugins::builtins::mcp::agents::detect)
+                            .filter(|_| term.ai_watch);
                         term.typed = Some(String::new());
                         match agent {
                             Some(agent) => {
@@ -287,10 +308,20 @@ pub fn show(ui: &mut Ui, term: &mut Terminal, selection: &mut Selection, t: &The
                             }
                             // Moving in the line, history, completion, interrupting: the line is
                             // no longer what was typed.
-                            Key::Escape | Key::ArrowUp | Key::ArrowDown | Key::ArrowLeft | Key::ArrowRight | Key::Tab | Key::Delete | Key::Home | Key::End => {
+                            Key::Escape
+                            | Key::ArrowUp
+                            | Key::ArrowDown
+                            | Key::ArrowLeft
+                            | Key::ArrowRight
+                            | Key::Tab
+                            | Key::Delete
+                            | Key::Home
+                            | Key::End => {
                                 term.typed = None;
                             }
-                            Key::C | Key::D | Key::U | Key::L if modifiers.ctrl => term.typed = Some(String::new()),
+                            Key::C | Key::D | Key::U | Key::L if modifiers.ctrl => {
+                                term.typed = Some(String::new())
+                            }
                             _ if modifiers.ctrl || modifiers.alt => term.typed = None,
                             _ => {}
                         }
@@ -314,12 +345,16 @@ pub fn show(ui: &mut Ui, term: &mut Terminal, selection: &mut Selection, t: &The
         let y = rect.top() + row as f32 * row_h;
         let mut col = 0;
         while col < cols {
-            let Some(cell) = screen.cell(row, col) else { break };
+            let Some(cell) = screen.cell(row, col) else {
+                break;
+            };
             let st = style(cell, t);
             let start = col;
             let mut text = String::new();
             while col < cols {
-                let Some(cell) = screen.cell(row, col) else { break };
+                let Some(cell) = screen.cell(row, col) else {
+                    break;
+                };
                 if style(cell, t) != st {
                     break;
                 }
@@ -334,7 +369,10 @@ pub fn show(ui: &mut Ui, term: &mut Terminal, selection: &mut Selection, t: &The
             }
             let x = rect.left() + start as f32 * char_w;
             if let Some(bg) = st.bg {
-                let run = Rect::from_min_max(pos2(x, y), pos2(x + (col - start) as f32 * char_w, y + row_h));
+                let run = Rect::from_min_max(
+                    pos2(x, y),
+                    pos2(x + (col - start) as f32 * char_w, y + row_h),
+                );
                 painter.rect_filled(run, 0.0, bg);
             }
             if text.trim().is_empty() && !st.underline {
@@ -348,7 +386,11 @@ pub fn show(ui: &mut Ui, term: &mut Terminal, selection: &mut Selection, t: &The
                     font_id: font.clone(),
                     color: st.fg,
                     italics: st.italic,
-                    underline: if st.underline { Stroke::new(1.0_f32, st.fg) } else { Stroke::NONE },
+                    underline: if st.underline {
+                        Stroke::new(1.0_f32, st.fg)
+                    } else {
+                        Stroke::NONE
+                    },
                     ..Default::default()
                 },
             );
@@ -375,13 +417,21 @@ pub fn show(ui: &mut Ui, term: &mut Terminal, selection: &mut Selection, t: &The
     if !screen.hide_cursor() && screen.scrollback() == 0 {
         let (row, col) = screen.cursor_position();
         let cursor = Rect::from_min_size(
-            pos2(rect.left() + col as f32 * char_w, rect.top() + row as f32 * row_h),
+            pos2(
+                rect.left() + col as f32 * char_w,
+                rect.top() + row as f32 * row_h,
+            ),
             vec2(char_w, row_h),
         );
         if focused {
             painter.rect_filled(cursor, 0.0, t.text.gamma_multiply(0.7));
         } else {
-            painter.rect_stroke(cursor, 0.0, Stroke::new(1.0_f32, t.text_secondary), StrokeKind::Inside);
+            painter.rect_stroke(
+                cursor,
+                0.0,
+                Stroke::new(1.0_f32, t.text_secondary),
+                StrokeKind::Inside,
+            );
         }
     }
     response

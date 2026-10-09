@@ -17,8 +17,8 @@ mod server;
 pub(crate) mod symbols;
 
 use crate::languages::{
-    Completion, CompletionItem, Diagnostic, DocRef, FileEdit, Hover, ItemKind, Location, Oneshot, Provider, QuickFix,
-    Severity, Symbol, TextEdit,
+    Completion, CompletionItem, Diagnostic, DocRef, FileEdit, Hover, ItemKind, Location, Oneshot,
+    Provider, QuickFix, Severity, Symbol, TextEdit,
     lsp::{self, Client, from_position, to_position},
 };
 use crate::plugins::builtin::{BuiltinPlugin, Command, Host};
@@ -86,7 +86,12 @@ impl JavaScript {
 
     /// Executes what the plugin's commands asked for.
     fn poll_control(&mut self) {
-        let (install, restart) = server::control(|c| (std::mem::take(&mut c.install_requested), std::mem::take(&mut c.restart_requested)));
+        let (install, restart) = server::control(|c| {
+            (
+                std::mem::take(&mut c.install_requested),
+                std::mem::take(&mut c.restart_requested),
+            )
+        });
         if install {
             server::install();
         }
@@ -106,11 +111,18 @@ impl JavaScript {
                     client.exited().then(|| {
                         let log = client.log();
                         let last = log.lines().last().unwrap_or("").to_string();
-                        if last.is_empty() { "le serveur s'est arrêté".to_string() } else { last }
+                        if last.is_empty() {
+                            "le serveur s'est arrêté".to_string()
+                        } else {
+                            last
+                        }
                     })
                 });
                 if let Some(message) = failure {
-                    server::control(|c| c.messages.push((format!("Serveur de langage JavaScript : {message}"), true)));
+                    server::control(|c| {
+                        c.messages
+                            .push((format!("Serveur de langage JavaScript : {message}"), true))
+                    });
                     self.server = Server::Failed(message);
                 }
             }
@@ -132,10 +144,18 @@ impl JavaScript {
 
     /// Tells the server about the current text of a document.
     fn sync(&mut self, key: u64) {
-        let Some(client) = self.client().cloned() else { return };
-        let Some(doc) = self.docs.get_mut(&key) else { return };
-        let (Some(uri), Some(path)) = (&doc.uri, &doc.path) else { return };
-        let Some(language) = language_id(path) else { return };
+        let Some(client) = self.client().cloned() else {
+            return;
+        };
+        let Some(doc) = self.docs.get_mut(&key) else {
+            return;
+        };
+        let (Some(uri), Some(path)) = (&doc.uri, &doc.path) else {
+            return;
+        };
+        let Some(language) = language_id(path) else {
+            return;
+        };
         if doc.opened {
             client.notify(
                 "textDocument/didChange",
@@ -159,13 +179,22 @@ impl JavaScript {
 
     /// Asks the server for places (definition or references), the local analysis answering
     /// when there is no server or it knows nothing.
-    fn locate(&mut self, doc: &DocRef, text: &str, offset: usize, method: &str, extra: Value) -> Oneshot<Vec<Location>> {
+    fn locate(
+        &mut self,
+        doc: &DocRef,
+        text: &str,
+        offset: usize,
+        method: &str,
+        extra: Value,
+    ) -> Oneshot<Vec<Location>> {
         let _dialect = analysis::use_dialect(Dialect::of(doc.path.as_deref(), &doc.language));
         let local = if !Self::native(&doc.language) {
             Vec::new()
         } else {
             match method {
-                "textDocument/definition" => navigate::definition(text, offset, doc.path.as_deref()),
+                "textDocument/definition" => {
+                    navigate::definition(text, offset, doc.path.as_deref())
+                }
                 "textDocument/typeDefinition" => navigate::type_definition(text, offset),
                 "textDocument/references" => navigate::references(text, offset),
                 _ => Vec::new(),
@@ -173,7 +202,15 @@ impl JavaScript {
         };
         let client = self.client().filter(|c| c.ready()).cloned();
         let data = self.docs.get(&doc.key);
-        let (Some(client), Some(DocData { uri: Some(uri), opened: true, .. })) = (client, data) else {
+        let (
+            Some(client),
+            Some(DocData {
+                uri: Some(uri),
+                opened: true,
+                ..
+            }),
+        ) = (client, data)
+        else {
             return Oneshot::ready(local);
         };
         let (line, character) = to_position(text, offset);
@@ -186,8 +223,14 @@ impl JavaScript {
         let snapshot = text.to_string();
         let uri = uri.clone();
         client.request(method, params, move |result| {
-            let from_server = result.map(|r| locations_from_server(&r, &uri, &snapshot)).unwrap_or_default();
-            slot.fulfill(if from_server.is_empty() { local } else { from_server });
+            let from_server = result
+                .map(|r| locations_from_server(&r, &uri, &snapshot))
+                .unwrap_or_default();
+            slot.fulfill(if from_server.is_empty() {
+                local
+            } else {
+                from_server
+            });
         });
         answer
     }
@@ -225,8 +268,17 @@ fn item_kind(code: u64) -> ItemKind {
 fn markup_text(value: &Value) -> String {
     match value {
         Value::String(text) => text.clone(),
-        Value::Object(map) => map.get("value").and_then(Value::as_str).unwrap_or("").to_string(),
-        Value::Array(items) => items.iter().map(markup_text).filter(|t| !t.is_empty()).collect::<Vec<_>>().join("\n\n"),
+        Value::Object(map) => map
+            .get("value")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        Value::Array(items) => items
+            .iter()
+            .map(markup_text)
+            .filter(|t| !t.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n\n"),
         _ => String::new(),
     }
 }
@@ -255,13 +307,21 @@ fn plain(markdown: &str) -> String {
     out.lines()
         .map(|line| {
             line.split(' ')
-                .map(|word| if word.starts_with('@') { word.trim_end_matches('*') } else { word })
+                .map(|word| {
+                    if word.starts_with('@') {
+                        word.trim_end_matches('*')
+                    } else {
+                        word
+                    }
+                })
                 .collect::<Vec<_>>()
                 .join(" ")
         })
         .collect::<Vec<_>>()
-        .join("
-")
+        .join(
+            "
+",
+        )
 }
 
 /// Splits a hover into the signature (the first code block) and the text around it.
@@ -308,8 +368,18 @@ fn locations_from_server(result: &Value, uri: &str, snapshot: &str) -> Vec<Locat
     let mut out = Vec::new();
     for item in list {
         let target = item["targetUri"].as_str().or(item["uri"].as_str());
-        let range = if item["targetSelectionRange"].is_object() { &item["targetSelectionRange"] } else if item["targetRange"].is_object() { &item["targetRange"] } else { &item["range"] };
-        let (Some(target), Some(start), Some(end)) = (target, range["start"]["line"].as_u64(), range["end"]["line"].as_u64()) else {
+        let range = if item["targetSelectionRange"].is_object() {
+            &item["targetSelectionRange"]
+        } else if item["targetRange"].is_object() {
+            &item["targetRange"]
+        } else {
+            &item["range"]
+        };
+        let (Some(target), Some(start), Some(end)) = (
+            target,
+            range["start"]["line"].as_u64(),
+            range["end"]["line"].as_u64(),
+        ) else {
             continue;
         };
         let column = |side: &str| range[side]["character"].as_u64().unwrap_or(0) as usize;
@@ -322,10 +392,21 @@ fn locations_from_server(result: &Value, uri: &str, snapshot: &str) -> Vec<Locat
         let text = if same {
             snapshot
         } else {
-            owned = path.as_ref().and_then(|p| std::fs::read_to_string(p).ok()).filter(|t| t.len() <= 4_000_000).unwrap_or_default();
+            owned = path
+                .as_ref()
+                .and_then(|p| std::fs::read_to_string(p).ok())
+                .filter(|t| t.len() <= 4_000_000)
+                .unwrap_or_default();
             &owned
         };
-        let preview = text.lines().nth(start as usize).unwrap_or("").trim().chars().take(120).collect();
+        let preview = text
+            .lines()
+            .nth(start as usize)
+            .unwrap_or("")
+            .trim()
+            .chars()
+            .take(120)
+            .collect();
         out.push(Location {
             path,
             line: start as usize,
@@ -345,20 +426,30 @@ fn workspace_edit(result: &Value, uri: &str, snapshot: &str) -> Vec<FileEdit> {
     let mut per_file: Vec<(String, Vec<Value>)> = Vec::new();
     if let Some(changes) = result["changes"].as_object() {
         for (target, edits) in changes {
-            per_file.push((target.clone(), edits.as_array().cloned().unwrap_or_default()));
+            per_file.push((
+                target.clone(),
+                edits.as_array().cloned().unwrap_or_default(),
+            ));
         }
     }
     if let Some(changes) = result["documentChanges"].as_array() {
         for change in changes {
             if let Some(target) = change["textDocument"]["uri"].as_str() {
-                per_file.push((target.to_string(), change["edits"].as_array().cloned().unwrap_or_default()));
+                per_file.push((
+                    target.to_string(),
+                    change["edits"].as_array().cloned().unwrap_or_default(),
+                ));
             }
         }
     }
     let mut out = Vec::new();
     for (target, edits) in per_file {
         let same = lsp::normalize_uri(&target) == wanted;
-        let path = if same { None } else { lsp::uri_to_path(&target) };
+        let path = if same {
+            None
+        } else {
+            lsp::uri_to_path(&target)
+        };
         if !same && path.is_none() {
             continue;
         }
@@ -366,20 +457,37 @@ fn workspace_edit(result: &Value, uri: &str, snapshot: &str) -> Vec<FileEdit> {
         let text = if same {
             snapshot
         } else {
-            owned = path.as_ref().and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default();
+            owned = path
+                .as_ref()
+                .and_then(|p| std::fs::read_to_string(p).ok())
+                .unwrap_or_default();
             &owned
         };
         let converted: Vec<TextEdit> = edits
             .iter()
             .filter_map(|e| {
                 let range = &e["range"];
-                let start = from_position(text, range["start"]["line"].as_u64()? as usize, range["start"]["character"].as_u64()? as usize);
-                let end = from_position(text, range["end"]["line"].as_u64()? as usize, range["end"]["character"].as_u64()? as usize);
-                Some(TextEdit { range: start..end.max(start), new_text: e["newText"].as_str()?.to_string() })
+                let start = from_position(
+                    text,
+                    range["start"]["line"].as_u64()? as usize,
+                    range["start"]["character"].as_u64()? as usize,
+                );
+                let end = from_position(
+                    text,
+                    range["end"]["line"].as_u64()? as usize,
+                    range["end"]["character"].as_u64()? as usize,
+                );
+                Some(TextEdit {
+                    range: start..end.max(start),
+                    new_text: e["newText"].as_str()?.to_string(),
+                })
             })
             .collect();
         if !converted.is_empty() {
-            out.push(FileEdit { path, edits: converted });
+            out.push(FileEdit {
+                path,
+                edits: converted,
+            });
         }
     }
     out
@@ -398,9 +506,20 @@ fn fixes_from_server(result: &Value, uri: &str, snapshot: &str) -> Vec<QuickFix>
                 list.iter()
                     .filter_map(|e| {
                         let range = &e["range"];
-                        let start = from_position(snapshot, range["start"]["line"].as_u64()? as usize, range["start"]["character"].as_u64()? as usize);
-                        let end = from_position(snapshot, range["end"]["line"].as_u64()? as usize, range["end"]["character"].as_u64()? as usize);
-                        Some(TextEdit { range: start..end.max(start), new_text: e["newText"].as_str()?.to_string() })
+                        let start = from_position(
+                            snapshot,
+                            range["start"]["line"].as_u64()? as usize,
+                            range["start"]["character"].as_u64()? as usize,
+                        );
+                        let end = from_position(
+                            snapshot,
+                            range["end"]["line"].as_u64()? as usize,
+                            range["end"]["character"].as_u64()? as usize,
+                        );
+                        Some(TextEdit {
+                            range: start..end.max(start),
+                            new_text: e["newText"].as_str()?.to_string(),
+                        })
                     })
                     .collect()
             })
@@ -408,7 +527,9 @@ fn fixes_from_server(result: &Value, uri: &str, snapshot: &str) -> Vec<QuickFix>
     };
     let mut fixes = Vec::new();
     for action in actions {
-        let Some(title) = action["title"].as_str() else { continue };
+        let Some(title) = action["title"].as_str() else {
+            continue;
+        };
         let edit = &action["edit"];
         let mut edits: Vec<TextEdit> = Vec::new();
         let mut elsewhere = false;
@@ -424,14 +545,19 @@ fn fixes_from_server(result: &Value, uri: &str, snapshot: &str) -> Vec<QuickFix>
         if let Some(changes) = edit["documentChanges"].as_array() {
             for change in changes {
                 match change["textDocument"]["uri"].as_str() {
-                    Some(target) if lsp::normalize_uri(target) == wanted => edits.extend(edits_of(&change["edits"])),
+                    Some(target) if lsp::normalize_uri(target) == wanted => {
+                        edits.extend(edits_of(&change["edits"]))
+                    }
                     _ => elsewhere = true,
                 }
             }
         }
         // Actions that run a command or touch other files are not offered here.
         if !edits.is_empty() && !elsewhere {
-            fixes.push(QuickFix { title: title.to_string(), edits });
+            fixes.push(QuickFix {
+                title: title.to_string(),
+                edits,
+            });
         }
     }
     fixes
@@ -455,8 +581,14 @@ fn symbol_kind(code: u64) -> ItemKind {
 fn symbols_from_server(result: &Value, snapshot: &str) -> Vec<Symbol> {
     fn convert(items: &[Value], depth: usize, snapshot: &str, out: &mut Vec<Symbol>) {
         for item in items {
-            let Some(name) = item["name"].as_str() else { continue };
-            let range = if item["selectionRange"].is_object() { &item["selectionRange"] } else { &item["location"]["range"] };
+            let Some(name) = item["name"].as_str() else {
+                continue;
+            };
+            let range = if item["selectionRange"].is_object() {
+                &item["selectionRange"]
+            } else {
+                &item["location"]["range"]
+            };
             let (Some(sl), Some(sc), Some(el), Some(ec)) = (
                 range["start"]["line"].as_u64(),
                 range["start"]["character"].as_u64(),
@@ -494,17 +626,32 @@ fn completion_from_server(result: &Value, text: &str, from: usize) -> Option<Com
     };
     let mut entries: Vec<(&Value, String)> = list
         .iter()
-        .map(|item| (item, item["sortText"].as_str().or(item["label"].as_str()).unwrap_or("").to_string()))
+        .map(|item| {
+            (
+                item,
+                item["sortText"]
+                    .as_str()
+                    .or(item["label"].as_str())
+                    .unwrap_or("")
+                    .to_string(),
+            )
+        })
         .collect();
     entries.sort_by(|a, b| a.1.cmp(&b.1));
     let mut items = Vec::new();
     for (index, (item, _)) in entries.into_iter().enumerate().take(1500) {
-        let Some(label) = item["label"].as_str() else { continue };
+        let Some(label) = item["label"].as_str() else {
+            continue;
+        };
         let kind = item_kind(item["kind"].as_u64().unwrap_or(1));
         let mut insert = item["insertText"].as_str().unwrap_or(label).to_string();
         if let Some(edit) = item.get("textEdit") {
             let start = edit["range"]["start"].as_object().and_then(|_| {
-                Some(from_position(text, edit["range"]["start"]["line"].as_u64()? as usize, edit["range"]["start"]["character"].as_u64()? as usize))
+                Some(from_position(
+                    text,
+                    edit["range"]["start"]["line"].as_u64()? as usize,
+                    edit["range"]["start"]["character"].as_u64()? as usize,
+                ))
             });
             if start == Some(from)
                 && let Some(new_text) = edit["newText"].as_str()
@@ -517,7 +664,9 @@ fn completion_from_server(result: &Value, text: &str, from: usize) -> Option<Com
         if item["documentation"].is_null() && item["detail"].is_null() {
             entry.raw = Some(Arc::new(item.to_string()));
         }
-        let detail = item["detail"].as_str().or_else(|| item["labelDetails"]["description"].as_str());
+        let detail = item["detail"]
+            .as_str()
+            .or_else(|| item["labelDetails"]["description"].as_str());
         if let Some(detail) = detail {
             entry = entry.detail(detail);
         }
@@ -526,7 +675,10 @@ fn completion_from_server(result: &Value, text: &str, from: usize) -> Option<Com
             entry = entry.doc(doc);
         }
         // A function gets its parentheses, with the caret inside.
-        if matches!(kind, ItemKind::Function | ItemKind::Method) && insert == label && !text[from..].starts_with('(') {
+        if matches!(kind, ItemKind::Function | ItemKind::Method)
+            && insert == label
+            && !text[from..].starts_with('(')
+        {
             entry = entry.insert(format!("{label}()"), Some(label.len() + 1));
         } else if insert != label {
             entry = entry.insert(insert, None);
@@ -565,7 +717,10 @@ impl Provider for JavaScript {
             if let (Some(client), Some(old)) = (&client, &data.uri)
                 && data.opened
             {
-                client.notify("textDocument/didClose", json!({"textDocument": {"uri": old}}));
+                client.notify(
+                    "textDocument/didClose",
+                    json!({"textDocument": {"uri": old}}),
+                );
             }
             data.opened = false;
             data.path = doc.path.clone();
@@ -578,11 +733,16 @@ impl Provider for JavaScript {
     }
 
     fn close(&mut self, key: u64) {
-        let Some(data) = self.docs.remove(&key) else { return };
+        let Some(data) = self.docs.remove(&key) else {
+            return;
+        };
         if let (Some(client), Some(uri)) = (self.client(), &data.uri)
             && data.opened
         {
-            client.notify("textDocument/didClose", json!({"textDocument": {"uri": uri}}));
+            client.notify(
+                "textDocument/didClose",
+                json!({"textDocument": {"uri": uri}}),
+            );
         }
     }
 
@@ -606,7 +766,11 @@ impl Provider for JavaScript {
                     range: start..end,
                     severity: severity(d.severity),
                     message: d.message,
-                    source: if d.source.is_empty() { "tsserver".into() } else { d.source },
+                    source: if d.source.is_empty() {
+                        "tsserver".into()
+                    } else {
+                        d.source
+                    },
                 });
             }
         }
@@ -614,9 +778,11 @@ impl Provider for JavaScript {
             let _dialect = analysis::use_dialect(Dialect::of(data.path.as_deref(), &data.language));
             for native in analysis::syntax_errors(&data.text) {
                 // The server already says it, better.
-                let covered = all
-                    .iter()
-                    .any(|d| d.severity == Severity::Error && d.range.start <= native.range.end && native.range.start <= d.range.end);
+                let covered = all.iter().any(|d| {
+                    d.severity == Severity::Error
+                        && d.range.start <= native.range.end
+                        && native.range.start <= d.range.end
+                });
                 if !covered {
                     all.push(native);
                 }
@@ -628,7 +794,13 @@ impl Provider for JavaScript {
         data.diagnostics.clone()
     }
 
-    fn complete(&mut self, doc: &DocRef, text: &str, offset: usize, explicit: bool) -> Oneshot<Option<Completion>> {
+    fn complete(
+        &mut self,
+        doc: &DocRef,
+        text: &str,
+        offset: usize,
+        explicit: bool,
+    ) -> Oneshot<Option<Completion>> {
         let _dialect = analysis::use_dialect(Dialect::of(doc.path.as_deref(), &doc.language));
         let native = if Self::native(&doc.language) {
             complete::complete(text, offset, explicit, doc.path.as_deref())
@@ -637,7 +809,15 @@ impl Provider for JavaScript {
         };
         let client = self.client().filter(|c| c.ready()).cloned();
         let data = self.docs.get(&doc.key);
-        let (Some(client), Some(DocData { uri: Some(uri), opened: true, .. })) = (client, data) else {
+        let (
+            Some(client),
+            Some(DocData {
+                uri: Some(uri),
+                opened: true,
+                ..
+            }),
+        ) = (client, data)
+        else {
             return Oneshot::ready(native);
         };
         let offset = offset.min(text.len());
@@ -648,9 +828,14 @@ impl Provider for JavaScript {
             return Oneshot::ready(None);
         }
         let (line, character) = to_position(text, offset);
-        let trigger = text[..from].chars().next_back().filter(|c| matches!(c, '.' | '/' | '"' | '\'' | '`' | '<' | '@' | '#'));
+        let trigger = text[..from]
+            .chars()
+            .next_back()
+            .filter(|c| matches!(c, '.' | '/' | '"' | '\'' | '`' | '<' | '@' | '#'));
         let context = match trigger {
-            Some(c) if typed.is_empty() => json!({"triggerKind": 2, "triggerCharacter": c.to_string()}),
+            Some(c) if typed.is_empty() => {
+                json!({"triggerKind": 2, "triggerCharacter": c.to_string()})
+            }
             _ => json!({"triggerKind": 1}),
         };
         let answer = Oneshot::pending();
@@ -669,10 +854,22 @@ impl Provider for JavaScript {
 
     fn hover(&mut self, doc: &DocRef, text: &str, offset: usize) -> Oneshot<Option<Hover>> {
         let _dialect = analysis::use_dialect(Dialect::of(doc.path.as_deref(), &doc.language));
-        let native = if Self::native(&doc.language) { hover::hover(text, offset) } else { None };
+        let native = if Self::native(&doc.language) {
+            hover::hover(text, offset)
+        } else {
+            None
+        };
         let client = self.client().filter(|c| c.ready()).cloned();
         let data = self.docs.get(&doc.key);
-        let (Some(client), Some(DocData { uri: Some(uri), opened: true, .. })) = (client, data) else {
+        let (
+            Some(client),
+            Some(DocData {
+                uri: Some(uri),
+                opened: true,
+                ..
+            }),
+        ) = (client, data)
+        else {
             return Oneshot::ready(native);
         };
         let (line, character) = to_position(text, offset);
@@ -705,13 +902,27 @@ impl Provider for JavaScript {
         answer
     }
 
-    fn rename(&mut self, doc: &DocRef, text: &str, offset: usize, new_name: &str) -> Oneshot<Result<Vec<FileEdit>, String>> {
+    fn rename(
+        &mut self,
+        doc: &DocRef,
+        text: &str,
+        offset: usize,
+        new_name: &str,
+    ) -> Oneshot<Result<Vec<FileEdit>, String>> {
         let answer = Oneshot::pending();
         let client = self.client().filter(|c| c.ready()).cloned();
-        let target = self.docs.get(&doc.key).and_then(|d| d.uri.clone().filter(|_| d.opened));
+        let target = self
+            .docs
+            .get(&doc.key)
+            .and_then(|d| d.uri.clone().filter(|_| d.opened));
         let local = Self::native(&doc.language);
         let dialect = Dialect::of(doc.path.as_deref(), &doc.language);
-        let (text, path, root, repaint) = (text.to_string(), doc.path.clone(), self.root.clone(), self.repaint.clone());
+        let (text, path, root, repaint) = (
+            text.to_string(),
+            doc.path.clone(),
+            self.root.clone(),
+            self.repaint.clone(),
+        );
         let new_name = new_name.to_string();
         let slot = answer.clone();
         // The scan of the project for importers takes a while: not on the interface thread.
@@ -728,7 +939,11 @@ impl Provider for JavaScript {
                 repaint();
                 return;
             };
-            if local && native.as_ref().is_err_and(|e| e.contains("n'est pas un nom valide") || e.contains("existe déjà")) {
+            if local
+                && native.as_ref().is_err_and(|e| {
+                    e.contains("n'est pas un nom valide") || e.contains("existe déjà")
+                })
+            {
                 slot.fulfill(native);
                 repaint();
                 return;
@@ -737,7 +952,9 @@ impl Provider for JavaScript {
             let params = json!({"textDocument": {"uri": uri}, "position": {"line": line, "character": character}, "newName": new_name});
             let uri_for_answer = uri.clone();
             client.request("textDocument/rename", params, move |result| {
-                let plan = result.map(|r| workspace_edit(&r, &uri_for_answer, &text)).unwrap_or_default();
+                let plan = result
+                    .map(|r| workspace_edit(&r, &uri_for_answer, &text))
+                    .unwrap_or_default();
                 slot.fulfill(if plan.is_empty() { native } else { Ok(plan) });
                 repaint();
             });
@@ -748,9 +965,17 @@ impl Provider for JavaScript {
     fn quick_fixes(&mut self, doc: &DocRef, text: &str, offset: usize) -> Oneshot<Vec<QuickFix>> {
         let answer = Oneshot::pending();
         let client = self.client().filter(|c| c.ready()).cloned();
-        let target = self.docs.get(&doc.key).and_then(|d| d.uri.clone().filter(|_| d.opened));
+        let target = self
+            .docs
+            .get(&doc.key)
+            .and_then(|d| d.uri.clone().filter(|_| d.opened));
         let local = Self::native(&doc.language);
-        let (text, path, root, repaint) = (text.to_string(), doc.path.clone(), self.root.clone(), self.repaint.clone());
+        let (text, path, root, repaint) = (
+            text.to_string(),
+            doc.path.clone(),
+            self.root.clone(),
+            self.repaint.clone(),
+        );
         let dialect = Dialect::of(doc.path.as_deref(), &doc.language);
         let slot = answer.clone();
         let diagnostics: Vec<Value> = match (&client, &target) {
@@ -768,7 +993,11 @@ impl Provider for JavaScript {
         // Scanning the project for exports takes a while: not on the interface thread.
         std::thread::spawn(move || {
             let _dialect = analysis::use_dialect(dialect);
-            let native = if local { imports::import_fixes(&text, offset, path.as_deref(), &root) } else { Vec::new() };
+            let native = if local {
+                imports::import_fixes(&text, offset, path.as_deref(), &root)
+            } else {
+                Vec::new()
+            };
             let (Some(client), Some(uri)) = (client, target) else {
                 slot.fulfill(native);
                 repaint();
@@ -782,8 +1011,14 @@ impl Provider for JavaScript {
             });
             let uri_for_answer = uri.clone();
             client.request("textDocument/codeAction", params, move |result| {
-                let from_server = result.map(|r| fixes_from_server(&r, &uri_for_answer, &text)).unwrap_or_default();
-                slot.fulfill(if from_server.is_empty() { native } else { from_server });
+                let from_server = result
+                    .map(|r| fixes_from_server(&r, &uri_for_answer, &text))
+                    .unwrap_or_default();
+                slot.fulfill(if from_server.is_empty() {
+                    native
+                } else {
+                    from_server
+                });
                 repaint();
             });
         });
@@ -794,20 +1029,47 @@ impl Provider for JavaScript {
         self.locate(doc, text, offset, "textDocument/definition", json!({}))
     }
 
-    fn type_definition(&mut self, doc: &DocRef, text: &str, offset: usize) -> Oneshot<Vec<Location>> {
+    fn type_definition(
+        &mut self,
+        doc: &DocRef,
+        text: &str,
+        offset: usize,
+    ) -> Oneshot<Vec<Location>> {
         self.locate(doc, text, offset, "textDocument/typeDefinition", json!({}))
     }
 
-    fn implementation(&mut self, doc: &DocRef, text: &str, offset: usize) -> Oneshot<Vec<Location>> {
+    fn implementation(
+        &mut self,
+        doc: &DocRef,
+        text: &str,
+        offset: usize,
+    ) -> Oneshot<Vec<Location>> {
         self.locate(doc, text, offset, "textDocument/implementation", json!({}))
     }
 
-    fn highlights(&mut self, doc: &DocRef, text: &str, offset: usize) -> Oneshot<Vec<std::ops::Range<usize>>> {
+    fn highlights(
+        &mut self,
+        doc: &DocRef,
+        text: &str,
+        offset: usize,
+    ) -> Oneshot<Vec<std::ops::Range<usize>>> {
         let _dialect = analysis::use_dialect(Dialect::of(doc.path.as_deref(), &doc.language));
-        let local = if Self::native(&doc.language) { navigate::highlights(text, offset) } else { Vec::new() };
+        let local = if Self::native(&doc.language) {
+            navigate::highlights(text, offset)
+        } else {
+            Vec::new()
+        };
         let client = self.client().filter(|c| c.ready()).cloned();
         let data = self.docs.get(&doc.key);
-        let (Some(client), Some(DocData { uri: Some(uri), opened: true, .. })) = (client, data) else {
+        let (
+            Some(client),
+            Some(DocData {
+                uri: Some(uri),
+                opened: true,
+                ..
+            }),
+        ) = (client, data)
+        else {
             return Oneshot::ready(local);
         };
         let (line, character) = to_position(text, offset);
@@ -838,29 +1100,60 @@ impl Provider for JavaScript {
 
     fn symbols(&mut self, doc: &DocRef, text: &str) -> Oneshot<Vec<Symbol>> {
         let _dialect = analysis::use_dialect(Dialect::of(doc.path.as_deref(), &doc.language));
-        let local = if Self::native(&doc.language) { symbols::symbols(text) } else { Vec::new() };
+        let local = if Self::native(&doc.language) {
+            symbols::symbols(text)
+        } else {
+            Vec::new()
+        };
         let client = self.client().filter(|c| c.ready()).cloned();
         let data = self.docs.get(&doc.key);
-        let (Some(client), Some(DocData { uri: Some(uri), opened: true, .. })) = (client, data) else {
+        let (
+            Some(client),
+            Some(DocData {
+                uri: Some(uri),
+                opened: true,
+                ..
+            }),
+        ) = (client, data)
+        else {
             return Oneshot::ready(local);
         };
         let answer = Oneshot::pending();
         let slot = answer.clone();
         let snapshot = text.to_string();
-        client.request("textDocument/documentSymbol", json!({"textDocument": {"uri": uri}}), move |result| {
-            let from_server = result.map(|r| symbols_from_server(&r, &snapshot)).unwrap_or_default();
-            slot.fulfill(if from_server.is_empty() { local } else { from_server });
-        });
+        client.request(
+            "textDocument/documentSymbol",
+            json!({"textDocument": {"uri": uri}}),
+            move |result| {
+                let from_server = result
+                    .map(|r| symbols_from_server(&r, &snapshot))
+                    .unwrap_or_default();
+                slot.fulfill(if from_server.is_empty() {
+                    local
+                } else {
+                    from_server
+                });
+            },
+        );
         answer
     }
 
     fn references(&mut self, doc: &DocRef, text: &str, offset: usize) -> Oneshot<Vec<Location>> {
-        self.locate(doc, text, offset, "textDocument/references", json!({"context": {"includeDeclaration": false}}))
+        self.locate(
+            doc,
+            text,
+            offset,
+            "textDocument/references",
+            json!({"context": {"includeDeclaration": false}}),
+        )
     }
 
     fn resolve(&mut self, _doc: &DocRef, item: &CompletionItem) -> Oneshot<Option<CompletionItem>> {
         let client = self.client().filter(|c| c.ready()).cloned();
-        let raw = item.raw.as_ref().and_then(|r| serde_json::from_str::<Value>(r).ok());
+        let raw = item
+            .raw
+            .as_ref()
+            .and_then(|r| serde_json::from_str::<Value>(r).ok());
         let (Some(client), Some(raw)) = (client, raw) else {
             return Oneshot::ready(None);
         };
@@ -893,7 +1186,10 @@ impl Provider for JavaScript {
             Server::Running(client) if client.ready() => "tsserver".into(),
             Server::Running(_) => "tsserver…".into(),
             Server::Missing => "JS : analyse locale".into(),
-            Server::Failed(reason) => format!("JS : serveur en échec ({})", reason.chars().take(60).collect::<String>()),
+            Server::Failed(reason) => format!(
+                "JS : serveur en échec ({})",
+                reason.chars().take(60).collect::<String>()
+            ),
         }
     }
 }
@@ -924,11 +1220,20 @@ impl BuiltinPlugin for JavaScriptPlugin {
 
     fn commands(&self) -> Vec<Command> {
         [
-            ("js.install", "JavaScript : installer le serveur de langage (typescript-language-server)"),
-            ("js.restart", "JavaScript : redémarrer le serveur de langage"),
+            (
+                "js.install",
+                "JavaScript : installer le serveur de langage (typescript-language-server)",
+            ),
+            (
+                "js.restart",
+                "JavaScript : redémarrer le serveur de langage",
+            ),
         ]
         .into_iter()
-        .map(|(id, label)| Command { id, label: label.into() })
+        .map(|(id, label)| Command {
+            id,
+            label: label.into(),
+        })
         .collect()
     }
 
@@ -960,7 +1265,10 @@ mod tests {
         assert!(body.starts_with("Adds two numbers."), "{body}");
         assert!(body.contains("@param a — first"), "{body}");
         let (title, body) = split_hover("Just a sentence.\nMore.");
-        assert_eq!((title.as_str(), body.as_str()), ("Just a sentence.", "More."));
+        assert_eq!(
+            (title.as_str(), body.as_str()),
+            ("Just a sentence.", "More.")
+        );
     }
 
     #[test]
@@ -995,20 +1303,36 @@ mod tests {
         };
         let text = "const total = 5;\nconsole.log(tot";
         provider.update(&doc, text, 1);
-        let completion = provider.complete(&doc, text, text.len(), false).take().unwrap().unwrap();
+        let completion = provider
+            .complete(&doc, text, text.len(), false)
+            .take()
+            .unwrap()
+            .unwrap();
         assert!(completion.items.iter().any(|i| i.label == "total"));
         let broken = "const a = ;\n";
         provider.update(&doc, broken, 2);
         assert_eq!(provider.diagnostics(1).len(), 1);
         assert_eq!(provider.status(), "JS : analyse locale");
-        let info = provider.hover(&doc, "const total = 5;\ntotal;", 18).take().unwrap().unwrap();
+        let info = provider
+            .hover(&doc, "const total = 5;\ntotal;", 18)
+            .take()
+            .unwrap()
+            .unwrap();
         assert_eq!(info.title, "const total: number");
     }
 
-    fn wait_for(provider: &mut JavaScript, what: &str, mut done: impl FnMut(&mut JavaScript) -> bool) {
+    fn wait_for(
+        provider: &mut JavaScript,
+        what: &str,
+        mut done: impl FnMut(&mut JavaScript) -> bool,
+    ) {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
         while !done(provider) {
-            assert!(std::time::Instant::now() < deadline, "timeout waiting for {what}: {}", provider.status());
+            assert!(
+                std::time::Instant::now() < deadline,
+                "timeout waiting for {what}: {}",
+                provider.status()
+            );
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
     }
@@ -1036,9 +1360,15 @@ let broken = ;
 ";
         std::fs::write(&file, text).unwrap();
         let mut provider = JavaScript::new(&root, Arc::new(|| {}));
-        let doc = DocRef { key: 7, path: Some(file.clone()), language: "js".into() };
+        let doc = DocRef {
+            key: 7,
+            path: Some(file.clone()),
+            language: "js".into(),
+        };
         provider.update(&doc, text, 1);
-        wait_for(&mut provider, "the server", |p| p.client().is_some_and(|c| c.ready()));
+        wait_for(&mut provider, "the server", |p| {
+            p.client().is_some_and(|c| c.ready())
+        });
         provider.update(&doc, text, 2);
 
         let offset = text.find("greeting.toUp").unwrap() + "greeting.toUp".len();
@@ -1052,7 +1382,22 @@ let broken = ;
             std::thread::sleep(std::time::Duration::from_millis(50));
         };
         let completion = completion.expect("completion items");
-        let upper = completion.items.iter().find(|i| i.label == "toUpperCase").unwrap_or_else(|| panic!("no toUpperCase in {} items: {:?}", completion.items.len(), completion.items.iter().take(20).map(|i| i.label.clone()).collect::<Vec<_>>()));
+        let upper = completion
+            .items
+            .iter()
+            .find(|i| i.label == "toUpperCase")
+            .unwrap_or_else(|| {
+                panic!(
+                    "no toUpperCase in {} items: {:?}",
+                    completion.items.len(),
+                    completion
+                        .items
+                        .iter()
+                        .take(20)
+                        .map(|i| i.label.clone())
+                        .collect::<Vec<_>>()
+                )
+            });
         assert_eq!(completion.from, offset - 4);
         assert_eq!(upper.insert, "toUpperCase()");
 
@@ -1067,11 +1412,20 @@ let broken = ;
             std::thread::sleep(std::time::Duration::from_millis(50));
         };
         let info = info.expect("a hover");
-        assert!(info.title.contains("add(a: number, b: number)"), "{}", info.title);
+        assert!(
+            info.title.contains("add(a: number, b: number)"),
+            "{}",
+            info.title
+        );
 
-        wait_for(&mut provider, "diagnostics", |p| !p.diagnostics(7).is_empty());
+        wait_for(&mut provider, "diagnostics", |p| {
+            !p.diagnostics(7).is_empty()
+        });
         let diagnostics = provider.diagnostics(7);
-        assert!(diagnostics.iter().any(|d| d.severity == Severity::Error), "{diagnostics:?}");
+        assert!(
+            diagnostics.iter().any(|d| d.severity == Severity::Error),
+            "{diagnostics:?}"
+        );
         assert_eq!(provider.status(), "tsserver");
         drop(provider);
         let _ = std::fs::remove_dir_all(&root);
@@ -1098,8 +1452,12 @@ let broken = ;
             return;
         }
         std::fs::write(root.join("jsconfig.json"), "{}").unwrap();
-        std::fs::write(root.join("util.js"), "export function helper() { return 1; }
-").unwrap();
+        std::fs::write(
+            root.join("util.js"),
+            "export function helper() { return 1; }
+",
+        )
+        .unwrap();
         let file = root.join("main.js");
         let text = "function add(a, b) { return a + b; }
 const total = add(1, 2);
@@ -1108,9 +1466,15 @@ helper();
 ";
         std::fs::write(&file, text).unwrap();
         let mut provider = JavaScript::new(&root, Arc::new(|| {}));
-        let doc = DocRef { key: 9, path: Some(file.clone()), language: "js".into() };
+        let doc = DocRef {
+            key: 9,
+            path: Some(file.clone()),
+            language: "js".into(),
+        };
         provider.update(&doc, text, 1);
-        wait_for(&mut provider, "the server", |p| p.client().is_some_and(|c| c.ready()));
+        wait_for(&mut provider, "the server", |p| {
+            p.client().is_some_and(|c| c.ready())
+        });
         provider.update(&doc, text, 2);
 
         // Definition of the first use of `add`.
@@ -1122,11 +1486,20 @@ helper();
         // Usages of `add`, from the declaration.
         let declared = text.find("add(a").unwrap() + 1;
         let usages = wait_answer(&provider.references(&doc, text, declared), "references");
-        assert_eq!(usages.iter().map(|l| l.line).collect::<Vec<_>>(), [1, 2], "{usages:?}");
+        assert_eq!(
+            usages.iter().map(|l| l.line).collect::<Vec<_>>(),
+            [1, 2],
+            "{usages:?}"
+        );
 
         // The structure.
         let symbols = wait_answer(&provider.symbols(&doc, text), "symbols");
-        assert!(symbols.iter().any(|s| s.name == "add" && s.kind == ItemKind::Function), "{symbols:?}");
+        assert!(
+            symbols
+                .iter()
+                .any(|s| s.name == "add" && s.kind == ItemKind::Function),
+            "{symbols:?}"
+        );
         assert!(symbols.iter().any(|s| s.name == "total"), "{symbols:?}");
 
         // The highlight of a name.
@@ -1136,7 +1509,12 @@ helper();
         // Import `helper` from util.js.
         let at = text.find("helper();").unwrap() + 1;
         let fixes = wait_answer(&provider.quick_fixes(&doc, text, at), "quick fixes");
-        assert!(fixes.iter().any(|f| f.title.to_lowercase().contains("import") && f.title.contains("util")), "{fixes:?}");
+        assert!(
+            fixes
+                .iter()
+                .any(|f| f.title.to_lowercase().contains("import") && f.title.contains("util")),
+            "{fixes:?}"
+        );
         drop(provider);
         let _ = std::fs::remove_dir_all(&root);
     }

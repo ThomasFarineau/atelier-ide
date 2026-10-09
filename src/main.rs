@@ -10,6 +10,7 @@ mod graph;
 mod highlight;
 mod icon_set;
 mod icons;
+mod languages;
 mod plugins;
 mod project;
 mod search;
@@ -19,7 +20,6 @@ mod terminal;
 mod terminal_layout;
 mod terminal_ui;
 mod ui;
-mod languages;
 mod wsl;
 
 fn main() -> eframe::Result {
@@ -40,12 +40,12 @@ fn main() -> eframe::Result {
     }
     let icon = eframe::icon_data::from_png_bytes(include_bytes!("../assets/logo/atelier.png")).ok();
     let mut viewport = eframe::egui::ViewportBuilder::default()
-            .with_title("Atelier IDE")
-            .with_app_id("atelier-ide")
-            .with_inner_size([1440.0, 920.0])
-            .with_min_inner_size([900.0, 600.0])
-            // The app draws its own title bar (see `Ide::toolbar`).
-            .with_decorations(false);
+        .with_title("Atelier IDE")
+        .with_app_id("atelier-ide")
+        .with_inner_size([1440.0, 920.0])
+        .with_min_inner_size([900.0, 600.0])
+        // The app draws its own title bar (see `Ide::toolbar`).
+        .with_decorations(false);
     if let Some(icon) = icon {
         viewport = viewport.with_icon(icon);
     }

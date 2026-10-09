@@ -9,8 +9,8 @@ mod assist;
 mod fold;
 
 use crate::{
-    plugins::builtin::{Command, LineMark, MarkKind},
     highlight::Incremental,
+    plugins::builtin::{Command, LineMark, MarkKind},
     ui::Theme,
 };
 pub use assist::Assist;
@@ -205,7 +205,9 @@ impl EditorState {
             .lines
             .windows(2)
             .map(|w| w[1] - w[0])
-            .chain(std::iter::once(text.len() - self.lines[self.lines.len() - 1]))
+            .chain(std::iter::once(
+                text.len() - self.lines[self.lines.len() - 1],
+            ))
             .max()
             .unwrap_or(0);
         self.indexed_len = text.len();
@@ -225,7 +227,7 @@ impl EditorState {
         pos
     }
 
-#[cfg(test)]
+    #[cfg(test)]
     pub fn line_count(&self) -> usize {
         self.lines.len()
     }
@@ -238,22 +240,39 @@ impl EditorState {
 
     /// Number of rows shown: the lines, less the ones hidden by collapsed regions.
     fn row_count(&self) -> usize {
-        if self.visible.is_empty() { self.lines.len() } else { self.visible.len() }
+        if self.visible.is_empty() {
+            self.lines.len()
+        } else {
+            self.visible.len()
+        }
     }
 
     /// Row where `line` is shown (a hidden line is shown on the row of its fold).
     fn row_of(&self, line: usize) -> usize {
-        if self.visible.is_empty() { line } else { self.visible.partition_point(|&l| l <= line).saturating_sub(1) }
+        if self.visible.is_empty() {
+            line
+        } else {
+            self.visible
+                .partition_point(|&l| l <= line)
+                .saturating_sub(1)
+        }
     }
 
     /// Line shown on `row`.
     fn line_at(&self, row: usize) -> usize {
-        if self.visible.is_empty() { row.min(self.lines.len() - 1) } else { self.visible[row.min(self.visible.len() - 1)] }
+        if self.visible.is_empty() {
+            row.min(self.lines.len() - 1)
+        } else {
+            self.visible[row.min(self.visible.len() - 1)]
+        }
     }
 
     /// The region that opens on `line`, collapsed or not.
     fn region_at(&self, line: usize) -> Option<&fold::Region> {
-        self.regions.binary_search_by_key(&line, |r| r.first).ok().map(|i| &self.regions[i])
+        self.regions
+            .binary_search_by_key(&line, |r| r.first)
+            .ok()
+            .map(|i| &self.regions[i])
     }
 
     /// The collapsed region shown on `line`.
@@ -261,7 +280,8 @@ impl EditorState {
         if self.folded.is_empty() {
             return None;
         }
-        self.region_at(line).filter(|r| self.folded.contains(&r.open))
+        self.region_at(line)
+            .filter(|r| self.folded.contains(&r.open))
     }
 
     fn rebuild_visible(&mut self) {
@@ -286,7 +306,8 @@ impl EditorState {
         if self.fold_rev != self.rev || self.fold_language != language {
             self.regions = fold::regions(text, &self.lines, language);
             let regions = &self.regions;
-            self.folded.retain(|open| regions.iter().any(|r| r.open == *open));
+            self.folded
+                .retain(|open| regions.iter().any(|r| r.open == *open));
             self.fold_rev = self.rev;
             self.fold_language = language.to_string();
         } else if self.folded.is_empty() && self.visible.is_empty() {
@@ -307,7 +328,11 @@ impl EditorState {
         let line = self.line_of(self.cursor);
         let before = self.folded.len();
         let regions = &self.regions;
-        self.folded.retain(|open| !regions.iter().any(|r| r.open == *open && r.first < line && line <= r.last));
+        self.folded.retain(|open| {
+            !regions
+                .iter()
+                .any(|r| r.open == *open && r.first < line && line <= r.last)
+        });
         self.folded.len() != before
     }
 
@@ -355,7 +380,11 @@ impl EditorState {
     }
 
     fn fold_all(&mut self, collapse: bool) {
-        self.folded = if collapse { self.regions.iter().map(|r| r.open).collect() } else { Vec::new() };
+        self.folded = if collapse {
+            self.regions.iter().map(|r| r.open).collect()
+        } else {
+            Vec::new()
+        };
         self.park_cursor();
         self.rebuild_visible();
     }
@@ -369,7 +398,10 @@ impl EditorState {
     /// Byte range of line `index`, without its line break.
     fn line_range(&self, text: &str, index: usize) -> Range<usize> {
         let start = self.lines[index];
-        let mut end = self.lines.get(index + 1).map_or(text.len(), |&next| next - 1);
+        let mut end = self
+            .lines
+            .get(index + 1)
+            .map_or(text.len(), |&next| next - 1);
         if end > start && text.as_bytes()[end - 1] == b'\r' {
             end -= 1;
         }
@@ -486,10 +518,9 @@ impl EditorState {
             && self.last_typing.is_some_and(|t| t.elapsed() < MERGE_DELAY)
             && change.removed.is_empty()
             && !insert.contains('\n')
-            && self
-                .undo
-                .last()
-                .is_some_and(|last| last.at + last.inserted.len() == change.at && last.removed.is_empty());
+            && self.undo.last().is_some_and(|last| {
+                last.at + last.inserted.len() == change.at && last.removed.is_empty()
+            });
         match self.undo.last_mut() {
             Some(last) if merge => {
                 last.inserted.push_str(insert);
@@ -515,7 +546,10 @@ impl EditorState {
             (&change.removed, &change.inserted, change.after)
         };
         let range = change.at..change.at + remove.len();
-        let (undo_stack, redo_stack) = (std::mem::take(&mut self.undo), std::mem::take(&mut self.redo));
+        let (undo_stack, redo_stack) = (
+            std::mem::take(&mut self.undo),
+            std::mem::take(&mut self.redo),
+        );
         self.replace(text, range, insert, false);
         self.undo = undo_stack;
         self.redo = redo_stack;
@@ -657,7 +691,10 @@ impl EditorState {
     }
 
     fn next_char(&self, text: &str, pos: usize) -> usize {
-        text[pos..].chars().next().map_or(pos, |c| pos + c.len_utf8())
+        text[pos..]
+            .chars()
+            .next()
+            .map_or(pos, |c| pos + c.len_utf8())
     }
 
     fn vertical(&mut self, text: &str, lines: isize, extend: bool) {
@@ -706,8 +743,14 @@ impl EditorState {
 
     fn newline(&mut self, text: &mut String) {
         let line = self.line(text, self.line_of(self.cursor));
-        let indent: String = line.chars().take_while(|c| *c == ' ' || *c == '\t').collect();
-        let before = text[..self.selection().start].trim_end_matches([' ', '\t']).chars().next_back();
+        let indent: String = line
+            .chars()
+            .take_while(|c| *c == ' ' || *c == '\t')
+            .collect();
+        let before = text[..self.selection().start]
+            .trim_end_matches([' ', '\t'])
+            .chars()
+            .next_back();
         let after = text[self.selection().end..].chars().next();
         let opens = matches!(before, Some('{' | '(' | '['));
         if opens && matches!(after, Some('}' | ')' | ']')) {
@@ -745,9 +788,17 @@ impl EditorState {
             }
         };
         let mut end = self.cursor;
-        let pair = (text[start..self.cursor].chars().next(), text[self.cursor..].chars().next());
-        if matches!(pair, (Some('('), Some(')')) | (Some('['), Some(']')) | (Some('{'), Some('}')) | (Some('"'), Some('"')))
-            && self.cursor - start == 1
+        let pair = (
+            text[start..self.cursor].chars().next(),
+            text[self.cursor..].chars().next(),
+        );
+        if matches!(
+            pair,
+            (Some('('), Some(')'))
+                | (Some('['), Some(']'))
+                | (Some('{'), Some('}'))
+                | (Some('"'), Some('"'))
+        ) && self.cursor - start == 1
         {
             end += 1;
         }
@@ -789,7 +840,11 @@ impl EditorState {
             } else if commented {
                 let start = line.len() - line.trim_start().len();
                 let rest = &line[start + prefix.len()..];
-                format!("{}{}", &line[..start], rest.strip_prefix(' ').unwrap_or(rest))
+                format!(
+                    "{}{}",
+                    &line[..start],
+                    rest.strip_prefix(' ').unwrap_or(rest)
+                )
             } else {
                 format!("{}{prefix} {}", &line[..indent], &line[indent..])
             }
@@ -895,7 +950,14 @@ impl EditorState {
         changed
     }
 
-    fn key(&mut self, text: &mut String, language: &str, key: Key, m: Modifiers, page: isize) -> bool {
+    fn key(
+        &mut self,
+        text: &mut String,
+        language: &str,
+        key: Key,
+        m: Modifiers,
+        page: isize,
+    ) -> bool {
         if let Some(changed) = self.assist_key(text, key, m) {
             return changed;
         }
@@ -938,7 +1000,11 @@ impl EditorState {
                 let range = self.line_range(text, line);
                 let indent = text[range.clone()].len() - text[range.clone()].trim_start().len();
                 let first = range.start + indent;
-                let pos = if self.cursor == first { range.start } else { first };
+                let pos = if self.cursor == first {
+                    range.start
+                } else {
+                    first
+                };
                 self.move_to(pos, extend);
                 self.preferred_column = None;
             }
@@ -954,7 +1020,11 @@ impl EditorState {
             Key::M if m.command && m.shift => {
                 // To the bracket that matches the one at the caret.
                 if let Some((a, b)) = self.matching_bracket(text) {
-                    let target = if self.cursor == a || self.cursor == a + 1 { b } else { a };
+                    let target = if self.cursor == a || self.cursor == a + 1 {
+                        b
+                    } else {
+                        a
+                    };
                     self.move_to(target + 1, extend);
                 }
             }
@@ -1000,7 +1070,13 @@ impl EditorState {
             }
             Key::Tab => {
                 if text[self.selection()].contains('\n') {
-                    self.edit_lines(text, |l| if l.is_empty() { l.to_string() } else { format!("{INDENT}{l}") });
+                    self.edit_lines(text, |l| {
+                        if l.is_empty() {
+                            l.to_string()
+                        } else {
+                            format!("{INDENT}{l}")
+                        }
+                    });
                 } else {
                     let column = column_of(self.line(text, line), self.cursor - self.lines[line]);
                     let spaces = INDENT.len() - column % INDENT.len();
@@ -1029,13 +1105,21 @@ impl EditorState {
     fn matching_bracket(&self, text: &str) -> Option<(usize, usize)> {
         const LIMIT: usize = 60_000;
         const PAIRS: [(char, char); 3] = [('(', ')'), ('[', ']'), ('{', '}')];
-        let before = text[..self.cursor].chars().next_back().map(|c| (self.cursor - c.len_utf8(), c));
+        let before = text[..self.cursor]
+            .chars()
+            .next_back()
+            .map(|c| (self.cursor - c.len_utf8(), c));
         let after = text[self.cursor..].chars().next().map(|c| (self.cursor, c));
         // Brackets next to the caret: a closing one before it wins, then an opening one after it.
-        let (at, bracket) = [before.filter(|(_, c)| PAIRS.iter().any(|p| p.1 == *c)), after.filter(|(_, c)| PAIRS.iter().any(|p| p.0 == *c)), before.filter(|(_, c)| PAIRS.iter().any(|p| p.0 == *c)), after.filter(|(_, c)| PAIRS.iter().any(|p| p.1 == *c))]
-            .into_iter()
-            .flatten()
-            .next()?;
+        let (at, bracket) = [
+            before.filter(|(_, c)| PAIRS.iter().any(|p| p.1 == *c)),
+            after.filter(|(_, c)| PAIRS.iter().any(|p| p.0 == *c)),
+            before.filter(|(_, c)| PAIRS.iter().any(|p| p.0 == *c)),
+            after.filter(|(_, c)| PAIRS.iter().any(|p| p.1 == *c)),
+        ]
+        .into_iter()
+        .flatten()
+        .next()?;
         let (open, close) = *PAIRS.iter().find(|p| p.0 == bracket || p.1 == bracket)?;
         let mut depth = 0usize;
         if bracket == open {
@@ -1067,24 +1151,45 @@ impl EditorState {
     // ---- Drawing ------------------------------------------------------------------------
 
     /// Galley of a visible line, colored when highlighting has reached it.
-    fn galley(&mut self, ui: &Ui, text: &str, index: usize, opt: &Options) -> std::sync::Arc<egui::Galley> {
+    fn galley(
+        &mut self,
+        ui: &Ui,
+        text: &str,
+        index: usize,
+        opt: &Options,
+    ) -> std::sync::Arc<egui::Galley> {
         let full = self.line(text, index);
         // A collapsed region: the line up to its opening, a placeholder, the closing.
-        let fold = self.folded_at(index).map(|r| (r.head_end, r.tail_start, r.last));
-        let head = fold.map_or(full.len(), |(head_end, ..)| head_end.saturating_sub(self.lines[index]).min(full.len()));
+        let fold = self
+            .folded_at(index)
+            .map(|r| (r.head_end, r.tail_start, r.last));
+        let head = fold.map_or(full.len(), |(head_end, ..)| {
+            head_end.saturating_sub(self.lines[index]).min(full.len())
+        });
         let line = &full[..head];
         let mut job = egui::text::LayoutJob::default();
         let format = |color| egui::TextFormat::simple(opt.font.clone(), color);
-        let spans = self.highlight.as_mut().and_then(|h| h.line(index, full)).map(|l| l.spans.clone());
+        let spans = self
+            .highlight
+            .as_mut()
+            .and_then(|h| h.line(index, full))
+            .map(|l| l.spans.clone());
         match spans {
             Some(spans) if !spans.is_empty() => {
                 let mut end = 0;
                 for (range, color) in spans {
                     let range = range.start.min(head)..range.end.min(head);
                     if range.start > end {
-                        job.append(&display(&line[end..range.start]), 0.0, format(opt.theme.text));
+                        job.append(
+                            &display(&line[end..range.start]),
+                            0.0,
+                            format(opt.theme.text),
+                        );
                     }
-                    if range.end > range.start && line.is_char_boundary(range.start) && line.is_char_boundary(range.end) {
+                    if range.end > range.start
+                        && line.is_char_boundary(range.start)
+                        && line.is_char_boundary(range.end)
+                    {
                         job.append(&display(&line[range.clone()]), 0.0, format(color));
                         end = range.end;
                     }
@@ -1103,7 +1208,11 @@ impl EditorState {
             job.append("...", 0.0, chip);
             let end = self.line_range(text, last).end;
             if tail_start < end {
-                job.append(&display(&text[tail_start..end]), 0.0, format(opt.theme.text));
+                job.append(
+                    &display(&text[tail_start..end]),
+                    0.0,
+                    format(opt.theme.text),
+                );
             }
         }
         job.wrap.max_width = f32::INFINITY;
@@ -1111,13 +1220,27 @@ impl EditorState {
     }
 
     /// Byte offset under a point of the text area.
-    fn hit(&mut self, ui: &Ui, text: &str, origin: Pos2, row: f32, text_x: f32, pos: Pos2, opt: &Options) -> usize {
+    fn hit(
+        &mut self,
+        ui: &Ui,
+        text: &str,
+        origin: Pos2,
+        row: f32,
+        text_x: f32,
+        pos: Pos2,
+        opt: &Options,
+    ) -> usize {
         let index = self.line_at(((pos.y - origin.y) / row).floor().max(0.0) as usize);
         let galley = self.galley(ui, text, index, opt);
-        let mut column = galley.cursor_from_pos(vec2(pos.x - origin.x - text_x, row / 2.0)).index;
+        let mut column = galley
+            .cursor_from_pos(vec2(pos.x - origin.x - text_x, row / 2.0))
+            .index;
         // On a collapsed line the placeholder and the closing are not text of this line.
         if let Some(r) = self.folded_at(index) {
-            column = column.min(column_of(self.line(text, index), r.head_end - self.lines[index]));
+            column = column.min(column_of(
+                self.line(text, index),
+                r.head_end - self.lines[index],
+            ));
         }
         self.lines[index] + offset_of(self.line(text, index), column)
     }
@@ -1125,19 +1248,37 @@ impl EditorState {
     /// Draws the editor and handles its input.
     pub fn show(&mut self, ui: &mut Ui, id: Id, text: &mut String, opt: &Options) -> Output {
         self.sync(text);
-        if self.highlight.as_ref().is_none_or(|h| h.outdated(opt.language, opt.theme.dark)) {
+        if self
+            .highlight
+            .as_ref()
+            .is_none_or(|h| h.outdated(opt.language, opt.theme.dark))
+        {
             self.highlight = Some(Incremental::new(opt.language, opt.theme.dark));
         }
         self.refresh_folds(text, opt.language);
         self.assist_frame(ui, text, opt);
         let t = opt.theme;
-        let (row, char_width) = ui.fonts_mut(|f| (f.row_height(&opt.font), f.glyph_width(&opt.font, 'M')));
+        let (row, char_width) =
+            ui.fonts_mut(|f| (f.row_height(&opt.font), f.glyph_width(&opt.font, 'M')));
         let row = row.ceil();
-        let annotations: Vec<&str> = opt.annotations.map(|a| a.lines().collect()).unwrap_or_default();
-        let annotation_width = annotations.iter().take(200).map(|a| a.chars().count()).max().unwrap_or(0);
+        let annotations: Vec<&str> = opt
+            .annotations
+            .map(|a| a.lines().collect())
+            .unwrap_or_default();
+        let annotation_width = annotations
+            .iter()
+            .take(200)
+            .map(|a| a.chars().count())
+            .max()
+            .unwrap_or(0);
         let digits = self.lines.len().to_string().len().max(3);
         let annotation_x = 10.0;
-        let numbers_x = annotation_x + if annotation_width > 0 { (annotation_width as f32 + 2.0) * char_width } else { 0.0 };
+        let numbers_x = annotation_x
+            + if annotation_width > 0 {
+                (annotation_width as f32 + 2.0) * char_width
+            } else {
+                0.0
+            };
         let marks_x = numbers_x + digits as f32 * char_width + 6.0;
         let gutter = marks_x + 30.0;
         let text_x = gutter + 4.0;
@@ -1153,11 +1294,16 @@ impl EditorState {
             .id_salt(id)
             .auto_shrink([false, false])
             .show_viewport(ui, |ui, viewport| {
-                let width = (text_x + (self.longest as f32 + 8.0) * char_width).max(ui.available_width());
+                let width =
+                    (text_x + (self.longest as f32 + 8.0) * char_width).max(ui.available_width());
                 let height = self.row_count() as f32 * row + (viewport_height - 2.0 * row).max(0.0);
-                let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::click_and_drag());
+                let (rect, response) =
+                    ui.allocate_exact_size(vec2(width, height), Sense::click_and_drag());
                 let origin = rect.min;
-                if response.clicked() || response.drag_started() || (cfg!(debug_assertions) && std::env::var_os("ATELIER_SHOT_FOCUS").is_some()) {
+                if response.clicked()
+                    || response.drag_started()
+                    || (cfg!(debug_assertions) && std::env::var_os("ATELIER_SHOT_FOCUS").is_some())
+                {
                     response.request_focus();
                 }
                 let focused = response.has_focus();
@@ -1189,7 +1335,8 @@ impl EditorState {
                     popup_click = true;
                     output.changed |= taken;
                 }
-                let over_popup = pointer.is_some_and(|p| self.popup_rect().is_some_and(|r| r.contains(p)));
+                let over_popup =
+                    pointer.is_some_and(|p| self.popup_rect().is_some_and(|r| r.contains(p)));
                 // Ctrl + click goes to the declaration instead of placing the caret.
                 let ctrl = ui.input(|i| i.modifiers.command);
                 if let Some(pos) = pointer
@@ -1221,14 +1368,21 @@ impl EditorState {
                     if row_index >= 0.0 && (row_index as usize) < self.row_count() {
                         let line = self.line_at(row_index as usize);
                         let local_x = pos.x - origin.x - viewport.min.x;
-                        if let Some((open, head_end)) = self.region_at(line).map(|r| (r.open, r.head_end)) {
+                        if let Some((open, head_end)) =
+                            self.region_at(line).map(|r| (r.open, r.head_end))
+                        {
                             let on_marker = local_x >= marks_x + 10.0 && local_x < gutter;
-                            let on_placeholder = local_x >= gutter && self.folded.contains(&open) && {
-                                let galley = self.galley(ui, text, line, opt);
-                                let head = column_of(self.line(text, line), head_end - self.lines[line]);
-                                let x = pos.x - origin.x - text_x;
-                                x >= galley.pos_from_cursor(CCursor::new(head)).min.x - 1.0 && x <= galley.size().x + 2.0
-                            };
+                            let on_placeholder =
+                                local_x >= gutter && self.folded.contains(&open) && {
+                                    let galley = self.galley(ui, text, line, opt);
+                                    let head = column_of(
+                                        self.line(text, line),
+                                        head_end - self.lines[line],
+                                    );
+                                    let x = pos.x - origin.x - text_x;
+                                    x >= galley.pos_from_cursor(CCursor::new(head)).min.x - 1.0
+                                        && x <= galley.size().x + 2.0
+                                };
                             if on_marker || on_placeholder {
                                 self.toggle_fold(open);
                                 self.fold_press = true;
@@ -1246,7 +1400,8 @@ impl EditorState {
                 {
                     let in_gutter = pos.x - origin.x - viewport.min.x < gutter;
                     let at = self.hit(ui, text, origin, row, text_x, pos, opt);
-                    let extend = ui.input(|i| i.modifiers.shift) || !response.drag_started() && response.dragged();
+                    let extend = ui.input(|i| i.modifiers.shift)
+                        || !response.drag_started() && response.dragged();
                     if in_gutter {
                         let line = self.line_of(at);
                         let end = self.lines.get(line + 1).copied().unwrap_or(text.len());
@@ -1284,7 +1439,12 @@ impl EditorState {
                 // What is under the pointer, for the tooltip.
                 let hover_pos = ui.input(|i| i.pointer.hover_pos());
                 let hover_offset = hover_pos
-                    .filter(|p| response.hovered() && !over_popup && !gutter_rect.contains(*p) && !response.dragged())
+                    .filter(|p| {
+                        response.hovered()
+                            && !over_popup
+                            && !gutter_rect.contains(*p)
+                            && !response.dragged()
+                    })
                     .and_then(|p| {
                         let index = ((p.y - origin.y) / row).floor();
                         if index < 0.0 || index as usize >= self.row_count() {
@@ -1293,7 +1453,8 @@ impl EditorState {
                         let index = self.line_at(index as usize);
                         let galley = self.galley(ui, text, index, opt);
                         let x = p.x - origin.x - text_x;
-                        (x >= 0.0 && x <= galley.size().x + 2.0).then(|| self.hit(ui, text, origin, row, text_x, p, opt))
+                        (x >= 0.0 && x <= galley.size().x + 2.0)
+                            .then(|| self.hit(ui, text, origin, row, text_x, p, opt))
                     });
                 self.assist_list_mouse(ui, hover_pos);
                 self.assist_hover(ui, text, opt, hover_offset, ctrl);
@@ -1317,7 +1478,8 @@ impl EditorState {
                     }
                 });
 
-                let first = ((viewport.min.y / row).floor().max(0.0) as usize).min(self.row_count());
+                let first =
+                    ((viewport.min.y / row).floor().max(0.0) as usize).min(self.row_count());
                 let last = (((viewport.max.y / row).ceil() as usize) + 1).min(self.row_count());
                 // Highlighting: the visible lines first, then the rest of the file, a few
                 // milliseconds per frame.
@@ -1344,7 +1506,10 @@ impl EditorState {
                 for shown in first..last {
                     let index = self.line_at(shown);
                     let y = origin.y + shown as f32 * row;
-                    let row_rect = Rect::from_min_max(pos2(origin.x, y), pos2(rect.right().max(ui.clip_rect().right()), y + row));
+                    let row_rect = Rect::from_min_max(
+                        pos2(origin.x, y),
+                        pos2(rect.right().max(ui.clip_rect().right()), y + row),
+                    );
                     if index == caret_line && selection.is_empty() {
                         painter.rect_filled(row_rect, 0.0, t.caret_row);
                     }
@@ -1352,34 +1517,103 @@ impl EditorState {
                     let range = self.line_range(text, index);
                     // Selection on this line, including its line break.
                     let line_end = self.lines.get(index + 1).copied().unwrap_or(text.len());
-                    if selection.start < line_end.max(range.end + 1) && selection.end > range.start && !selection.is_empty() {
+                    if selection.start < line_end.max(range.end + 1)
+                        && selection.end > range.start
+                        && !selection.is_empty()
+                    {
                         let line = self.line(text, index);
                         let from = column_of(line, selection.start.saturating_sub(range.start));
                         let to_end = selection.end > range.end;
-                        let to = column_of(line, selection.end.min(range.end) - range.start.min(selection.end.min(range.end)));
+                        let to = column_of(
+                            line,
+                            selection.end.min(range.end)
+                                - range.start.min(selection.end.min(range.end)),
+                        );
                         let x0 = galley.pos_from_cursor(CCursor::new(from)).min.x;
-                        let x1 = galley.pos_from_cursor(CCursor::new(to)).min.x + if to_end { char_width * 0.6 } else { 0.0 };
+                        let x1 = galley.pos_from_cursor(CCursor::new(to)).min.x
+                            + if to_end { char_width * 0.6 } else { 0.0 };
                         painter.rect_filled(
-                            Rect::from_min_max(pos2(text_left + x0, y), pos2(text_left + x1, y + row)),
+                            Rect::from_min_max(
+                                pos2(text_left + x0, y),
+                                pos2(text_left + x1, y + row),
+                            ),
                             0.0,
                             t.text_selection,
                         );
                     }
-                    self.range_highlights(&painter, text, range.clone(), &galley, text_left, y, row, Color32::from_rgba_unmultiplied(255, 200, 40, 70), opt.search);
-                    self.usage_highlights(&painter, text, range.clone(), &galley, text_left, y, row, t.accent.gamma_multiply(0.2));
-                    self.bracket_highlights(&painter, text, range.clone(), &galley, text_left, y, row, t.accent.gamma_multiply(0.35), pair);
-                    painter.galley(pos2(text_left, y + (row - galley.size().y) / 2.0), galley.clone(), t.text);
-                    self.squiggles(&painter, text, range.clone(), &galley, text_left, y, row, char_width);
-                    self.link_underline(&painter, text, range.clone(), &galley, text_left, y, row, t.link);
+                    self.range_highlights(
+                        &painter,
+                        text,
+                        range.clone(),
+                        &galley,
+                        text_left,
+                        y,
+                        row,
+                        Color32::from_rgba_unmultiplied(255, 200, 40, 70),
+                        opt.search,
+                    );
+                    self.usage_highlights(
+                        &painter,
+                        text,
+                        range.clone(),
+                        &galley,
+                        text_left,
+                        y,
+                        row,
+                        t.accent.gamma_multiply(0.2),
+                    );
+                    self.bracket_highlights(
+                        &painter,
+                        text,
+                        range.clone(),
+                        &galley,
+                        text_left,
+                        y,
+                        row,
+                        t.accent.gamma_multiply(0.35),
+                        pair,
+                    );
+                    painter.galley(
+                        pos2(text_left, y + (row - galley.size().y) / 2.0),
+                        galley.clone(),
+                        t.text,
+                    );
+                    self.squiggles(
+                        &painter,
+                        text,
+                        range.clone(),
+                        &galley,
+                        text_left,
+                        y,
+                        row,
+                        char_width,
+                    );
+                    self.link_underline(
+                        &painter,
+                        text,
+                        range.clone(),
+                        &galley,
+                        text_left,
+                        y,
+                        row,
+                        t.link,
+                    );
                     if index == caret_line && focused {
                         let blink = self.activity.elapsed().as_secs_f32();
                         if blink < 0.6 || (blink * 1.2) as u32 % 2 == 0 {
-                            let column = column_of(self.line(text, index), self.cursor - range.start);
+                            let column =
+                                column_of(self.line(text, index), self.cursor - range.start);
                             let x = text_left + galley.pos_from_cursor(CCursor::new(column)).min.x;
-                            painter.line_segment([pos2(x, y + 1.0), pos2(x, y + row - 1.0)], Stroke::new(2.0_f32, t.text));
+                            painter.line_segment(
+                                [pos2(x, y + 1.0), pos2(x, y + row - 1.0)],
+                                Stroke::new(2.0_f32, t.text),
+                            );
                             let caret = Rect::from_min_size(pos2(x, y), vec2(2.0, row));
                             ui.ctx().output_mut(|o| {
-                                o.ime = Some(egui::output::IMEOutput { rect, cursor_rect: caret })
+                                o.ime = Some(egui::output::IMEOutput {
+                                    rect,
+                                    cursor_rect: caret,
+                                })
                             });
                         }
                         ui.ctx().request_repaint_after(Duration::from_millis(500));
@@ -1398,18 +1632,36 @@ impl EditorState {
                     let index = self.line_at(shown);
                     let y = origin.y + shown as f32 * row;
                     if index == caret_line && selection.is_empty() {
-                        painter.rect_filled(Rect::from_min_max(pos2(left, y), pos2(left + gutter, y + row)), 0.0, t.caret_row);
+                        painter.rect_filled(
+                            Rect::from_min_max(pos2(left, y), pos2(left + gutter, y + row)),
+                            0.0,
+                            t.caret_row,
+                        );
                     }
                     if let Some(open) = self.region_at(index).map(|r| r.open) {
                         let folded = self.folded.contains(&open);
                         if folded || gutter_hot {
-                            crate::ui::paint_chevron(ui, pos2(left + marks_x + 20.0, y + row / 2.0), !folded);
+                            crate::ui::paint_chevron(
+                                ui,
+                                pos2(left + marks_x + 20.0, y + row / 2.0),
+                                !folded,
+                            );
                         }
                     }
                     if let Some(annotation) = annotations.get(index) {
-                        painter.text(pos2(left + annotation_x, y + row / 2.0), egui::Align2::LEFT_CENTER, annotation, opt.font.clone(), t.text_secondary);
+                        painter.text(
+                            pos2(left + annotation_x, y + row / 2.0),
+                            egui::Align2::LEFT_CENTER,
+                            annotation,
+                            opt.font.clone(),
+                            t.text_secondary,
+                        );
                     }
-                    let color = if index == caret_line { t.line_number_current } else { t.line_number };
+                    let color = if index == caret_line {
+                        t.line_number_current
+                    } else {
+                        t.line_number
+                    };
                     painter.text(
                         pos2(left + marks_x - 6.0, y + row / 2.0),
                         egui::Align2::RIGHT_CENTER,
@@ -1441,7 +1693,10 @@ impl EditorState {
                     let column = column_of(self.line(text, line), self.cursor - self.lines[line]);
                     let x = origin.x + text_x + column as f32 * char_width;
                     let y = origin.y + self.row_of(line) as f32 * row;
-                    let target = Rect::from_min_max(pos2(x - gutter - 2.0 * char_width, y - row), pos2(x + 4.0 * char_width, y + 2.0 * row));
+                    let target = Rect::from_min_max(
+                        pos2(x - gutter - 2.0 * char_width, y - row),
+                        pos2(x + 4.0 * char_width, y + 2.0 * row),
+                    );
                     ui.scroll_to_rect(target, None);
                 }
                 let _: Color32 = t.text;
@@ -1492,7 +1747,10 @@ mod tests {
         assert_eq!(s.line_of(text.len()), 4);
         let mut fresh = state(&text);
         fresh.sync(&text);
-        assert_eq!(fresh.lines, s.lines, "incremental index equals a full rebuild");
+        assert_eq!(
+            fresh.lines, s.lines,
+            "incremental index equals a full rebuild"
+        );
     }
 
     #[test]
@@ -1643,7 +1901,8 @@ next();
 function a() {
   one();
 }
-".to_string();
+"
+        .to_string();
         let mut s = folding(&text);
         s.fold_caret(true);
         assert!(s.folded.is_empty(), "no region around the first line");
@@ -1651,10 +1910,18 @@ function a() {
         s.fold_caret(true);
         assert_eq!(s.folded.len(), 1);
         assert_eq!(s.line_of(s.cursor), 1, "the caret stays on the first line");
-        s.replace_range(&mut text, 0..0, "y();
-");
+        s.replace_range(
+            &mut text,
+            0..0,
+            "y();
+",
+        );
         s.refresh_folds(&text, "js");
-        assert_eq!(s.folded.len(), 1, "an edit above keeps the region collapsed");
+        assert_eq!(
+            s.folded.len(),
+            1,
+            "an edit above keeps the region collapsed"
+        );
         assert_eq!(s.row_count(), 4);
         s.select(text.find("one").unwrap(), text.find("one").unwrap());
         s.refresh_folds(&text, "js");

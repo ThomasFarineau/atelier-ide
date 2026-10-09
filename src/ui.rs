@@ -758,7 +758,13 @@ pub fn menu_begin(ui: &mut Ui) {
 
 /// A menu entry: optional icon, label, optional shortcut on the right. `danger` colors it as
 /// an error (delete…). Closes the menu on click, as the caller reads `clicked()`.
-pub fn menu_item(ui: &mut Ui, icon: Option<&str>, label: &str, shortcut: Option<&str>, danger: bool) -> Response {
+pub fn menu_item(
+    ui: &mut Ui,
+    icon: Option<&str>,
+    label: &str,
+    shortcut: Option<&str>,
+    danger: bool,
+) -> Response {
     menu_entry(ui, icon, label, shortcut, danger, true)
 }
 
@@ -772,7 +778,11 @@ pub fn menu_entry(
 ) -> Response {
     let t = theme(ui.ctx());
     let width = ui.available_width().max(MENU_WIDTH - 12.0);
-    let sense = if enabled { Sense::click() } else { Sense::hover() };
+    let sense = if enabled {
+        Sense::click()
+    } else {
+        Sense::hover()
+    };
     let (rect, response) = ui.allocate_exact_size(vec2(width, MENU_ROW), sense);
     if enabled && response.hovered() {
         ui.painter().rect_filled(rect, 6.0, t.selection);
@@ -783,12 +793,15 @@ pub fn menu_entry(
         (true, false) => t.text,
     };
     if let Some(icon) = icon {
-        let slot = Rect::from_center_size(pos2(rect.left() + 18.0, rect.center().y), vec2(16.0, 16.0));
+        let slot =
+            Rect::from_center_size(pos2(rect.left() + 18.0, rect.center().y), vec2(16.0, 16.0));
         let image = self::icon(ui, icon);
         if enabled {
             image.paint_at(ui, slot);
         } else {
-            image.tint(Color32::from_white_alpha(100)).paint_at(ui, slot);
+            image
+                .tint(Color32::from_white_alpha(100))
+                .paint_at(ui, slot);
         }
     }
     ui.painter().text(
@@ -856,10 +869,26 @@ pub fn status_text(ui: &mut Ui, text: &str) -> Response {
 pub fn status_text_fixed(ui: &mut Ui, text: &str, widest: &str) -> Response {
     let t = theme(ui.ctx());
     let font = FontId::proportional(12.5);
-    let width = ui.painter().layout_no_wrap(widest.into(), font.clone(), t.text_secondary).size().x;
-    let galley = ui.painter().layout_no_wrap(text.into(), font, t.text_secondary);
-    let (rect, response) = ui.allocate_exact_size(vec2(width.max(galley.size().x) + 14.0, 24.0), Sense::hover());
-    ui.painter().galley(egui::pos2(rect.right() - 7.0 - galley.size().x, rect.center().y - galley.size().y / 2.0), galley, t.text_secondary);
+    let width = ui
+        .painter()
+        .layout_no_wrap(widest.into(), font.clone(), t.text_secondary)
+        .size()
+        .x;
+    let galley = ui
+        .painter()
+        .layout_no_wrap(text.into(), font, t.text_secondary);
+    let (rect, response) = ui.allocate_exact_size(
+        vec2(width.max(galley.size().x) + 14.0, 24.0),
+        Sense::hover(),
+    );
+    ui.painter().galley(
+        egui::pos2(
+            rect.right() - 7.0 - galley.size().x,
+            rect.center().y - galley.size().y / 2.0,
+        ),
+        galley,
+        t.text_secondary,
+    );
     response
 }
 
@@ -889,12 +918,26 @@ mod tests {
         let plain = crate::icon_set::find("msoffice/icon").unwrap();
         assert!(plain.variants[1].is_none() && plain.variants[2].is_none());
         assert_eq!(
-            crate::icon_set::source("msoffice/icon", true).unwrap().uri(),
-            crate::icon_set::source("msoffice/icon", false).unwrap().uri()
+            crate::icon_set::source("msoffice/icon", true)
+                .unwrap()
+                .uri(),
+            crate::icon_set::source("msoffice/icon", false)
+                .unwrap()
+                .uri()
         );
         // A name that exists nowhere falls back to a dot instead of failing.
-        assert!(icon_source("nope", true).uri().unwrap().contains("moreHorizontal"));
-        assert!(icon_on_accent("project").uri().unwrap().contains("ui-white"));
+        assert!(
+            icon_source("nope", true)
+                .uri()
+                .unwrap()
+                .contains("moreHorizontal")
+        );
+        assert!(
+            icon_on_accent("project")
+                .uri()
+                .unwrap()
+                .contains("ui-white")
+        );
     }
 
     #[test]

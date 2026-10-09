@@ -6,12 +6,12 @@ use super::{
     builtins,
 };
 use crate::languages::typescript;
-use tree_sitter::Node;
 use crate::languages::{Completion, CompletionItem, ItemKind};
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
 };
+use tree_sitter::Node;
 
 /// Largest document analyzed.
 pub const MAX_TEXT: usize = 1_000_000;
@@ -45,7 +45,12 @@ pub fn word_start(text: &str, offset: usize) -> usize {
 
 /// Candidates at `offset`. None when completion makes no sense there (a comment, a name being
 /// declared, nothing typed yet).
-pub fn complete(text: &str, offset: usize, explicit: bool, path: Option<&Path>) -> Option<Completion> {
+pub fn complete(
+    text: &str,
+    offset: usize,
+    explicit: bool,
+    path: Option<&Path>,
+) -> Option<Completion> {
     if text.len() > MAX_TEXT {
         return None;
     }
@@ -77,11 +82,22 @@ pub fn complete(text: &str, offset: usize, explicit: bool, path: Option<&Path>) 
         .rev()
         .collect();
     let declaring: &[&str] = if dialect().is_ts() {
-        &["function", "class", "const", "let", "var", "interface", "type", "enum", "namespace"]
+        &[
+            "function",
+            "class",
+            "const",
+            "let",
+            "var",
+            "interface",
+            "type",
+            "enum",
+            "namespace",
+        ]
     } else {
         &["function", "class", "const", "let", "var"]
     };
-    if !explicit && declaring.contains(&last_word.as_str()) && before.ends_with(char::is_whitespace) {
+    if !explicit && declaring.contains(&last_word.as_str()) && before.ends_with(char::is_whitespace)
+    {
         return None;
     }
     if typed.chars().next().is_some_and(|c| c.is_ascii_digit()) {
@@ -152,7 +168,9 @@ fn patched(text: &str, from: usize, end: usize, suffix: &str) -> Option<(Analysi
 }
 
 fn leaf_at<'a>(analysis: &'a Analysis, from: usize) -> Option<Node<'a>> {
-    analysis.root().descendant_for_byte_range(from, from + PLACEHOLDER.len())
+    analysis
+        .root()
+        .descendant_for_byte_range(from, from + PLACEHOLDER.len())
 }
 
 /// Whether the node sits where a type goes.
@@ -160,12 +178,29 @@ fn in_type(leaf: Node, from: usize) -> bool {
     let mut node = Some(leaf);
     while let Some(n) = node {
         match n.kind() {
-            "type_annotation" | "type_arguments" | "extends_type_clause" | "implements_clause" | "union_type" | "intersection_type" | "array_type" | "generic_type" | "constraint" | "default_type" => return true,
-            "type_alias_declaration" => return n.child_by_field_name("value").is_some_and(|v| v.start_byte() <= from && from <= v.end_byte()),
-            "as_expression" | "satisfies_expression" => {
-                return n.named_child(n.named_child_count().saturating_sub(1) as u32).is_some_and(|t| t.start_byte() <= from && from <= t.end_byte());
+            "type_annotation"
+            | "type_arguments"
+            | "extends_type_clause"
+            | "implements_clause"
+            | "union_type"
+            | "intersection_type"
+            | "array_type"
+            | "generic_type"
+            | "constraint"
+            | "default_type" => return true,
+            "type_alias_declaration" => {
+                return n
+                    .child_by_field_name("value")
+                    .is_some_and(|v| v.start_byte() <= from && from <= v.end_byte());
             }
-            "statement_block" | "program" | "arguments" | "object" | "formal_parameters" => return false,
+            "as_expression" | "satisfies_expression" => {
+                return n
+                    .named_child(n.named_child_count().saturating_sub(1) as u32)
+                    .is_some_and(|t| t.start_byte() <= from && from <= t.end_byte());
+            }
+            "statement_block" | "program" | "arguments" | "object" | "formal_parameters" => {
+                return false;
+            }
             _ => node = n.parent(),
         }
     }
@@ -175,8 +210,12 @@ fn in_type(leaf: Node, from: usize) -> bool {
 /// In a type: the types in scope, the type parameters around, and the ones of the language.
 fn type_completion(text: &str, from: usize, end: usize, offset: usize) -> Option<Completion> {
     for suffix in ["", ";"] {
-        let Some((analysis, from)) = patched(text, from, end, suffix) else { continue };
-        let Some(leaf) = leaf_at(&analysis, from) else { continue };
+        let Some((analysis, from)) = patched(text, from, end, suffix) else {
+            continue;
+        };
+        let Some(leaf) = leaf_at(&analysis, from) else {
+            continue;
+        };
         if leaf.kind() != "type_identifier" && !in_type(leaf, from) {
             continue;
         }
@@ -191,7 +230,11 @@ fn type_completion(text: &str, from: usize, end: usize, offset: usize) -> Option
                     if let Some(name) = parameter.child_by_field_name("name") {
                         let name = analysis.text[name.byte_range()].to_string();
                         if seen.insert(name.clone()) {
-                            items.push(CompletionItem::new(name, ItemKind::Interface).detail("paramètre de type").rank(5));
+                            items.push(
+                                CompletionItem::new(name, ItemKind::Interface)
+                                    .detail("paramètre de type")
+                                    .rank(5),
+                            );
                         }
                     }
                 }
@@ -201,7 +244,12 @@ fn type_completion(text: &str, from: usize, end: usize, offset: usize) -> Option
         for (index, decl) in analysis.visible(from).into_iter().enumerate() {
             let is_type = matches!(
                 decl.kind,
-                DeclKind::Class | DeclKind::Interface | DeclKind::TypeAlias | DeclKind::Enum | DeclKind::Import | DeclKind::Namespace
+                DeclKind::Class
+                    | DeclKind::Interface
+                    | DeclKind::TypeAlias
+                    | DeclKind::Enum
+                    | DeclKind::Import
+                    | DeclKind::Namespace
             );
             if is_type && seen.insert(decl.name.clone()) {
                 items.push(local_item(&analysis, decl, index));
@@ -224,7 +272,9 @@ fn expected_type(analysis: &Analysis, object: Node, depth: usize) -> Ty {
         return Ty::Unknown;
     }
     let at = object.start_byte();
-    let Some(parent) = object.parent() else { return Ty::Unknown };
+    let Some(parent) = object.parent() else {
+        return Ty::Unknown;
+    };
     match parent.kind() {
         "variable_declarator" => parent
             .child_by_field_name("type")
@@ -236,8 +286,16 @@ fn expected_type(analysis: &Analysis, object: Node, depth: usize) -> Ty {
         "return_statement" => {
             let mut node = parent.parent();
             while let Some(n) = node {
-                if matches!(n.kind(), "function_declaration" | "arrow_function" | "function_expression" | "method_definition") {
-                    return n.child_by_field_name("return_type").map_or(Ty::Unknown, |t| analysis.ty_from_type(t, at, 0));
+                if matches!(
+                    n.kind(),
+                    "function_declaration"
+                        | "arrow_function"
+                        | "function_expression"
+                        | "method_definition"
+                ) {
+                    return n
+                        .child_by_field_name("return_type")
+                        .map_or(Ty::Unknown, |t| analysis.ty_from_type(t, at, 0));
                 }
                 node = n.parent();
             }
@@ -245,24 +303,45 @@ fn expected_type(analysis: &Analysis, object: Node, depth: usize) -> Ty {
         }
         // A property of an object that has an expected type.
         "pair" => {
-            let (Some(key), Some(outer)) = (parent.child_by_field_name("key"), parent.parent().filter(|o| o.kind() == "object")) else {
+            let (Some(key), Some(outer)) = (
+                parent.child_by_field_name("key"),
+                parent.parent().filter(|o| o.kind() == "object"),
+            ) else {
                 return Ty::Unknown;
             };
-            let name = analysis.text[key.byte_range()].trim_matches(['"', '\'']).to_string();
+            let name = analysis.text[key.byte_range()]
+                .trim_matches(['"', '\''])
+                .to_string();
             let outer_ty = expected_type(analysis, outer, depth + 1);
-            analysis.props_of(&outer_ty, at).into_iter().find(|p| p.name == name).map_or(Ty::Unknown, |p| p.ty)
+            analysis
+                .props_of(&outer_ty, at)
+                .into_iter()
+                .find(|p| p.name == name)
+                .map_or(Ty::Unknown, |p| p.ty)
         }
         // An argument of a call to a function declared here.
         "arguments" => {
-            let Some(call) = parent.parent().filter(|c| c.kind() == "call_expression") else { return Ty::Unknown };
+            let Some(call) = parent.parent().filter(|c| c.kind() == "call_expression") else {
+                return Ty::Unknown;
+            };
             let index = {
                 let mut cursor = parent.walk();
-                parent.named_children(&mut cursor).position(|a| a.id() == object.id())
+                parent
+                    .named_children(&mut cursor)
+                    .position(|a| a.id() == object.id())
             };
-            let (Some(callee), Some(index)) = (call.child_by_field_name("function"), index) else { return Ty::Unknown };
-            let Ty::Function(function) = analysis.ty(callee, at, 0) else { return Ty::Unknown };
-            let Some(function) = analysis.node_at_range(&function) else { return Ty::Unknown };
-            let Some(parameters) = function.child_by_field_name("parameters") else { return Ty::Unknown };
+            let (Some(callee), Some(index)) = (call.child_by_field_name("function"), index) else {
+                return Ty::Unknown;
+            };
+            let Ty::Function(function) = analysis.ty(callee, at, 0) else {
+                return Ty::Unknown;
+            };
+            let Some(function) = analysis.node_at_range(&function) else {
+                return Ty::Unknown;
+            };
+            let Some(parameters) = function.child_by_field_name("parameters") else {
+                return Ty::Unknown;
+            };
             let mut cursor = parameters.walk();
             parameters
                 .named_children(&mut cursor)
@@ -298,7 +377,11 @@ fn object_key_completion(text: &str, from: usize, end: usize, offset: usize) -> 
             _ => None,
         };
         if let Some(key) = key {
-            given.insert(analysis.text[key.byte_range()].trim_matches(['"', '\'']).to_string());
+            given.insert(
+                analysis.text[key.byte_range()]
+                    .trim_matches(['"', '\''])
+                    .to_string(),
+            );
         }
     }
     let mut items: Vec<CompletionItem> = Vec::new();
@@ -306,9 +389,16 @@ fn object_key_completion(text: &str, from: usize, end: usize, offset: usize) -> 
         if given.contains(&prop.name) || prop.name == PLACEHOLDER {
             continue;
         }
-        let mut item = CompletionItem::new(prop.name.clone(), if prop.method { ItemKind::Method } else { ItemKind::Property })
-            .rank(10 + index.min(60) as u32)
-            .insert(format!("{}: ", prop.name), None);
+        let mut item = CompletionItem::new(
+            prop.name.clone(),
+            if prop.method {
+                ItemKind::Method
+            } else {
+                ItemKind::Property
+            },
+        )
+        .rank(10 + index.min(60) as u32)
+        .insert(format!("{}: ", prop.name), None);
         if !prop.detail.is_empty() {
             item = item.detail(prop.detail.clone());
         }
@@ -354,7 +444,10 @@ fn words(text: &str, skip_from: usize, skip_to: usize) -> Vec<String> {
     let mut found: Vec<String> = Vec::new();
     let mut seen = HashSet::new();
     let mut start: Option<usize> = None;
-    for (i, c) in text.char_indices().chain(std::iter::once((text.len(), ' '))) {
+    for (i, c) in text
+        .char_indices()
+        .chain(std::iter::once((text.len(), ' ')))
+    {
         match (is_ident(c), start) {
             (true, None) => start = Some(i),
             (false, Some(s)) => {
@@ -388,7 +481,14 @@ fn is_member_dot(before: &str) -> bool {
     if rest.ends_with('.') {
         return false;
     }
-    let word: String = rest.chars().rev().take_while(|c| is_ident(*c)).collect::<Vec<_>>().into_iter().rev().collect();
+    let word: String = rest
+        .chars()
+        .rev()
+        .take_while(|c| is_ident(*c))
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
     !word.chars().next().is_some_and(|c| c.is_ascii_digit())
 }
 
@@ -439,7 +539,11 @@ fn member_completion(text: &str, from: usize, offset: usize) -> Option<Completio
 }
 
 fn prop_item(prop: &Prop, index: usize, call_follows: bool) -> CompletionItem {
-    let kind = if prop.method { ItemKind::Method } else { ItemKind::Property };
+    let kind = if prop.method {
+        ItemKind::Method
+    } else {
+        ItemKind::Property
+    };
     // Own members first, then those every object has.
     let mut item = CompletionItem::new(prop.name.clone(), kind).rank(10 + index.min(60) as u32);
     if !prop.detail.is_empty() {
@@ -451,7 +555,11 @@ fn prop_item(prop: &Prop, index: usize, call_follows: bool) -> CompletionItem {
     if prop.method && !call_follows {
         let name = &prop.name;
         // The caret goes between the parentheses, unless the method takes nothing.
-        let caret = if prop.detail.starts_with("()") { name.len() + 2 } else { name.len() + 1 };
+        let caret = if prop.detail.starts_with("()") {
+            name.len() + 2
+        } else {
+            name.len() + 1
+        };
         item = item.insert(format!("{name}()"), Some(caret));
     }
     item
@@ -466,7 +574,11 @@ fn words_as_members(text: &str, from: usize, offset: usize) -> Vec<CompletionIte
 
 /// Inside a comment: nothing. Inside the module string of an import or require: paths.
 /// None when the position is ordinary code.
-fn in_string_or_comment(text: &str, offset: usize, path: Option<&Path>) -> Option<Option<Completion>> {
+fn in_string_or_comment(
+    text: &str,
+    offset: usize,
+    path: Option<&Path>,
+) -> Option<Option<Completion>> {
     let analysis = Analysis::new(text)?;
     let leaf = analysis
         .root()
@@ -514,9 +626,35 @@ fn in_string_or_comment(text: &str, offset: usize, path: Option<&Path>) -> Optio
 }
 
 pub const NODE_MODULES: &[&str] = &[
-    "assert", "buffer", "child_process", "cluster", "crypto", "dns", "events", "fs", "http", "http2", "https", "module",
-    "net", "os", "path", "perf_hooks", "process", "querystring", "readline", "stream", "string_decoder", "timers",
-    "tls", "url", "util", "v8", "vm", "worker_threads", "zlib",
+    "assert",
+    "buffer",
+    "child_process",
+    "cluster",
+    "crypto",
+    "dns",
+    "events",
+    "fs",
+    "http",
+    "http2",
+    "https",
+    "module",
+    "net",
+    "os",
+    "path",
+    "perf_hooks",
+    "process",
+    "querystring",
+    "readline",
+    "stream",
+    "string_decoder",
+    "timers",
+    "tls",
+    "url",
+    "util",
+    "v8",
+    "vm",
+    "worker_threads",
+    "zlib",
 ];
 
 /// Files, folders and packages for the module string `typed` (what is between the quote and
@@ -565,16 +703,32 @@ fn module_paths(typed: &str, start: usize, path: Option<&Path>) -> Option<Comple
                             items.push(item);
                         } else {
                             let name = item.label.trim_end_matches('/').to_string();
-                            items.push(CompletionItem::new(name, ItemKind::Module).detail("node_modules").rank(6));
+                            items.push(
+                                CompletionItem::new(name, ItemKind::Module)
+                                    .detail("node_modules")
+                                    .rank(6),
+                            );
                         }
                     }
                 }
                 for name in package_dependencies(base) {
-                    items.push(CompletionItem::new(name, ItemKind::Module).detail("package.json").rank(5));
+                    items.push(
+                        CompletionItem::new(name, ItemKind::Module)
+                            .detail("package.json")
+                            .rank(5),
+                    );
                 }
                 for name in NODE_MODULES {
-                    items.push(CompletionItem::new(*name, ItemKind::Module).detail("Node.js").rank(20));
-                    items.push(CompletionItem::new(format!("node:{name}"), ItemKind::Module).detail("Node.js").rank(21));
+                    items.push(
+                        CompletionItem::new(*name, ItemKind::Module)
+                            .detail("Node.js")
+                            .rank(20),
+                    );
+                    items.push(
+                        CompletionItem::new(format!("node:{name}"), ItemKind::Module)
+                            .detail("Node.js")
+                            .rank(21),
+                    );
                 }
             }
         }
@@ -603,9 +757,15 @@ fn list_dir(dir: &Path, only_modules: bool) -> Vec<CompletionItem> {
             );
         } else {
             let wanted = !only_modules
-                || Path::new(&name).extension().and_then(|e| e.to_str()).is_some_and(|e| {
-                    matches!(e.to_ascii_lowercase().as_str(), "js" | "mjs" | "cjs" | "jsx" | "ts" | "tsx" | "json" | "node")
-                });
+                || Path::new(&name)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|e| {
+                        matches!(
+                            e.to_ascii_lowercase().as_str(),
+                            "js" | "mjs" | "cjs" | "jsx" | "ts" | "tsx" | "json" | "node"
+                        )
+                    });
             if wanted && !name.starts_with('.') {
                 items.push(CompletionItem::new(name, ItemKind::File).rank(11));
             }
@@ -622,7 +782,12 @@ pub fn package_dependencies(base: Option<&Path>) -> Vec<String> {
             && let Ok(json) = serde_json::from_str::<serde_json::Value>(&text)
         {
             let mut names = Vec::new();
-            for key in ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"] {
+            for key in [
+                "dependencies",
+                "devDependencies",
+                "peerDependencies",
+                "optionalDependencies",
+            ] {
                 if let Some(map) = json.get(key).and_then(|v| v.as_object()) {
                     names.extend(map.keys().cloned());
                 }
@@ -657,16 +822,31 @@ mod tests {
         for expected in ["alpha", "beta", "gamma", "console", "const", "setTimeout"] {
             assert!(names.contains(&expected), "{expected} in {names:?}");
         }
-        let alpha = completion.items.iter().find(|i| i.label == "alpha").unwrap();
+        let alpha = completion
+            .items
+            .iter()
+            .find(|i| i.label == "alpha")
+            .unwrap();
         assert_eq!(alpha.detail.as_deref(), Some("number"));
-        assert!(completion.items.iter().find(|i| i.label == "setTimeout").unwrap().insert.ends_with("()"));
+        assert!(
+            completion
+                .items
+                .iter()
+                .find(|i| i.label == "setTimeout")
+                .unwrap()
+                .insert
+                .ends_with("()")
+        );
     }
 
     #[test]
     fn nothing_is_offered_before_typing_or_when_declaring_a_name() {
         let (text, offset) = at("let a = 1;\n|");
         assert!(complete(&text, offset, false, None).is_none());
-        assert!(complete(&text, offset, true, None).is_some(), "explicit request");
+        assert!(
+            complete(&text, offset, true, None).is_some(),
+            "explicit request"
+        );
         let (text, offset) = at("const na|");
         assert!(complete(&text, offset, false, None).is_none());
         let (text, offset) = at("// a comment wi|th words\n");
@@ -681,12 +861,31 @@ mod tests {
         let completion = complete(&text, offset, false, None).unwrap();
         assert_eq!(completion.from, offset);
         let names = labels(&completion);
-        assert!(names.contains(&"toUpperCase") && names.contains(&"length"), "{names:?}");
-        let upper = completion.items.iter().find(|i| i.label == "toUpperCase").unwrap();
+        assert!(
+            names.contains(&"toUpperCase") && names.contains(&"length"),
+            "{names:?}"
+        );
+        let upper = completion
+            .items
+            .iter()
+            .find(|i| i.label == "toUpperCase")
+            .unwrap();
         assert_eq!(upper.insert, "toUpperCase()");
-        assert_eq!(upper.caret, Some("toUpperCase".len() + 2), "no parameters: caret after the parentheses");
-        let split = completion.items.iter().find(|i| i.label == "split").unwrap();
-        assert_eq!(split.caret, Some("split".len() + 1), "caret inside the parentheses");
+        assert_eq!(
+            upper.caret,
+            Some("toUpperCase".len() + 2),
+            "no parameters: caret after the parentheses"
+        );
+        let split = completion
+            .items
+            .iter()
+            .find(|i| i.label == "split")
+            .unwrap();
+        assert_eq!(
+            split.caret,
+            Some("split".len() + 1),
+            "caret inside the parentheses"
+        );
 
         let (text, offset) = at("console.lo|\n");
         let completion = complete(&text, offset, false, None).unwrap();
@@ -694,12 +893,29 @@ mod tests {
         assert!(labels(&completion).contains(&"log"));
 
         let (text, offset) = at("const o = { first: 1, second() {} };\nfunction f() { o.| }\n");
-        let names: Vec<String> = complete(&text, offset, false, None).unwrap().items.into_iter().map(|i| i.label).collect();
-        assert!(names.contains(&"first".to_string()) && names.contains(&"second".to_string()), "{names:?}");
+        let names: Vec<String> = complete(&text, offset, false, None)
+            .unwrap()
+            .items
+            .into_iter()
+            .map(|i| i.label)
+            .collect();
+        assert!(
+            names.contains(&"first".to_string()) && names.contains(&"second".to_string()),
+            "{names:?}"
+        );
 
-        let (text, offset) = at("class A { go() {} constructor() { this.x = 1; } run() { this.| } }\n");
-        let names: Vec<String> = complete(&text, offset, false, None).unwrap().items.into_iter().map(|i| i.label).collect();
-        assert!(names.contains(&"go".to_string()) && names.contains(&"x".to_string()), "{names:?}");
+        let (text, offset) =
+            at("class A { go() {} constructor() { this.x = 1; } run() { this.| } }\n");
+        let names: Vec<String> = complete(&text, offset, false, None)
+            .unwrap()
+            .items
+            .into_iter()
+            .map(|i| i.label)
+            .collect();
+        assert!(
+            names.contains(&"go".to_string()) && names.contains(&"x".to_string()),
+            "{names:?}"
+        );
 
         let (text, offset) = at("'a,b'.split(',').|\n");
         assert!(labels(&complete(&text, offset, false, None).unwrap()).contains(&"map"));
@@ -720,7 +936,11 @@ mod tests {
         std::fs::create_dir_all(dir.join("node_modules/left-pad")).unwrap();
         std::fs::write(dir.join("util.js"), "").unwrap();
         std::fs::write(dir.join("notes.txt"), "").unwrap();
-        std::fs::write(dir.join("package.json"), r#"{"dependencies":{"express":"4"}}"#).unwrap();
+        std::fs::write(
+            dir.join("package.json"),
+            r#"{"dependencies":{"express":"4"}}"#,
+        )
+        .unwrap();
         let file = dir.join("main.js");
 
         let (text, offset) = at("import x from './u|';\n");
@@ -729,14 +949,20 @@ mod tests {
         let (text, offset) = at("import x from './|';\n");
         let completion = complete(&text, offset, true, Some(&file)).unwrap();
         let names = labels(&completion);
-        assert!(names.contains(&"util.js") && names.contains(&"lib/"), "{names:?}");
+        assert!(
+            names.contains(&"util.js") && names.contains(&"lib/"),
+            "{names:?}"
+        );
         assert!(!names.contains(&"notes.txt"), "only modules: {names:?}");
         assert_eq!(completion.from, offset);
 
         let (text, offset) = at("const a = require('|');\n");
         let completion = complete(&text, offset, true, Some(&file)).unwrap();
         let names = labels(&completion);
-        assert!(names.contains(&"left-pad") && names.contains(&"express") && names.contains(&"fs"), "{names:?}");
+        assert!(
+            names.contains(&"left-pad") && names.contains(&"express") && names.contains(&"fs"),
+            "{names:?}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -42,18 +42,28 @@ struct Request {
 }
 
 fn now() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
 }
 
 /// Where the IDE keeps what it has to remember between runs and between its windows.
 pub fn data_dir() -> PathBuf {
-    let home = || std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
+    let home = || {
+        std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_default()
+    };
     let base = if cfg!(windows) {
-        std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir)
+        std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir)
     } else if cfg!(target_os = "macos") {
         home().join("Library/Application Support")
     } else {
-        std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|| home().join(".local/share"))
+        std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home().join(".local/share"))
     };
     base.join("Atelier")
 }
@@ -68,7 +78,11 @@ fn registry_dir() -> PathBuf {
 
 /// An existing path of the command line, absolute.
 fn absolute(path: &Path) -> PathBuf {
-    let full = if path.is_absolute() { path.to_path_buf() } else { std::env::current_dir().unwrap_or_default().join(path) };
+    let full = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir().unwrap_or_default().join(path)
+    };
     simplify(&full.canonicalize().unwrap_or(full))
 }
 
@@ -83,11 +97,15 @@ pub fn target() -> Option<PathBuf> {
 
 /// `-n` / `--new-window`: do not reuse a running IDE.
 pub fn new_window() -> bool {
-    std::env::args_os().skip(1).any(|a| a == "-n" || a == "--new-window")
+    std::env::args_os()
+        .skip(1)
+        .any(|a| a == "-n" || a == "--new-window")
 }
 
 fn entries() -> Vec<(PathBuf, Entry)> {
-    let Ok(dir) = fs::read_dir(registry_dir()) else { return Vec::new() };
+    let Ok(dir) = fs::read_dir(registry_dir()) else {
+        return Vec::new();
+    };
     dir.flatten()
         .filter_map(|file| {
             let entry = serde_json::from_slice(&fs::read(file.path()).ok()?).ok()?;
@@ -99,15 +117,26 @@ fn entries() -> Vec<(PathBuf, Entry)> {
 /// How well an IDE suits `path`: the deeper the project that contains it the better.
 fn score(entry: &Entry, path: &Path) -> usize {
     let root = simplify(&entry.root);
-    if path.starts_with(&root) { root.components().count() + 1 } else { 0 }
+    if path.starts_with(&root) {
+        root.components().count() + 1
+    } else {
+        0
+    }
 }
 
 fn send(entry: &Entry, path: &Path) -> bool {
     let address = SocketAddr::from((Ipv4Addr::LOCALHOST, entry.port));
-    let Ok(mut stream) = TcpStream::connect_timeout(&address, CONNECT_TIMEOUT) else { return false };
+    let Ok(mut stream) = TcpStream::connect_timeout(&address, CONNECT_TIMEOUT) else {
+        return false;
+    };
     let _ = stream.set_read_timeout(Some(REPLY_TIMEOUT));
-    let request = Request { token: entry.token.clone(), open: path.to_path_buf() };
-    let Ok(mut line) = serde_json::to_string(&request) else { return false };
+    let request = Request {
+        token: entry.token.clone(),
+        open: path.to_path_buf(),
+    };
+    let Ok(mut line) = serde_json::to_string(&request) else {
+        return false;
+    };
     line.push('\n');
     if stream.write_all(line.as_bytes()).is_err() {
         return false;
@@ -142,8 +171,18 @@ pub struct Server {
 pub fn serve(root: &Path, wake: Arc<dyn Fn() + Send + Sync>) -> Option<Server> {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).ok()?;
     let port = listener.local_addr().ok()?.port();
-    let token = format!("{:016x}{:016x}", std::hash::RandomState::new().build_hasher().finish(), now());
-    let entry = Entry { pid: std::process::id(), port, token, root: simplify(root), active_at: now() };
+    let token = format!(
+        "{:016x}{:016x}",
+        std::hash::RandomState::new().build_hasher().finish(),
+        now()
+    );
+    let entry = Entry {
+        pid: std::process::id(),
+        port,
+        token,
+        root: simplify(root),
+        active_at: now(),
+    };
     let dir = registry_dir();
     fs::create_dir_all(&dir).ok()?;
     let file = dir.join(format!("{}.json", entry.pid));
@@ -157,7 +196,9 @@ pub fn serve(root: &Path, wake: Arc<dyn Fn() + Send + Sync>) -> Option<Server> {
             if reader.read_line(&mut line).is_err() {
                 continue;
             }
-            let Ok(request) = serde_json::from_str::<Request>(&line) else { continue };
+            let Ok(request) = serde_json::from_str::<Request>(&line) else {
+                continue;
+            };
             if request.token != secret {
                 continue;
             }
@@ -166,7 +207,12 @@ pub fn serve(root: &Path, wake: Arc<dyn Fn() + Send + Sync>) -> Option<Server> {
             let _ = (&stream).write_all(b"ok\n");
         }
     });
-    let server = Server { requests, entry, file, in_front: false };
+    let server = Server {
+        requests,
+        entry,
+        file,
+        in_front: false,
+    };
     server.write();
     Some(server)
 }
@@ -227,7 +273,11 @@ mod tests {
         let file = a.join("src").join("main.js");
         fs::write(&file, "x").unwrap();
         assert!(forward(&file), "an IDE takes it");
-        assert_eq!(server_a.poll(), vec![file.clone()], "the one of the project that contains the file");
+        assert_eq!(
+            server_a.poll(),
+            vec![file.clone()],
+            "the one of the project that contains the file"
+        );
         assert!(server_b.poll().is_empty());
         // Outside every project: the one used last.
         let elsewhere = base.join("notes.txt");
@@ -250,7 +300,13 @@ mod tests {
         let base = std::env::temp_dir().join(format!("atelier-cli-secret-{}", std::process::id()));
         fs::create_dir_all(&base).unwrap();
         let listener_free = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-        let entry = Entry { pid: 1, port: listener_free.local_addr().unwrap().port(), token: "x".into(), root: base.clone(), active_at: 0 };
+        let entry = Entry {
+            pid: 1,
+            port: listener_free.local_addr().unwrap().port(),
+            token: "x".into(),
+            root: base.clone(),
+            active_at: 0,
+        };
         // Nobody serves this port: the request gets no "ok".
         drop(listener_free);
         assert!(!send(&entry, &base));

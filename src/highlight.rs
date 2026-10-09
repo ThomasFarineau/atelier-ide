@@ -193,10 +193,25 @@ fn syntax(language: &str) -> &str {
 
 /// Words of TypeScript that the JavaScript syntax leaves uncolored.
 const TS_KEYWORDS: &[&str] = &[
-    "interface", "enum", "implements", "readonly", "public", "private", "protected", "abstract", "namespace",
-    "declare", "satisfies", "keyof", "infer", "override", "as",
+    "interface",
+    "enum",
+    "implements",
+    "readonly",
+    "public",
+    "private",
+    "protected",
+    "abstract",
+    "namespace",
+    "declare",
+    "satisfies",
+    "keyof",
+    "infer",
+    "override",
+    "as",
 ];
-const TS_TYPES: &[&str] = &["string", "number", "boolean", "any", "unknown", "never", "void", "object", "symbol", "bigint"];
+const TS_TYPES: &[&str] = &[
+    "string", "number", "boolean", "any", "unknown", "never", "void", "object", "symbol", "bigint",
+];
 
 /// Colors the TypeScript keywords and primitive types of a line that the JavaScript syntax
 /// did not color (a word in a string or a comment already has a color).
@@ -210,7 +225,9 @@ fn typescript_overlay(line: &str, spans: &mut Vec<(Range<usize>, Color32)>, keyw
             continue;
         }
         let start = i;
-        while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'$') {
+        while i < bytes.len()
+            && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'$')
+        {
             i += 1;
         }
         let word = &line[start..i];
@@ -223,13 +240,23 @@ fn typescript_overlay(line: &str, spans: &mut Vec<(Range<usize>, Color32)>, keyw
             // `type Name =` or `type Name<`, at the start of a statement.
             let before = line[..start].trim_end();
             let rest = line[i..].trim_start();
-            let starts_statement = before.is_empty() || before.ends_with("export") || before.ends_with("declare") || before.ends_with(';') || before.ends_with('{') || before.ends_with('}');
-            let named = rest.chars().next().is_some_and(|c| c.is_alphabetic() || c == '_' || c == '$');
+            let starts_statement = before.is_empty()
+                || before.ends_with("export")
+                || before.ends_with("declare")
+                || before.ends_with(';')
+                || before.ends_with('{')
+                || before.ends_with('}');
+            let named = rest
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphabetic() || c == '_' || c == '$');
             starts_statement && named && rest.contains(['=', '<'])
         } else {
             TS_KEYWORDS.contains(&word) || TS_TYPES.contains(&word)
         };
-        let covered = spans.iter().any(|(range, _)| range.start <= start && i <= range.end);
+        let covered = spans
+            .iter()
+            .any(|(range, _)| range.start <= start && i <= range.end);
         if is_keyword && !covered {
             added.push((start..i, keyword));
         }
@@ -306,7 +333,11 @@ impl Incremental {
         };
         let theme = &settings.ts.themes[if dark { DARK_KEY } else { LIGHT_KEY }];
         let mut highlighter = Self {
-            tree_colors: if language == "ts" { TreeColors::Stale } else { TreeColors::Unavailable },
+            tree_colors: if language == "ts" {
+                TreeColors::Stale
+            } else {
+                TreeColors::Unavailable
+            },
             language: language.into(),
             dark,
             syntax,
@@ -375,7 +406,10 @@ impl Incremental {
                     all.push(line);
                 }
                 let scheme = if self.dark { &DARK } else { &LIGHT };
-                let colored = crate::languages::typescript::highlight::colors(&all.join("\n"), &palette(scheme));
+                let colored = crate::languages::typescript::highlight::colors(
+                    &all.join("\n"),
+                    &palette(scheme),
+                );
                 match colored {
                     Some(per_line) if per_line.len() == all.len() => {
                         self.lines = per_line
@@ -384,7 +418,11 @@ impl Incremental {
                             .map(|(spans, text)| LineSpans {
                                 hash: line_hash(text),
                                 // Minified lines are left uncolored, as with the editor syntax.
-                                spans: if text.len() > MAX_LINE { Vec::new() } else { spans },
+                                spans: if text.len() > MAX_LINE {
+                                    Vec::new()
+                                } else {
+                                    spans
+                                },
                             })
                             .collect();
                         self.tree_colors = TreeColors::Fresh;
@@ -407,26 +445,38 @@ impl Incremental {
             };
             // Minified lines are left uncolored: parsing them takes seconds.
             if text.len() > MAX_LINE {
-                self.lines.push(LineSpans { hash: line_hash(&text), spans: Vec::new() });
+                self.lines.push(LineSpans {
+                    hash: line_hash(&text),
+                    spans: Vec::new(),
+                });
                 continue;
             }
             // syntect expects the line break, as in the files it parses.
             let line = format!("{text}\n");
             let ops = parse.parse_line(&line, set).unwrap_or_default();
-            let mut spans: Vec<(Range<usize>, Color32)> = RangedHighlightIterator::new(highlight, &ops, &line, &self.highlighter)
-                .filter(|(_, _, range)| range.start < text.len())
-                .map(|(style, _, range)| {
-                    let c = style.foreground;
-                    (
-                        range.start..range.end.min(text.len()),
-                        Color32::from_rgb(c.r, c.g, c.b),
-                    )
-                })
-                .collect();
+            let mut spans: Vec<(Range<usize>, Color32)> =
+                RangedHighlightIterator::new(highlight, &ops, &line, &self.highlighter)
+                    .filter(|(_, _, range)| range.start < text.len())
+                    .map(|(style, _, range)| {
+                        let c = style.foreground;
+                        (
+                            range.start..range.end.min(text.len()),
+                            Color32::from_rgb(c.r, c.g, c.b),
+                        )
+                    })
+                    .collect();
             // The tree could not color it: the words JavaScript does not know are added.
             if self.language == "ts" {
-                let keyword = if self.dark { DARK.keyword } else { LIGHT.keyword };
-                typescript_overlay(&text, &mut spans, Color32::from_rgb((keyword >> 16) as u8, (keyword >> 8) as u8, keyword as u8));
+                let keyword = if self.dark {
+                    DARK.keyword
+                } else {
+                    LIGHT.keyword
+                };
+                typescript_overlay(
+                    &text,
+                    &mut spans,
+                    Color32::from_rgb((keyword >> 16) as u8, (keyword >> 8) as u8, keyword as u8),
+                );
             }
             self.lines.push(LineSpans {
                 hash: line_hash(&text),
@@ -491,10 +541,20 @@ mod tests {
         // Opening a block comment on line 100 changes the colors of the lines after it.
         lines[100] = "/* début".into();
         h.invalidate_from(100);
-        assert_eq!(h.lines.len(), 96, "restarts at the checkpoint before the edit");
+        assert_eq!(
+            h.lines.len(),
+            96,
+            "restarts at the checkpoint before the edit"
+        );
         assert!(h.advance(snapshot(&lines), 200, Duration::from_secs(5)));
         let line = lines[150].clone();
-        let colors: Vec<_> = h.line(150, &line).unwrap().spans.iter().map(|s| s.1).collect();
+        let colors: Vec<_> = h
+            .line(150, &line)
+            .unwrap()
+            .spans
+            .iter()
+            .map(|s| s.1)
+            .collect();
         assert!(colors.iter().all(|&c| c == rgb(DARK.comment)));
         // A line changed behind the highlighter's back is detected.
         assert!(h.line(10, "autre texte").is_none());

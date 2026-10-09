@@ -1425,7 +1425,6 @@ impl BuiltinPlugin for GitPlugin {
         Some("git")
     }
 
-
     fn update(&mut self, ctx: &egui::Context, host: &mut dyn Host) {
         self.poll(ctx, host);
     }
@@ -1598,7 +1597,9 @@ impl BuiltinPlugin for GitPlugin {
     fn file_color(&self, path: &Path) -> Option<Color32> {
         match self.colors.get(path) {
             Some(kind) => Some(status_color(&self.theme, *kind)),
-            None if self.changed_dirs.contains(path) => Some(status_color(&self.theme, Kind::Modified)),
+            None if self.changed_dirs.contains(path) => {
+                Some(status_color(&self.theme, Kind::Modified))
+            }
             None => self
                 .is_ignored(path)
                 .then_some(Color32::from_rgb(222, 140, 52)),
@@ -1954,11 +1955,16 @@ mod tests {
     #[test]
     fn ignored_files_and_folders_are_orange() {
         let t = TempRepo::new("ignored");
-        t.write(".gitignore", "target/
+        t.write(
+            ".gitignore",
+            "target/
 *.log
-");
-        t.write("a.txt", "1
-");
+",
+        );
+        t.write(
+            "a.txt", "1
+",
+        );
         t.commit_all("init");
         t.write("target/debug/x.bin", "x");
         t.write("run.log", "x");

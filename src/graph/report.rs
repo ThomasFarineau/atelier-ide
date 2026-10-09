@@ -12,7 +12,11 @@ fn clock(ms: u64) -> String {
 /// `name [kind] (file:line)`
 pub fn describe(graph: &Graph, node: usize) -> String {
     let n = &graph.nodes[node];
-    if n.kind == "file" { format!("{} (file)", n.label) } else { format!("{} [{}] ({}:{})", n.label, n.kind, n.file, n.line) }
+    if n.kind == "file" {
+        format!("{} (file)", n.label)
+    } else {
+        format!("{} [{}] ({}:{})", n.label, n.kind, n.file, n.line)
+    }
 }
 
 pub fn symbols(graph: &Graph) -> usize {
@@ -62,7 +66,9 @@ impl Benchmark {
 /// reading the file that defines it and the files of what it is directly linked to. None when the
 /// project is too small for the graph to be cheaper than its files.
 pub fn benchmark(graph: &Graph) -> Option<Benchmark> {
-    let mut symbols: Vec<usize> = (0..graph.nodes.len()).filter(|&i| graph.nodes[i].kind != "file" && graph.nodes[i].degree > 0).collect();
+    let mut symbols: Vec<usize> = (0..graph.nodes.len())
+        .filter(|&i| graph.nodes[i].kind != "file" && graph.nodes[i].degree > 0)
+        .collect();
     symbols.sort_by_key(|&i| (std::cmp::Reverse(graph.nodes[i].degree), i));
     if symbols.is_empty() {
         return None;
@@ -75,7 +81,12 @@ pub fn benchmark(graph: &Graph) -> Option<Benchmark> {
     if wanted > 0 {
         sample.extend((0..wanted).map(|k| rest[k * rest.len() / wanted]));
     }
-    let size_of_file: std::collections::HashMap<&str, u64> = graph.nodes.iter().filter(|n| n.kind == "file").map(|n| (n.file.as_str(), n.size)).collect();
+    let size_of_file: std::collections::HashMap<&str, u64> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == "file")
+        .map(|n| (n.file.as_str(), n.size))
+        .collect();
     let mut neighbours: Vec<Vec<usize>> = vec![Vec::new(); graph.nodes.len()];
     for link in graph.links.iter().filter(|l| l.kind != "contains") {
         neighbours[link.source].push(link.target);
@@ -83,15 +94,29 @@ pub fn benchmark(graph: &Graph) -> Option<Benchmark> {
     }
     let (mut answered, mut read) = (0u64, 0u64);
     for &symbol in &sample {
-        let mut files: Vec<&str> = std::iter::once(graph.nodes[symbol].file.as_str()).chain(neighbours[symbol].iter().map(|&n| graph.nodes[n].file.as_str())).collect();
+        let mut files: Vec<&str> = std::iter::once(graph.nodes[symbol].file.as_str())
+            .chain(
+                neighbours[symbol]
+                    .iter()
+                    .map(|&n| graph.nodes[n].file.as_str()),
+            )
+            .collect();
         files.sort_unstable();
         files.dedup();
-        read += files.iter().filter_map(|f| size_of_file.get(f)).sum::<u64>() / CHARS_PER_TOKEN;
+        read += files
+            .iter()
+            .filter_map(|f| size_of_file.get(f))
+            .sum::<u64>()
+            / CHARS_PER_TOKEN;
         let name = &graph.nodes[symbol].label;
         answered += super::query::node(graph, name, ANSWER_BUDGET).len() as u64 / CHARS_PER_TOKEN;
     }
     let questions = sample.len() as u64;
-    let benchmark = Benchmark { questions: sample.len(), graph: answered / questions, files: read / questions };
+    let benchmark = Benchmark {
+        questions: sample.len(),
+        graph: answered / questions,
+        files: read / questions,
+    };
     (benchmark.files > benchmark.graph).then_some(benchmark)
 }
 
@@ -109,31 +134,66 @@ pub fn markdown(graph: &Graph) -> String {
     );
     body.push_str("Links marked `EXTRACTED` are read from the code; `INFERRED` is a guess from a name that is unique in the project.\n\n");
 
-    let mut central: Vec<usize> = (0..graph.nodes.len()).filter(|&i| graph.nodes[i].degree > 0).collect();
+    let mut central: Vec<usize> = (0..graph.nodes.len())
+        .filter(|&i| graph.nodes[i].degree > 0)
+        .collect();
     central.sort_by_key(|&i| (std::cmp::Reverse(graph.nodes[i].degree), i));
-    body.push_str("## Central elements\n\nWhat the rest of the project leans on most: read these first.\n\n");
+    body.push_str(
+        "## Central elements\n\nWhat the rest of the project leans on most: read these first.\n\n",
+    );
     for &i in central.iter().take(20) {
-        body.push_str(&format!("- {} — {} links\n", describe(graph, i), graph.nodes[i].degree));
+        body.push_str(&format!(
+            "- {} — {} links\n",
+            describe(graph, i),
+            graph.nodes[i].degree
+        ));
     }
 
     body.push_str("\n## File groups\n\n");
     for community in graph.communities.iter().take(15) {
         let mut members = community.files.clone();
         members.sort_by_key(|&n| (std::cmp::Reverse(graph.nodes[n].degree), n));
-        let names: Vec<&str> = members.iter().take(8).map(|&n| graph.nodes[n].label.as_str()).collect();
+        let names: Vec<&str> = members
+            .iter()
+            .take(8)
+            .map(|&n| graph.nodes[n].label.as_str())
+            .collect();
         let more = members.len().saturating_sub(8);
-        body.push_str(&format!("### {}. {} ({} files)\n\n", community.id + 1, community.label, members.len()));
-        body.push_str(&format!("Files: {}{}\n", names.join(", "), if more > 0 { format!(" and {more} more") } else { String::new() }));
-        let mut key: Vec<usize> = (0..graph.nodes.len()).filter(|&i| graph.nodes[i].community == community.id && graph.nodes[i].kind != "file").collect();
+        body.push_str(&format!(
+            "### {}. {} ({} files)\n\n",
+            community.id + 1,
+            community.label,
+            members.len()
+        ));
+        body.push_str(&format!(
+            "Files: {}{}\n",
+            names.join(", "),
+            if more > 0 {
+                format!(" and {more} more")
+            } else {
+                String::new()
+            }
+        ));
+        let mut key: Vec<usize> = (0..graph.nodes.len())
+            .filter(|&i| graph.nodes[i].community == community.id && graph.nodes[i].kind != "file")
+            .collect();
         key.sort_by_key(|&i| (std::cmp::Reverse(graph.nodes[i].degree), i));
-        let key: Vec<&str> = key.iter().take(8).filter(|&&i| graph.nodes[i].degree > 0).map(|&i| graph.nodes[i].label.as_str()).collect();
+        let key: Vec<&str> = key
+            .iter()
+            .take(8)
+            .filter(|&&i| graph.nodes[i].degree > 0)
+            .map(|&i| graph.nodes[i].label.as_str())
+            .collect();
         if !key.is_empty() {
             body.push_str(&format!("Key elements: {}\n", key.join(", ")));
         }
         body.push('\n');
     }
     if graph.communities.len() > 15 {
-        body.push_str(&format!("… and {} smaller groups.\n\n", graph.communities.len() - 15));
+        body.push_str(&format!(
+            "… and {} smaller groups.\n\n",
+            graph.communities.len() - 15
+        ));
     }
 
     // The links between groups are where changes spread.
@@ -142,16 +202,23 @@ pub fn markdown(graph: &Graph) -> String {
         let (a, b) = (&graph.nodes[link.source], &graph.nodes[link.target]);
         if a.community != b.community {
             let key = (a.community.min(b.community), a.community.max(b.community));
-            let entry = between.entry(key).or_insert((0, format!("{} → {}", a.label, b.label)));
+            let entry = between
+                .entry(key)
+                .or_insert((0, format!("{} → {}", a.label, b.label)));
             entry.0 += 1;
         }
     }
     let mut pairs: Vec<_> = between.into_iter().collect();
     pairs.sort_by_key(|(key, (count, _))| (std::cmp::Reverse(*count), *key));
     if !pairs.is_empty() {
-        body.push_str("## Links between groups\n\nWhere a change in one group reaches another.\n\n");
+        body.push_str(
+            "## Links between groups\n\nWhere a change in one group reaches another.\n\n",
+        );
         for ((a, b), (count, example)) in pairs.into_iter().take(8) {
-            body.push_str(&format!("- {} ↔ {}: {count} links (e.g. {example})\n", graph.communities[a].label, graph.communities[b].label));
+            body.push_str(&format!(
+                "- {} ↔ {}: {count} links (e.g. {example})\n",
+                graph.communities[a].label, graph.communities[b].label
+            ));
         }
         body.push('\n');
     }
@@ -197,17 +264,46 @@ mod tests {
     use crate::graph::build::{Link, Node};
 
     fn node(id: &str, kind: &str, file: &str, size: u64) -> Node {
-        Node { id: id.into(), label: id.trim_start_matches("s:").trim_start_matches("f:").into(), kind: kind.into(), file: file.into(), line: 1, community: 0, degree: 0, size }
+        Node {
+            id: id.into(),
+            label: id.trim_start_matches("s:").trim_start_matches("f:").into(),
+            kind: kind.into(),
+            file: file.into(),
+            line: 1,
+            community: 0,
+            degree: 0,
+            size,
+        }
     }
 
     /// Two big files, a function in each that calls the other.
     fn project(file_size: u64) -> Graph {
         let mut graph = Graph {
-            nodes: vec![node("f:a.js", "file", "a.js", file_size), node("f:b.js", "file", "b.js", file_size), node("s:alpha", "function", "a.js", 0), node("s:beta", "function", "b.js", 0)],
+            nodes: vec![
+                node("f:a.js", "file", "a.js", file_size),
+                node("f:b.js", "file", "b.js", file_size),
+                node("s:alpha", "function", "a.js", 0),
+                node("s:beta", "function", "b.js", 0),
+            ],
             links: vec![
-                Link { source: 0, target: 2, kind: "contains".into(), confidence: "EXTRACTED".into() },
-                Link { source: 1, target: 3, kind: "contains".into(), confidence: "EXTRACTED".into() },
-                Link { source: 2, target: 3, kind: "calls".into(), confidence: "EXTRACTED".into() },
+                Link {
+                    source: 0,
+                    target: 2,
+                    kind: "contains".into(),
+                    confidence: "EXTRACTED".into(),
+                },
+                Link {
+                    source: 1,
+                    target: 3,
+                    kind: "contains".into(),
+                    confidence: "EXTRACTED".into(),
+                },
+                Link {
+                    source: 2,
+                    target: 3,
+                    kind: "calls".into(),
+                    confidence: "EXTRACTED".into(),
+                },
             ],
             ..Graph::default()
         };
@@ -222,23 +318,52 @@ mod tests {
     fn the_saving_is_measured_on_questions_not_on_the_whole_project() {
         let b = benchmark(&project(40_000)).expect("big files: the graph is cheaper");
         assert_eq!(b.questions, 2);
-        assert_eq!(b.files, 20_000, "the defining file and the one it is linked to, ~10k tokens each");
+        assert_eq!(
+            b.files, 20_000,
+            "the defining file and the one it is linked to, ~10k tokens each"
+        );
         assert!(b.graph < 100, "a short answer: {}", b.graph);
         assert_eq!(b.percent(), 99);
-        assert_eq!(Benchmark { questions: 1, graph: 300, files: 1_000 }.percent(), 70);
+        assert_eq!(
+            Benchmark {
+                questions: 1,
+                graph: 300,
+                files: 1_000
+            }
+            .percent(),
+            70
+        );
         assert_eq!(benchmark(&project(8)), None, "tiny files: nothing to save");
         assert_eq!(benchmark(&Graph::default()), None);
-        assert_eq!((tokens(950), tokens(1_234), tokens(2_500_000)), ("950".into(), "1.2k".into(), "2.5M".into()));
+        assert_eq!(
+            (tokens(950), tokens(1_234), tokens(2_500_000)),
+            ("950".into(), "1.2k".into(), "2.5M".into())
+        );
     }
 
     #[test]
     fn the_report_is_in_english_and_says_what_the_saving_was_measured_on() {
         let report = markdown(&project(40_000));
         assert!(report.starts_with("# Context graph"), "{report}");
-        assert!(report.contains("Estimated token saving: up to ~99% per question") && report.contains("Measured on 2 symbols"), "{report}");
-        assert!(report.contains("upper bound"), "no inflated claim: {report}");
-        assert!(report.contains("## Central elements") && report.contains("## File groups") && report.contains("generated"), "{report}");
-        assert!(!report.contains("fichiers") && !report.contains("Éléments"), "no French left");
+        assert!(
+            report.contains("Estimated token saving: up to ~99% per question")
+                && report.contains("Measured on 2 symbols"),
+            "{report}"
+        );
+        assert!(
+            report.contains("upper bound"),
+            "no inflated claim: {report}"
+        );
+        assert!(
+            report.contains("## Central elements")
+                && report.contains("## File groups")
+                && report.contains("generated"),
+            "{report}"
+        );
+        assert!(
+            !report.contains("fichiers") && !report.contains("Éléments"),
+            "no French left"
+        );
         assert!(markdown(&project(8)).contains("The project is small"));
     }
 }

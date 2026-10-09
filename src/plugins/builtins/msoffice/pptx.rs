@@ -3,14 +3,15 @@
 //! colors and pictures follow the file; effects, animations and charts are not drawn.
 
 use super::{
-    INK, MAX_FILE, MAX_IMAGES_TOTAL, Node, Textures, decode_image, hex_color, lum, parse_xml, read_part,
+    INK, MAX_FILE, MAX_IMAGES_TOTAL, Node, Textures, decode_image, hex_color, lum, parse_xml,
     pdf::{Font, Inl, Pdf, Span, flow},
+    read_part,
 };
 use crate::ui;
 use anyhow::{Context as _, Result, anyhow, bail};
 use eframe::egui::{
-    self, Align, Color32, CornerRadius, FontId, Painter, Pos2, Rect, Shape, Stroke, StrokeKind, TextFormat, Vec2,
-    pos2, text::LayoutJob, vec2,
+    self, Align, Color32, CornerRadius, FontId, Painter, Pos2, Rect, Shape, Stroke, StrokeKind,
+    TextFormat, Vec2, pos2, text::LayoutJob, vec2,
 };
 use std::{collections::HashMap, fs, path::Path};
 
@@ -71,7 +72,9 @@ pub struct Text {
 
 impl Text {
     fn is_blank(&self) -> bool {
-        self.paras.iter().all(|p| p.runs.iter().all(|r| r.text.trim().is_empty()))
+        self.paras
+            .iter()
+            .all(|p| p.runs.iter().all(|r| r.text.trim().is_empty()))
     }
 }
 
@@ -164,7 +167,11 @@ fn resolve(part: &str, target: &str) -> String {
 fn read_rels<R: std::io::Read + std::io::Seek>(zip: &mut zip::ZipArchive<R>, part: &str) -> Rels {
     let (dir, file) = part.rsplit_once('/').unwrap_or(("", part));
     let path = format!("{dir}/_rels/{file}.rels");
-    let Some(root) = read_part(zip, &path).ok().flatten().and_then(|b| parse_xml(&b).ok()) else {
+    let Some(root) = read_part(zip, &path)
+        .ok()
+        .flatten()
+        .and_then(|b| parse_xml(&b).ok())
+    else {
         return Rels::new();
     };
     root.children
@@ -173,7 +180,10 @@ fn read_rels<R: std::io::Read + std::io::Seek>(zip: &mut zip::ZipArchive<R>, par
         .filter_map(|rel| {
             Some((
                 rel.attr("Id")?.to_string(),
-                (resolve(part, rel.attr("Target")?), rel.attr("Type").unwrap_or("").to_string()),
+                (
+                    resolve(part, rel.attr("Target")?),
+                    rel.attr("Type").unwrap_or("").to_string(),
+                ),
             ))
         })
         .collect()
@@ -186,7 +196,9 @@ impl Theme {
         let mut colors = HashMap::new();
         if let Some(scheme) = root.find("clrScheme") {
             for c in &scheme.children {
-                let Some(inner) = c.children.first() else { continue };
+                let Some(inner) = c.children.first() else {
+                    continue;
+                };
                 let value = inner
                     .attr("val")
                     .filter(|_| inner.name == "srgbClr")
@@ -220,7 +232,10 @@ fn color_of(node: &Node, theme: &Theme) -> Option<Color32> {
     let base = match node.name.as_str() {
         "srgbClr" => hex_color(node.attr("val")?)?,
         "schemeClr" => theme.get(node.attr("val")?)?,
-        "sysClr" => node.attr("lastClr").and_then(hex_color).unwrap_or(Color32::BLACK),
+        "sysClr" => node
+            .attr("lastClr")
+            .and_then(hex_color)
+            .unwrap_or(Color32::BLACK),
         "prstClr" => match node.attr("val")? {
             "white" => Color32::WHITE,
             "red" => Color32::RED,
@@ -246,12 +261,19 @@ fn color_of(node: &Node, theme: &Theme) -> Option<Color32> {
             _ => {}
         }
     }
-    Some(if multiply != 1.0 || add != 0.0 { lum(base, multiply, add) } else { base })
+    Some(if multiply != 1.0 || add != 0.0 {
+        lum(base, multiply, add)
+    } else {
+        base
+    })
 }
 
 /// The solid color of the `solidFill` child of `node`.
 fn solid_fill(node: &Node, theme: &Theme) -> Option<Color32> {
-    node.child("solidFill")?.children.first().and_then(|c| color_of(c, theme))
+    node.child("solidFill")?
+        .children
+        .first()
+        .and_then(|c| color_of(c, theme))
 }
 
 enum Fill {
@@ -266,10 +288,21 @@ fn fill_of(node: &Node, theme: &Theme) -> Fill {
     for c in &node.children {
         match c.name.as_str() {
             "noFill" => return Fill::Empty,
-            "solidFill" => return c.children.first().and_then(|c| color_of(c, theme)).map_or(Fill::Unset, Fill::Solid),
+            "solidFill" => {
+                return c
+                    .children
+                    .first()
+                    .and_then(|c| color_of(c, theme))
+                    .map_or(Fill::Unset, Fill::Solid);
+            }
             "gradFill" => {
-                let first = c.child("gsLst").and_then(|l| l.children.first()).and_then(|g| g.children.first());
-                return first.and_then(|g| color_of(g, theme)).map_or(Fill::Unset, Fill::Solid);
+                let first = c
+                    .child("gsLst")
+                    .and_then(|l| l.children.first())
+                    .and_then(|g| g.children.first());
+                return first
+                    .and_then(|g| color_of(g, theme))
+                    .map_or(Fill::Unset, Fill::Solid);
             }
             "pattFill" => {
                 return c
@@ -293,7 +326,12 @@ struct Transform {
 }
 
 impl Transform {
-    const IDENTITY: Self = Self { ox: 0.0, oy: 0.0, sx: 1.0, sy: 1.0 };
+    const IDENTITY: Self = Self {
+        ox: 0.0,
+        oy: 0.0,
+        sx: 1.0,
+        sy: 1.0,
+    };
     fn rect(self, r: Rect) -> Rect {
         Rect::from_min_size(
             pos2(self.ox + r.min.x * self.sx, self.oy + r.min.y * self.sy),
@@ -311,7 +349,11 @@ fn xfrm_of(holder: &Node) -> Option<(Rect, bool, bool)> {
         pos2(num(off, "x")?, num(off, "y")?),
         vec2(num(ext, "cx")?.max(0.0), num(ext, "cy")?.max(0.0)),
     );
-    Some((rect, xf.attr("flipH") == Some("1"), xf.attr("flipV") == Some("1")))
+    Some((
+        rect,
+        xf.attr("flipH") == Some("1"),
+        xf.attr("flipV") == Some("1"),
+    ))
 }
 
 #[derive(Clone)]
@@ -361,7 +403,10 @@ fn paragraph_props(ppr: &Node, theme: &Theme) -> Props {
         size: def.and_then(|d| num(d, "sz")).map(|s| s / 100.0),
         bullet: if ppr.child("buNone").is_some() {
             Some(false)
-        } else if ["buChar", "buAutoNum", "buBlip"].iter().any(|b| ppr.child(b).is_some()) {
+        } else if ["buChar", "buAutoNum", "buBlip"]
+            .iter()
+            .any(|b| ppr.child(b).is_some())
+        {
             Some(true)
         } else {
             None
@@ -382,7 +427,9 @@ impl Parser<'_> {
         let tree = tree.find("spTree")?;
         let shapes = || tree.children.iter().filter(|c| c.name == "sp");
         if let (Some(idx), false) = (&key.idx, master) {
-            if let Some(found) = shapes().find(|sp| ph_of(sp).is_some_and(|k| k.idx.as_ref() == Some(idx))) {
+            if let Some(found) =
+                shapes().find(|sp| ph_of(sp).is_some_and(|k| k.idx.as_ref() == Some(idx)))
+            {
                 return Some(found);
             }
         }
@@ -391,7 +438,10 @@ impl Parser<'_> {
     }
 
     fn placeholders(&self, key: &PhKey) -> [Option<&Node>; 2] {
-        [Self::find_ph(self.layout, key, false), Self::find_ph(self.master, key, true)]
+        [
+            Self::find_ph(self.layout, key, false),
+            Self::find_ph(self.master, key, true),
+        ]
     }
 
     fn inherited_rect(&self, key: &PhKey) -> Option<(Rect, bool, bool)> {
@@ -412,12 +462,21 @@ impl Parser<'_> {
         };
         if let Some(key) = key {
             for sp in self.placeholders(key).into_iter().flatten() {
-                if let Some(p) = sp.child("txBody").and_then(|t| t.child("lstStyle")).and_then(|l| l.child(&name)) {
+                if let Some(p) = sp
+                    .child("txBody")
+                    .and_then(|t| t.child("lstStyle"))
+                    .and_then(|l| l.child(&name))
+                {
                     sources.push(p);
                 }
             }
         }
-        if let Some(p) = self.master.child("txStyles").and_then(|t| t.child(style)).and_then(|s| s.child(&name)) {
+        if let Some(p) = self
+            .master
+            .child("txStyles")
+            .and_then(|t| t.child(style))
+            .and_then(|s| s.child(&name))
+        {
             sources.push(p);
         }
         let mut out = Props::default();
@@ -443,14 +502,23 @@ impl Parser<'_> {
             Some("ctr") => Anchor::Middle,
             Some("b") => Anchor::Bottom,
             Some(_) => Anchor::Top,
-            None if key.is_some_and(|k| norm(k.kind.as_deref(), false) == "title") => Anchor::Middle,
+            None if key.is_some_and(|k| norm(k.kind.as_deref(), false) == "title") => {
+                Anchor::Middle
+            }
             None => Anchor::Top,
         }
     }
 
-    fn text(&self, body: &Node, key: Option<&PhKey>, shape_color: Option<Color32>, insets: [f32; 4]) -> Text {
+    fn text(
+        &self,
+        body: &Node,
+        key: Option<&PhKey>,
+        shape_color: Option<Color32>,
+        insets: [f32; 4],
+    ) -> Text {
         let body_pr = body.child("bodyPr");
-        let inset = |name: &str, default: f32| body_pr.and_then(|b| num(b, name)).unwrap_or(default);
+        let inset =
+            |name: &str, default: f32| body_pr.and_then(|b| num(b, name)).unwrap_or(default);
         let scale = body_pr
             .and_then(|b| b.child("normAutofit"))
             .and_then(|n| num(n, "fontScale"))
@@ -458,9 +526,14 @@ impl Parser<'_> {
         let mut paras = Vec::new();
         for p in body.children.iter().filter(|c| c.name == "p") {
             let ppr = p.child("pPr");
-            let level = ppr.and_then(|p| num(p, "lvl")).map_or(0, |l| l as usize).min(8);
+            let level = ppr
+                .and_then(|p| num(p, "lvl"))
+                .map_or(0, |l| l as usize)
+                .min(8);
             let inherited = self.props(key, level);
-            let own = ppr.map(|p| paragraph_props(p, self.theme)).unwrap_or_default();
+            let own = ppr
+                .map(|p| paragraph_props(p, self.theme))
+                .unwrap_or_default();
             let bullet = own.bullet.or(inherited.bullet).unwrap_or(false);
             let default_color = shape_color
                 .or(inherited.color)
@@ -474,24 +547,38 @@ impl Parser<'_> {
                     "br" => (c.child("rPr"), Some("\n".to_string())),
                     _ => continue,
                 };
-                let Some(text) = text.filter(|t| !t.is_empty()) else { continue };
-                let flag = |name: &str| rpr.and_then(|r| r.attr(name)).is_some_and(|v| v == "1" || v == "true");
+                let Some(text) = text.filter(|t| !t.is_empty()) else {
+                    continue;
+                };
+                let flag = |name: &str| {
+                    rpr.and_then(|r| r.attr(name))
+                        .is_some_and(|v| v == "1" || v == "true")
+                };
                 runs.push(Run {
                     text,
                     bold: flag("b"),
                     italic: flag("i"),
                     underline: rpr.and_then(|r| r.attr("u")).is_some_and(|u| u != "none"),
-                    color: rpr.and_then(|r| solid_fill(r, self.theme)).unwrap_or(default_color),
-                    size: rpr.and_then(|r| num(r, "sz")).map_or(default_size, |s| s / 100.0),
+                    color: rpr
+                        .and_then(|r| solid_fill(r, self.theme))
+                        .unwrap_or(default_color),
+                    size: rpr
+                        .and_then(|r| num(r, "sz"))
+                        .map_or(default_size, |s| s / 100.0),
                 });
             }
-            let end_size = p.child("endParaRPr").and_then(|r| num(r, "sz")).map(|s| s / 100.0);
+            let end_size = p
+                .child("endParaRPr")
+                .and_then(|r| num(r, "sz"))
+                .map(|s| s / 100.0);
             paras.push(TextPara {
                 align: own.align.or(inherited.align).unwrap_or(Align::Min),
                 bullet,
-                margin: ppr
-                    .and_then(|p| num(p, "marL"))
-                    .unwrap_or(if bullet { 342_900.0 * (level as f32 + 1.0) } else { 0.0 }),
+                margin: ppr.and_then(|p| num(p, "marL")).unwrap_or(if bullet {
+                    342_900.0 * (level as f32 + 1.0)
+                } else {
+                    0.0
+                }),
                 size: end_size.unwrap_or(default_size),
                 runs,
             });
@@ -510,7 +597,15 @@ impl Parser<'_> {
         }
     }
 
-    fn walk(&self, tree: &Node, rels: &Rels, tf: Transform, skip_ph: bool, depth: usize, out: &mut Vec<Item>) {
+    fn walk(
+        &self,
+        tree: &Node,
+        rels: &Rels,
+        tf: Transform,
+        skip_ph: bool,
+        depth: usize,
+        out: &mut Vec<Item>,
+    ) {
         for c in &tree.children {
             match c.name.as_str() {
                 "sp" | "cxnSp" => self.shape(c, tf, skip_ph, out),
@@ -527,8 +622,10 @@ impl Parser<'_> {
                     let placed = tf.rect(group);
                     let inner = match child {
                         Some((off, ext)) => {
-                            let (cx, cy) = (num(off, "x").unwrap_or(0.0), num(off, "y").unwrap_or(0.0));
-                            let (w, h) = (num(ext, "cx").unwrap_or(0.0), num(ext, "cy").unwrap_or(0.0));
+                            let (cx, cy) =
+                                (num(off, "x").unwrap_or(0.0), num(off, "y").unwrap_or(0.0));
+                            let (w, h) =
+                                (num(ext, "cx").unwrap_or(0.0), num(ext, "cy").unwrap_or(0.0));
                             let sx = if w > 0.0 { placed.width() / w } else { 1.0 };
                             let sy = if h > 0.0 { placed.height() / h } else { 1.0 };
                             Transform {
@@ -586,11 +683,22 @@ impl Parser<'_> {
             }
             None => self.style_color(sp, "lnRef").map(|c| (c, EMU_PT)),
         };
-        let prst = sp_pr.child("prstGeom").and_then(|g| g.attr("prst")).unwrap_or("rect");
+        let prst = sp_pr
+            .child("prstGeom")
+            .and_then(|g| g.attr("prst"))
+            .unwrap_or("rect");
         if sp.name == "cxnSp" || prst == "line" || prst.contains("Connector") {
             let (color, width) = line.unwrap_or((INK, EMU_PT));
-            let (y1, y2) = if flip_v { (rect.max.y, rect.min.y) } else { (rect.min.y, rect.max.y) };
-            let (x1, x2) = if flip_h { (rect.max.x, rect.min.x) } else { (rect.min.x, rect.max.x) };
+            let (y1, y2) = if flip_v {
+                (rect.max.y, rect.min.y)
+            } else {
+                (rect.min.y, rect.max.y)
+            };
+            let (x1, x2) = if flip_h {
+                (rect.max.x, rect.min.x)
+            } else {
+                (rect.min.x, rect.max.x)
+            };
             out.push(Item::Line {
                 a: pos2(x1, y1),
                 b: pos2(x2, y2),
@@ -602,7 +710,14 @@ impl Parser<'_> {
         let shape_color = self.style_color(sp, "fontRef");
         let text = sp
             .child("txBody")
-            .map(|b| self.text(b, key.as_ref(), shape_color, [91_440.0, 45_720.0, 91_440.0, 45_720.0]))
+            .map(|b| {
+                self.text(
+                    b,
+                    key.as_ref(),
+                    shape_color,
+                    [91_440.0, 45_720.0, 91_440.0, 45_720.0],
+                )
+            })
             .filter(|t| !t.is_blank());
         if fill.is_none() && line.is_none() && text.is_none() {
             return;
@@ -628,7 +743,9 @@ impl Parser<'_> {
         let Some(rel) = pic.find("blip").and_then(|b| b.attr("embed")) else {
             return;
         };
-        let Some((name, _)) = rels.get(rel) else { return };
+        let Some((name, _)) = rels.get(rel) else {
+            return;
+        };
         let Some((rect, _, _)) = pic
             .child("spPr")
             .and_then(xfrm_of)
@@ -650,7 +767,9 @@ impl Parser<'_> {
     }
 
     fn frame(&self, frame: &Node, tf: Transform, out: &mut Vec<Item>) {
-        let Some((rect, _, _)) = xfrm_of(frame) else { return };
+        let Some((rect, _, _)) = xfrm_of(frame) else {
+            return;
+        };
         let rect = tf.rect(rect);
         let Some(table) = frame.find("tbl") else {
             // Charts, diagrams and embedded objects are not drawn.
@@ -685,12 +804,25 @@ impl Parser<'_> {
         };
         let columns: Vec<f32> = table
             .child("tblGrid")
-            .map(|g| g.children.iter().filter(|c| c.name == "gridCol").map(|c| num(c, "w").unwrap_or(1.0)).collect())
+            .map(|g| {
+                g.children
+                    .iter()
+                    .filter(|c| c.name == "gridCol")
+                    .map(|c| num(c, "w").unwrap_or(1.0))
+                    .collect()
+            })
             .unwrap_or_default();
         let properties = table.child("tblPr");
         let styled = properties.is_some_and(|p| p.child("tableStyleId").is_some());
-        let flag = |name: &str| properties.and_then(|p| p.attr(name)).is_some_and(|v| v == "1" || v == "true");
-        let accent = self.theme.get("accent1").unwrap_or(Color32::from_rgb(0x44, 0x72, 0xC4));
+        let flag = |name: &str| {
+            properties
+                .and_then(|p| p.attr(name))
+                .is_some_and(|v| v == "1" || v == "true")
+        };
+        let accent = self
+            .theme
+            .get("accent1")
+            .unwrap_or(Color32::from_rgb(0x44, 0x72, 0xC4));
         let mut rows = Vec::new();
         for (r, tr) in table.children.iter().filter(|c| c.name == "tr").enumerate() {
             let header = styled && flag("firstRow") && r == 0;
@@ -728,7 +860,13 @@ impl Parser<'_> {
                 cells.push(TableCell {
                     fill,
                     text,
-                    span: if hidden { 0 } else { tc.attr("gridSpan").and_then(|s| s.parse().ok()).unwrap_or(1) },
+                    span: if hidden {
+                        0
+                    } else {
+                        tc.attr("gridSpan")
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(1)
+                    },
                 });
             }
             rows.push(TableRow {
@@ -766,7 +904,11 @@ fn count_words(items: &[Item]) -> usize {
         .iter()
         .map(|i| match i {
             Item::Shape { text, .. } => text.as_ref().map_or(0, words),
-            Item::Table { rows, .. } => rows.iter().flat_map(|r| &r.cells).map(|c| words(&c.text)).sum(),
+            Item::Table { rows, .. } => rows
+                .iter()
+                .flat_map(|r| &r.cells)
+                .map(|c| words(&c.text))
+                .sum(),
             _ => 0,
         })
         .sum()
@@ -781,14 +923,17 @@ pub fn load(path: &Path) -> Result<Deck> {
         .and_then(|e| e.to_str())
         .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "ppt" | "pps"))
     {
-        bail!("Le format binaire .ppt n'est pas pris en charge : enregistrez la présentation au format .pptx");
+        bail!(
+            "Le format binaire .ppt n'est pas pris en charge : enregistrez la présentation au format .pptx"
+        );
     }
     let file = fs::File::open(path)?;
     let mut zip = zip::ZipArchive::new(std::io::BufReader::new(file)).map_err(|_| {
         anyhow!("Ce fichier n'est pas une présentation PowerPoint valide (ou elle est protégée par un mot de passe)")
     })?;
-    let main = read_part(&mut zip, "ppt/presentation.xml")?
-        .ok_or_else(|| anyhow!("Ce fichier n'est pas une présentation : ppt/presentation.xml est absent"))?;
+    let main = read_part(&mut zip, "ppt/presentation.xml")?.ok_or_else(|| {
+        anyhow!("Ce fichier n'est pas une présentation : ppt/presentation.xml est absent")
+    })?;
     let main = parse_xml(&main).context("ppt/presentation.xml")?;
     let rels = read_rels(&mut zip, "ppt/presentation.xml");
     let size = main
@@ -802,7 +947,10 @@ pub fn load(path: &Path) -> Result<Deck> {
 
     let mut parts: HashMap<String, Node> = HashMap::new();
     let mut slides = Vec::new();
-    let order = main.child("sldIdLst").map(|l| l.children.as_slice()).unwrap_or_default();
+    let order = main
+        .child("sldIdLst")
+        .map(|l| l.children.as_slice())
+        .unwrap_or_default();
     for entry in order.iter().take(MAX_SLIDES) {
         // `id` is both the slide number and, with the `r:` prefix, the relationship.
         let Some((slide_path, _)) = entry
@@ -814,13 +962,34 @@ pub fn load(path: &Path) -> Result<Deck> {
             continue;
         };
         let slide_rels = read_rels(&mut zip, slide_path);
-        let layout_path = slide_rels.values().find(|(_, t)| t.ends_with("/slideLayout")).map(|(p, _)| p.clone());
-        let layout_rels = layout_path.as_deref().map(|p| read_rels(&mut zip, p)).unwrap_or_default();
-        let master_path = layout_rels.values().find(|(_, t)| t.ends_with("/slideMaster")).map(|(p, _)| p.clone());
-        let master_rels = master_path.as_deref().map(|p| read_rels(&mut zip, p)).unwrap_or_default();
-        for p in [Some(slide_path.clone()), layout_path.clone(), master_path.clone()].into_iter().flatten() {
+        let layout_path = slide_rels
+            .values()
+            .find(|(_, t)| t.ends_with("/slideLayout"))
+            .map(|(p, _)| p.clone());
+        let layout_rels = layout_path
+            .as_deref()
+            .map(|p| read_rels(&mut zip, p))
+            .unwrap_or_default();
+        let master_path = layout_rels
+            .values()
+            .find(|(_, t)| t.ends_with("/slideMaster"))
+            .map(|(p, _)| p.clone());
+        let master_rels = master_path
+            .as_deref()
+            .map(|p| read_rels(&mut zip, p))
+            .unwrap_or_default();
+        for p in [
+            Some(slide_path.clone()),
+            layout_path.clone(),
+            master_path.clone(),
+        ]
+        .into_iter()
+        .flatten()
+        {
             if !parts.contains_key(&p) {
-                let root = read_part(&mut zip, &p)?.and_then(|b| parse_xml(&b).ok()).unwrap_or_default();
+                let root = read_part(&mut zip, &p)?
+                    .and_then(|b| parse_xml(&b).ok())
+                    .unwrap_or_default();
                 parts.insert(p, root);
             }
         }
@@ -896,15 +1065,27 @@ fn paint_text(painter: &Painter, text: &Text, bounds: Rect, k: f32) {
             halign: para.align,
             ..LayoutJob::default()
         };
-        job.wrap.max_width = if text.wrap { (inner.width() - margin).max(4.0) } else { f32::INFINITY };
+        job.wrap.max_width = if text.wrap {
+            (inner.width() - margin).max(4.0)
+        } else {
+            f32::INFINITY
+        };
         let px = |points: f32| points * text.scale * EMU_PT * k;
         let format = |run: &Run| {
             let size = px(run.size).clamp(1.0, 400.0);
             TextFormat {
-                font_id: if run.bold { ui::semibold(size) } else { FontId::proportional(size) },
+                font_id: if run.bold {
+                    ui::semibold(size)
+                } else {
+                    FontId::proportional(size)
+                },
                 color: run.color,
                 italics: run.italic,
-                underline: if run.underline { Stroke::new(1.0_f32, run.color) } else { Stroke::NONE },
+                underline: if run.underline {
+                    Stroke::new(1.0_f32, run.color)
+                } else {
+                    Stroke::NONE
+                },
                 ..Default::default()
             }
         };
@@ -948,21 +1129,42 @@ fn paint_text(painter: &Painter, text: &Text, bounds: Rect, k: f32) {
     }
 }
 
-fn paint_slide(ui: &egui::Ui, painter: &Painter, rect: Rect, deck: &Deck, slide: &Slide, textures: &mut Textures) {
+fn paint_slide(
+    ui: &egui::Ui,
+    painter: &Painter,
+    rect: Rect,
+    deck: &Deck,
+    slide: &Slide,
+    textures: &mut Textures,
+) {
     let k = rect.width() / deck.size.x;
     let screen = |r: Rect| Rect::from_min_size(rect.min + r.min.to_vec2() * k, r.size() * k);
     painter.rect_filled(rect, 0.0, slide.bg);
     for item in &slide.items {
         match item {
-            Item::Shape { rect: r, geom, fill, line, text } => {
+            Item::Shape {
+                rect: r,
+                geom,
+                fill,
+                line,
+                text,
+            } => {
                 let r = screen(*r);
                 let stroke = line.map_or(Stroke::NONE, |(c, w)| Stroke::new((w * k).max(0.5), c));
                 match geom {
                     Geom::Rect => {
-                        painter.rect(r, 0.0, fill.unwrap_or(Color32::TRANSPARENT), stroke, StrokeKind::Middle);
+                        painter.rect(
+                            r,
+                            0.0,
+                            fill.unwrap_or(Color32::TRANSPARENT),
+                            stroke,
+                            StrokeKind::Middle,
+                        );
                     }
                     Geom::Round => {
-                        let radius = (r.width().min(r.height()) * 0.166_67).round().clamp(0.0, 255.0) as u8;
+                        let radius = (r.width().min(r.height()) * 0.166_67)
+                            .round()
+                            .clamp(0.0, 255.0) as u8;
                         painter.rect(
                             r,
                             CornerRadius::same(radius),
@@ -989,22 +1191,40 @@ fn paint_slide(ui: &egui::Ui, painter: &Painter, rect: Rect, deck: &Deck, slide:
                 let to = |p: &Pos2| rect.min + p.to_vec2() * k;
                 painter.line_segment([to(a), to(b)], Stroke::new((width * k).max(0.5), *color));
             }
-            Item::Image { rect: r, name, crop } => {
-                let entry = textures
-                    .entry(name.clone())
-                    .or_insert_with(|| deck.media.get(name).and_then(|d| decode_image(ui.ctx(), name, d)));
+            Item::Image {
+                rect: r,
+                name,
+                crop,
+            } => {
+                let entry = textures.entry(name.clone()).or_insert_with(|| {
+                    deck.media
+                        .get(name)
+                        .and_then(|d| decode_image(ui.ctx(), name, d))
+                });
                 let r = screen(*r);
                 match entry {
                     Some((texture, _)) => {
-                        let uv = Rect::from_min_max(pos2(crop[0], crop[1]), pos2(1.0 - crop[2], 1.0 - crop[3]));
+                        let uv = Rect::from_min_max(
+                            pos2(crop[0], crop[1]),
+                            pos2(1.0 - crop[2], 1.0 - crop[3]),
+                        );
                         painter.image(texture.id(), r, uv, Color32::WHITE);
                     }
                     None => {
-                        painter.rect_stroke(r, 0.0, Stroke::new(1.0_f32, Color32::from_gray(0xBF)), StrokeKind::Inside);
+                        painter.rect_stroke(
+                            r,
+                            0.0,
+                            Stroke::new(1.0_f32, Color32::from_gray(0xBF)),
+                            StrokeKind::Inside,
+                        );
                     }
                 }
             }
-            Item::Table { rect: r, columns, rows } => {
+            Item::Table {
+                rect: r,
+                columns,
+                rows,
+            } => {
                 let r = screen(*r);
                 let mut y = r.top();
                 for row in rows {
@@ -1017,13 +1237,26 @@ fn paint_slide(ui: &egui::Ui, painter: &Painter, rect: Rect, deck: &Deck, slide:
                             column += 1;
                             continue;
                         }
-                        let width: f32 = (column..column + cell.span).map(|c| columns.get(c).copied().unwrap_or(0.0)).sum::<f32>() * k;
+                        let width: f32 = (column..column + cell.span)
+                            .map(|c| columns.get(c).copied().unwrap_or(0.0))
+                            .sum::<f32>()
+                            * k;
                         let cell_rect = Rect::from_min_size(pos2(x, y), vec2(width, height));
                         if let Some(fill) = cell.fill {
                             painter.rect_filled(cell_rect, 0.0, fill);
                         }
-                        painter.rect_stroke(cell_rect, 0.0, Stroke::new(1.0_f32, Color32::from_gray(0xA0)), StrokeKind::Inside);
-                        paint_text(&painter.with_clip_rect(cell_rect.intersect(painter.clip_rect())), &cell.text, cell_rect, k);
+                        painter.rect_stroke(
+                            cell_rect,
+                            0.0,
+                            Stroke::new(1.0_f32, Color32::from_gray(0xA0)),
+                            StrokeKind::Inside,
+                        );
+                        paint_text(
+                            &painter.with_clip_rect(cell_rect.intersect(painter.clip_rect())),
+                            &cell.text,
+                            cell_rect,
+                            k,
+                        );
                         x += width;
                         column += cell.span;
                     }
@@ -1046,7 +1279,8 @@ pub fn show(ui: &mut egui::Ui, deck: &Deck, textures: &mut Textures, path: &Path
                 ui.spacing_mut().item_spacing.y = 0.0;
                 ui.add_space(12.0);
                 for (i, slide) in deck.slides.iter().enumerate() {
-                    let (area, _) = ui.allocate_exact_size(vec2(width, height + 34.0), egui::Sense::hover());
+                    let (area, _) =
+                        ui.allocate_exact_size(vec2(width, height + 34.0), egui::Sense::hover());
                     if !ui.is_rect_visible(area) {
                         continue;
                     }
@@ -1058,9 +1292,15 @@ pub fn show(ui: &mut egui::Ui, deck: &Deck, textures: &mut Textures, path: &Path
                         FontId::proportional(12.0),
                         t.text_secondary,
                     );
-                    let rect = Rect::from_min_size(area.left_top() + vec2(0.0, 20.0), vec2(width, height));
+                    let rect =
+                        Rect::from_min_size(area.left_top() + vec2(0.0, 20.0), vec2(width, height));
                     paint_slide(ui, &ui.painter_at(rect), rect, deck, slide, textures);
-                    painter.rect_stroke(rect, 0.0, Stroke::new(1.0_f32, t.border), StrokeKind::Outside);
+                    painter.rect_stroke(
+                        rect,
+                        0.0,
+                        Stroke::new(1.0_f32, t.border),
+                        StrokeKind::Outside,
+                    );
                 }
             });
         });
@@ -1071,8 +1311,14 @@ pub fn show(ui: &mut egui::Ui, deck: &Deck, textures: &mut Textures, path: &Path
 fn pdf_text(pdf: &mut Pdf, text: &Text, bounds: Rect) {
     let pt = 1.0 / EMU_PT;
     let inner = Rect::from_min_max(
-        pos2(bounds.min.x + text.insets[0] * pt, bounds.min.y + text.insets[1] * pt),
-        pos2(bounds.max.x - text.insets[2] * pt, bounds.max.y - text.insets[3] * pt),
+        pos2(
+            bounds.min.x + text.insets[0] * pt,
+            bounds.min.y + text.insets[1] * pt,
+        ),
+        pos2(
+            bounds.max.x - text.insets[2] * pt,
+            bounds.max.y - text.insets[3] * pt,
+        ),
     );
     let mut blocks = Vec::new();
     let mut total = 0.0;
@@ -1095,7 +1341,11 @@ fn pdf_text(pdf: &mut Pdf, text: &Text, bounds: Rect) {
         for run in &para.runs {
             items.push(Inl::Text(span(run, run.text.clone())));
         }
-        let width = if text.wrap { (inner.width() - margin).max(8.0) } else { 10_000.0 };
+        let width = if text.wrap {
+            (inner.width() - margin).max(8.0)
+        } else {
+            10_000.0
+        };
         let lines = flow(&items, width, para.size * text.scale);
         total += lines.iter().map(|l| l.height).sum::<f32>();
         blocks.push((lines, para.align, margin));
@@ -1107,7 +1357,13 @@ fn pdf_text(pdf: &mut Pdf, text: &Text, bounds: Rect) {
     };
     for (lines, align, margin) in blocks {
         for line in &lines {
-            pdf.draw_line(line, inner.left() + margin, y, (inner.width() - margin).max(0.0), align);
+            pdf.draw_line(
+                line,
+                inner.left() + margin,
+                y,
+                (inner.width() - margin).max(0.0),
+                align,
+            );
             y += line.height;
         }
     }
@@ -1123,43 +1379,97 @@ pub fn export_pdf(deck: &Deck, target: &Path) -> Result<()> {
         let scale = |r: Rect| Rect::from_min_size(pos2(r.min.x * pt, r.min.y * pt), r.size() * pt);
         for item in &slide.items {
             match item {
-                Item::Shape { rect, geom, fill, line, text } => {
+                Item::Shape {
+                    rect,
+                    geom,
+                    fill,
+                    line,
+                    text,
+                } => {
                     let r = scale(*rect);
                     let stroke = line.map(|(c, w)| (c, (w * pt).max(0.25)));
                     match geom {
-                        Geom::Ellipse => pdf.ellipse(r.min.x, r.min.y, r.width(), r.height(), *fill, stroke),
+                        Geom::Ellipse => {
+                            pdf.ellipse(r.min.x, r.min.y, r.width(), r.height(), *fill, stroke)
+                        }
                         Geom::Round => {
                             let radius = r.width().min(r.height()) * 0.166_67;
-                            pdf.rounded_rect(r.min.x, r.min.y, r.width(), r.height(), radius, *fill, stroke);
+                            pdf.rounded_rect(
+                                r.min.x,
+                                r.min.y,
+                                r.width(),
+                                r.height(),
+                                radius,
+                                *fill,
+                                stroke,
+                            );
                         }
-                        Geom::Rect => pdf.rounded_rect(r.min.x, r.min.y, r.width(), r.height(), 0.0, *fill, stroke),
+                        Geom::Rect => pdf.rounded_rect(
+                            r.min.x,
+                            r.min.y,
+                            r.width(),
+                            r.height(),
+                            0.0,
+                            *fill,
+                            stroke,
+                        ),
                     }
                     if let Some(text) = text {
                         pdf_text(&mut pdf, text, r);
                     }
                 }
                 Item::Line { a, b, color, width } => {
-                    pdf.line(a.x * pt, a.y * pt, b.x * pt, b.y * pt, *color, (width * pt).max(0.25));
+                    pdf.line(
+                        a.x * pt,
+                        a.y * pt,
+                        b.x * pt,
+                        b.y * pt,
+                        *color,
+                        (width * pt).max(0.25),
+                    );
                 }
                 Item::Image { rect, name, crop } => {
                     let r = scale(*rect);
                     let index = *images.entry(name.clone()).or_insert_with(|| {
-                        let img = deck.media.get(name).and_then(|d| image::load_from_memory(d).ok())?;
+                        let img = deck
+                            .media
+                            .get(name)
+                            .and_then(|d| image::load_from_memory(d).ok())?;
                         Some(pdf.add_image(&img))
                     });
                     match index {
                         Some(index) => {
                             let visible_w = 1.0 - crop[0] - crop[2];
                             let visible_h = 1.0 - crop[1] - crop[3];
-                            let (full_w, full_h) = (r.width() / visible_w.max(0.05), r.height() / visible_h.max(0.05));
+                            let (full_w, full_h) = (
+                                r.width() / visible_w.max(0.05),
+                                r.height() / visible_h.max(0.05),
+                            );
                             pdf.push_clip(r.min.x, r.min.y, r.width(), r.height());
-                            pdf.image(r.min.x - crop[0] * full_w, r.min.y - crop[1] * full_h, full_w, full_h, index);
+                            pdf.image(
+                                r.min.x - crop[0] * full_w,
+                                r.min.y - crop[1] * full_h,
+                                full_w,
+                                full_h,
+                                index,
+                            );
                             pdf.pop_clip();
                         }
-                        None => pdf.stroke_rect(r.min.x, r.min.y, r.width(), r.height(), Color32::from_gray(0xBF), 0.5),
+                        None => pdf.stroke_rect(
+                            r.min.x,
+                            r.min.y,
+                            r.width(),
+                            r.height(),
+                            Color32::from_gray(0xBF),
+                            0.5,
+                        ),
                     }
                 }
-                Item::Table { rect, columns, rows } => {
+                Item::Table {
+                    rect,
+                    columns,
+                    rows,
+                } => {
                     let r = scale(*rect);
                     let mut y = r.min.y;
                     for row in rows {
@@ -1172,14 +1482,20 @@ pub fn export_pdf(deck: &Deck, target: &Path) -> Result<()> {
                                 column += 1;
                                 continue;
                             }
-                            let width: f32 =
-                                (column..column + cell.span).map(|c| columns.get(c).copied().unwrap_or(0.0)).sum::<f32>() * pt;
+                            let width: f32 = (column..column + cell.span)
+                                .map(|c| columns.get(c).copied().unwrap_or(0.0))
+                                .sum::<f32>()
+                                * pt;
                             if let Some(fill) = cell.fill {
                                 pdf.fill_rect(x, y, width, height, fill);
                             }
                             pdf.stroke_rect(x, y, width, height, Color32::from_gray(0xA0), 0.5);
                             pdf.push_clip(x, y, width, height);
-                            pdf_text(&mut pdf, &cell.text, Rect::from_min_size(pos2(x, y), vec2(width, height)));
+                            pdf_text(
+                                &mut pdf,
+                                &cell.text,
+                                Rect::from_min_size(pos2(x, y), vec2(width, height)),
+                            );
                             pdf.pop_clip();
                             x += width;
                             column += cell.span;
@@ -1264,17 +1580,33 @@ mod tests {
     }
 
     fn sample(name: &str) -> std::path::PathBuf {
-        let path = std::env::temp_dir().join(format!("atelier-pptx-{}-{name}.pptx", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("atelier-pptx-{}-{name}.pptx", std::process::id()));
         let mut zip = zip::ZipWriter::new(fs::File::create(&path).unwrap());
         let options = zip::write::SimpleFileOptions::default();
         for (name, data) in [
             ("ppt/presentation.xml", PRESENTATION.as_bytes().to_vec()),
-            ("ppt/_rels/presentation.xml.rels", PRESENTATION_RELS.as_bytes().to_vec()),
+            (
+                "ppt/_rels/presentation.xml.rels",
+                PRESENTATION_RELS.as_bytes().to_vec(),
+            ),
             ("ppt/slides/slide1.xml", SLIDE.as_bytes().to_vec()),
-            ("ppt/slides/_rels/slide1.xml.rels", SLIDE_RELS.as_bytes().to_vec()),
-            ("ppt/slideLayouts/slideLayout1.xml", LAYOUT.as_bytes().to_vec()),
-            ("ppt/slideLayouts/_rels/slideLayout1.xml.rels", LAYOUT_RELS.as_bytes().to_vec()),
-            ("ppt/slideMasters/slideMaster1.xml", MASTER.as_bytes().to_vec()),
+            (
+                "ppt/slides/_rels/slide1.xml.rels",
+                SLIDE_RELS.as_bytes().to_vec(),
+            ),
+            (
+                "ppt/slideLayouts/slideLayout1.xml",
+                LAYOUT.as_bytes().to_vec(),
+            ),
+            (
+                "ppt/slideLayouts/_rels/slideLayout1.xml.rels",
+                LAYOUT_RELS.as_bytes().to_vec(),
+            ),
+            (
+                "ppt/slideMasters/slideMaster1.xml",
+                MASTER.as_bytes().to_vec(),
+            ),
             ("ppt/theme/theme1.xml", THEME.as_bytes().to_vec()),
             ("ppt/media/image1.png", png()),
         ] {
@@ -1293,14 +1625,26 @@ mod tests {
         assert_eq!(deck.size, vec2(9_144_000.0, 5_143_500.0));
         assert_eq!(deck.slides.len(), 1);
         let slide = &deck.slides[0];
-        assert_eq!(slide.bg, Color32::from_rgb(0xEE, 0xEE, 0xEE), "background of the master");
+        assert_eq!(
+            slide.bg,
+            Color32::from_rgb(0xEE, 0xEE, 0xEE),
+            "background of the master"
+        );
         // The bar of the master, the title, the group's ellipse, the picture, the table.
         assert_eq!(slide.items.len(), 5);
-        let Item::Shape { fill, .. } = &slide.items[0] else { panic!("master bar") };
+        let Item::Shape { fill, .. } = &slide.items[0] else {
+            panic!("master bar")
+        };
         assert_eq!(*fill, Some(Color32::from_rgb(0x4F, 0x81, 0xBD)));
 
-        let Item::Shape { rect, text, .. } = &slide.items[1] else { panic!("title") };
-        assert_eq!(rect.min, pos2(457_200.0, 228_600.0), "position of the layout");
+        let Item::Shape { rect, text, .. } = &slide.items[1] else {
+            panic!("title")
+        };
+        assert_eq!(
+            rect.min,
+            pos2(457_200.0, 228_600.0),
+            "position of the layout"
+        );
         let text = text.as_ref().unwrap();
         assert_eq!(text.paras[0].runs[0].text, "Bilan annuel");
         assert_eq!(text.paras[0].runs[0].size, 40.0, "size of the master");
@@ -1308,23 +1652,43 @@ mod tests {
         assert_eq!(text.anchor, Anchor::Middle);
         assert!(text.paras[0].runs[0].bold);
 
-        let Item::Shape { rect, geom, fill, line, text } = &slide.items[2] else { panic!("ellipse") };
+        let Item::Shape {
+            rect,
+            geom,
+            fill,
+            line,
+            text,
+        } = &slide.items[2]
+        else {
+            panic!("ellipse")
+        };
         assert_eq!(*geom, Geom::Ellipse);
         // The group is drawn twice as large as its content.
         assert_eq!(rect.min, pos2(1_200_000.0, 1_200_000.0));
         assert_eq!(rect.size(), vec2(800_000.0, 400_000.0));
         assert_eq!(*fill, Some(Color32::RED));
         assert_eq!(*line, Some((Color32::BLUE, 25_400.0)));
-        assert_eq!(text.as_ref().unwrap().paras[0].runs[0].color, Color32::WHITE);
+        assert_eq!(
+            text.as_ref().unwrap().paras[0].runs[0].color,
+            Color32::WHITE
+        );
 
-        let Item::Image { name, crop, .. } = &slide.items[3] else { panic!("picture") };
+        let Item::Image { name, crop, .. } = &slide.items[3] else {
+            panic!("picture")
+        };
         assert_eq!(name, "ppt/media/image1.png");
         assert_eq!(*crop, [0.1, 0.0, 0.1, 0.0]);
         assert!(deck.media.contains_key(name));
 
-        let Item::Table { columns, rows, .. } = &slide.items[4] else { panic!("table") };
+        let Item::Table { columns, rows, .. } = &slide.items[4] else {
+            panic!("table")
+        };
         assert_eq!(columns, &[2_000_000.0, 2_000_000.0]);
-        assert_eq!(rows[0].cells[0].fill, Some(Color32::from_rgb(0x4F, 0x81, 0xBD)), "header of the table style");
+        assert_eq!(
+            rows[0].cells[0].fill,
+            Some(Color32::from_rgb(0x4F, 0x81, 0xBD)),
+            "header of the table style"
+        );
         assert_eq!(rows[0].cells[0].text.paras[0].runs[0].color, Color32::WHITE);
         assert_eq!(rows[1].cells[0].span, 2);
         assert_eq!(rows[1].cells[1].span, 0);
@@ -1348,7 +1712,9 @@ mod tests {
         let mut textures = Textures::new();
         for _ in 0..2 {
             let _ = ctx.run(Default::default(), |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| show(ui, &deck, &mut textures, Path::new("a.pptx"), 1.0));
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    show(ui, &deck, &mut textures, Path::new("a.pptx"), 1.0)
+                });
             });
         }
         assert!(textures.values().all(Option::is_some));
@@ -1356,14 +1722,24 @@ mod tests {
 
     #[test]
     fn resolves_relative_targets() {
-        assert_eq!(resolve("ppt/slides/slide1.xml", "../media/a.png"), "ppt/media/a.png");
-        assert_eq!(resolve("ppt/presentation.xml", "slides/slide1.xml"), "ppt/slides/slide1.xml");
-        assert_eq!(resolve("ppt/slides/slide1.xml", "/ppt/media/b.png"), "ppt/media/b.png");
+        assert_eq!(
+            resolve("ppt/slides/slide1.xml", "../media/a.png"),
+            "ppt/media/a.png"
+        );
+        assert_eq!(
+            resolve("ppt/presentation.xml", "slides/slide1.xml"),
+            "ppt/slides/slide1.xml"
+        );
+        assert_eq!(
+            resolve("ppt/slides/slide1.xml", "/ppt/media/b.png"),
+            "ppt/media/b.png"
+        );
     }
 
     #[test]
     fn rejects_other_files() {
-        let text = std::env::temp_dir().join(format!("atelier-pptx-{}-text.pptx", std::process::id()));
+        let text =
+            std::env::temp_dir().join(format!("atelier-pptx-{}-text.pptx", std::process::id()));
         fs::write(&text, "not a zip").unwrap();
         let error = format!("{:#}", load(&text).err().unwrap());
         let _ = fs::remove_file(&text);

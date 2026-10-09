@@ -59,7 +59,13 @@ fn grammar(tsx: bool) -> &'static Grammar {
 /// 5 function, 6 constant, 7 annotation, 8 tag, 9 escape.
 fn code_of(name: &str) -> u8 {
     match name {
-        n if n.starts_with("keyword") || n == "type.builtin" || n == "variable.builtin" || n == "constant.builtin" => 1,
+        n if n.starts_with("keyword")
+            || n == "type.builtin"
+            || n == "variable.builtin"
+            || n == "constant.builtin" =>
+        {
+            1
+        }
         n if n.starts_with("string") || n.starts_with("template") => 2,
         "number" | "float" => 3,
         n if n.starts_with("comment") => 4,
@@ -111,7 +117,11 @@ pub fn colors(text: &str, palette: &Palette) -> Option<Vec<Vec<(Range<usize>, Co
             for capture in found.captures() {
                 let code = code_of(names[capture.index as usize]);
                 if code != 0 {
-                    marks.push((offset + found.pattern_index, capture.node.byte_range(), code));
+                    marks.push((
+                        offset + found.pattern_index,
+                        capture.node.byte_range(),
+                        code,
+                    ));
                 }
             }
         }
@@ -165,13 +175,32 @@ mod tests {
 
     fn palette() -> Palette {
         let c = |n: u8| Color32::from_rgb(n, n, n);
-        Palette { keyword: c(1), string: c(2), number: c(3), comment: c(4), function: c(5), constant: c(6), annotation: c(7), tag: c(8), escape: c(9), text: c(0) }
+        Palette {
+            keyword: c(1),
+            string: c(2),
+            number: c(3),
+            comment: c(4),
+            function: c(5),
+            constant: c(6),
+            annotation: c(7),
+            tag: c(8),
+            escape: c(9),
+            text: c(0),
+        }
     }
 
-    fn color_of(lines: &[Vec<(Range<usize>, Color32)>], line: usize, text: &str, word: &str) -> Option<u8> {
+    fn color_of(
+        lines: &[Vec<(Range<usize>, Color32)>],
+        line: usize,
+        text: &str,
+        word: &str,
+    ) -> Option<u8> {
         let source = text.lines().nth(line).unwrap();
         let at = source.find(word)?;
-        lines[line].iter().find(|(r, _)| r.start <= at && at < r.end).map(|(_, c)| c.r())
+        lines[line]
+            .iter()
+            .find(|(r, _)| r.start <= at && at < r.end)
+            .map(|(_, c)| c.r())
     }
 
     #[test]
@@ -180,7 +209,11 @@ mod tests {
         let lines = colors(text, &palette()).expect("the queries compile");
         assert_eq!(lines.len(), text.split('\n').count());
         assert_eq!(color_of(&lines, 0, text, "interface"), Some(1), "interface");
-        assert_eq!(color_of(&lines, 1, text, "string"), Some(1), "a primitive type");
+        assert_eq!(
+            color_of(&lines, 1, text, "string"),
+            Some(1),
+            "a primitive type"
+        );
         assert_eq!(color_of(&lines, 2, text, "number"), Some(1));
         assert_eq!(color_of(&lines, 4, text, "note"), Some(4), "a comment");
         assert_eq!(color_of(&lines, 5, text, "type"), Some(1), "type alias");
@@ -188,7 +221,11 @@ mod tests {
         assert_eq!(color_of(&lines, 7, text, "implements"), Some(1));
         assert_eq!(color_of(&lines, 8, text, "private"), Some(1), "a modifier");
         assert_eq!(color_of(&lines, 8, text, "readonly"), Some(1));
-        assert_eq!(color_of(&lines, 12, text, "hi"), Some(2), "a template string");
+        assert_eq!(
+            color_of(&lines, 12, text, "hi"),
+            Some(2),
+            "a template string"
+        );
         assert_eq!(color_of(&lines, 13, text, "42"), Some(3));
         assert_eq!(color_of(&lines, 13, text, "const"), Some(1));
     }

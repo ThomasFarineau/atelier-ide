@@ -70,7 +70,11 @@ pub struct Launch {
 impl Client {
     /// Starts the server and begins the handshake. Returns at once: the server is ready when
     /// [`Client::ready`] says so.
-    pub fn start(launch: &Launch, root: &Path, repaint: Arc<dyn Fn() + Send + Sync>) -> Result<Arc<Self>> {
+    pub fn start(
+        launch: &Launch,
+        root: &Path,
+        repaint: Arc<dyn Fn() + Send + Sync>,
+    ) -> Result<Arc<Self>> {
         let mut command = Command::new(&launch.program);
         command
             .args(&launch.args)
@@ -87,8 +91,14 @@ impl Client {
         let mut child = command
             .spawn()
             .with_context(|| format!("impossible de lancer {}", launch.program.display()))?;
-        let stdin = child.stdin.take().ok_or_else(|| anyhow!("pas d'entrée standard"))?;
-        let stdout = child.stdout.take().ok_or_else(|| anyhow!("pas de sortie standard"))?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| anyhow!("pas d'entrée standard"))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow!("pas de sortie standard"))?;
         let stderr = child.stderr.take();
         let shared = Arc::new(Mutex::new(Shared::default()));
         let exited = Arc::new(AtomicBool::new(false));
@@ -138,7 +148,9 @@ impl Client {
         }
 
         let root_uri = path_to_uri(root);
-        let name = root.file_name().map_or("projet".into(), |n| n.to_string_lossy().into_owned());
+        let name = root
+            .file_name()
+            .map_or("projet".into(), |n| n.to_string_lossy().into_owned());
         let params = json!({
             "processId": std::process::id(),
             "clientInfo": {"name": "Atelier"},
@@ -174,13 +186,17 @@ impl Client {
             Box::new(move |result| {
                 let Some(client) = weak.upgrade() else { return };
                 if let Err(error) = result {
-                    let message = error["message"].as_str().unwrap_or("initialisation refusée").to_string();
+                    let message = error["message"]
+                        .as_str()
+                        .unwrap_or("initialisation refusée")
+                        .to_string();
                     if let Ok(mut s) = client.shared.lock() {
                         s.error = Some(message);
                     }
                     return;
                 }
-                let _ = client.write(&json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}));
+                let _ =
+                    client.write(&json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}));
                 let queued: Vec<Value> = client
                     .shared
                     .lock()
@@ -212,12 +228,18 @@ impl Client {
 
     /// The last lines the server printed on its error output, for the error message.
     pub fn log(&self) -> String {
-        self.shared.lock().map(|s| s.log.join("\n")).unwrap_or_default()
+        self.shared
+            .lock()
+            .map(|s| s.log.join("\n"))
+            .unwrap_or_default()
     }
 
     fn write(&self, message: &Value) -> Result<()> {
         let body = serde_json::to_vec(message)?;
-        let mut stdin = self.stdin.lock().map_err(|_| anyhow!("entrée verrouillée"))?;
+        let mut stdin = self
+            .stdin
+            .lock()
+            .map_err(|_| anyhow!("entrée verrouillée"))?;
         write!(stdin, "Content-Length: {}\r\n\r\n", body.len())?;
         stdin.write_all(&body)?;
         stdin.flush()?;
@@ -233,7 +255,11 @@ impl Client {
             .insert(id, callback);
         let message = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
         if let Err(e) = self.write(&message) {
-            let callback = self.shared.lock().ok().and_then(|mut s| s.callbacks.remove(&id));
+            let callback = self
+                .shared
+                .lock()
+                .ok()
+                .and_then(|mut s| s.callbacks.remove(&id));
             if let Some(callback) = callback {
                 callback(Err(json!({"message": e.to_string()})));
             }
@@ -243,7 +269,12 @@ impl Client {
     }
 
     /// Sends a request once the server is ready; `callback` gets the result or the error.
-    pub fn request(&self, method: &str, params: Value, callback: impl FnOnce(Result<Value, Value>) + Send + 'static) {
+    pub fn request(
+        &self,
+        method: &str,
+        params: Value,
+        callback: impl FnOnce(Result<Value, Value>) + Send + 'static,
+    ) {
         if self.exited() {
             callback(Err(json!({"message": "le serveur est arrêté"})));
             return;
@@ -270,7 +301,12 @@ impl Client {
     pub fn diagnostics(&self, uri: &str) -> (Vec<ServerDiagnostic>, u64) {
         self.shared
             .lock()
-            .map(|s| (s.diagnostics.get(uri).cloned().unwrap_or_default(), s.generation))
+            .map(|s| {
+                (
+                    s.diagnostics.get(uri).cloned().unwrap_or_default(),
+                    s.generation,
+                )
+            })
             .unwrap_or_default()
     }
 
@@ -282,7 +318,8 @@ impl Client {
 impl Drop for Client {
     fn drop(&mut self) {
         // Ask politely, then make sure the process is gone.
-        let _ = self.write(&json!({"jsonrpc": "2.0", "id": 0, "method": "shutdown", "params": null}));
+        let _ =
+            self.write(&json!({"jsonrpc": "2.0", "id": 0, "method": "shutdown", "params": null}));
         let _ = self.write(&json!({"jsonrpc": "2.0", "method": "exit", "params": null}));
         if let Ok(mut child) = self.child.lock() {
             thread::sleep(Duration::from_millis(50));
@@ -345,7 +382,9 @@ fn handle_message(message: Value, shared: &Arc<Mutex<Shared>>, client: Option<&C
         }
         (None, Some("textDocument/publishDiagnostics")) => {
             let params = &message["params"];
-            let Some(uri) = params["uri"].as_str() else { return };
+            let Some(uri) = params["uri"].as_str() else {
+                return;
+            };
             let list = params["diagnostics"]
                 .as_array()
                 .map(|items| items.iter().filter_map(parse_diagnostic).collect())
@@ -360,7 +399,10 @@ fn handle_message(message: Value, shared: &Arc<Mutex<Shared>>, client: Option<&C
 }
 
 fn position(value: &Value) -> Option<(usize, usize)> {
-    Some((value["line"].as_u64()? as usize, value["character"].as_u64()? as usize))
+    Some((
+        value["line"].as_u64()? as usize,
+        value["character"].as_u64()? as usize,
+    ))
 }
 
 fn parse_diagnostic(value: &Value) -> Option<ServerDiagnostic> {
@@ -407,7 +449,9 @@ pub fn from_position(text: &str, line: usize, column: usize) -> usize {
 
 /// The `file://` address of a path.
 pub fn path_to_uri(path: &Path) -> String {
-    let text = crate::project::simplify(path).to_string_lossy().replace('\\', "/");
+    let text = crate::project::simplify(path)
+        .to_string_lossy()
+        .replace('\\', "/");
     let mut uri = String::from("file://");
     if !text.starts_with('/') {
         uri.push('/');
@@ -480,31 +524,54 @@ mod tests {
         assert_eq!(from_position(text, 0, 3), 5);
         assert_eq!(from_position(text, 1, 7), text.find("line").unwrap());
         assert_eq!(from_position(text, 9, 0), text.len(), "past the end");
-        assert_eq!(from_position(text, 0, 99), text.find('\n').unwrap(), "past the line");
+        assert_eq!(
+            from_position(text, 0, 99),
+            text.find('\n').unwrap(),
+            "past the line"
+        );
     }
 
     #[test]
     fn addresses_are_encoded_and_compared_in_one_form() {
         let uri = path_to_uri(Path::new(r"C:\Users\Thomas\my project\a#b.js"));
         assert_eq!(uri, "file:///C:/Users/Thomas/my%20project/a%23b.js");
-        assert_eq!(normalize_uri(&uri), normalize_uri("file:///c%3A/Users/Thomas/my%20project/a%23b.js"));
-        assert_eq!(path_to_uri(Path::new("/home/t/x.js")), "file:///home/t/x.js");
+        assert_eq!(
+            normalize_uri(&uri),
+            normalize_uri("file:///c%3A/Users/Thomas/my%20project/a%23b.js")
+        );
+        assert_eq!(
+            path_to_uri(Path::new("/home/t/x.js")),
+            "file:///home/t/x.js"
+        );
     }
 
     #[test]
     fn addresses_come_back_to_paths() {
-        assert_eq!(uri_to_path("file:///C:/Users/Thomas/my%20project/a.js"), Some(PathBuf::from("C:/Users/Thomas/my project/a.js")));
-        assert_eq!(uri_to_path("file:///home/t/x.js"), Some(PathBuf::from("/home/t/x.js")));
+        assert_eq!(
+            uri_to_path("file:///C:/Users/Thomas/my%20project/a.js"),
+            Some(PathBuf::from("C:/Users/Thomas/my project/a.js"))
+        );
+        assert_eq!(
+            uri_to_path("file:///home/t/x.js"),
+            Some(PathBuf::from("/home/t/x.js"))
+        );
         assert_eq!(uri_to_path("https://x"), None);
     }
 
     #[test]
     fn messages_are_read_with_their_length() {
         let body = br#"{"jsonrpc":"2.0","id":1,"result":null}"#;
-        let framed = [format!("Content-Length: {}\r\n\r\n", body.len()).into_bytes(), body.to_vec()].concat();
+        let framed = [
+            format!("Content-Length: {}\r\n\r\n", body.len()).into_bytes(),
+            body.to_vec(),
+        ]
+        .concat();
         let mut reader = std::io::Cursor::new(framed);
         let message = read_message(&mut reader).unwrap().unwrap();
         assert_eq!(message["id"], 1);
-        assert!(read_message(&mut reader).unwrap().is_none(), "end of stream");
+        assert!(
+            read_message(&mut reader).unwrap().is_none(),
+            "end of stream"
+        );
     }
 }

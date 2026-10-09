@@ -38,7 +38,9 @@ pub fn find(name: &str) -> Option<&'static Icon> {
             .map(|i| &ICONS[i])
     };
     by_key(name).or_else(|| {
-        let index = SHORT_NAMES.binary_search_by(|(short, _)| short.cmp(&name)).ok()?;
+        let index = SHORT_NAMES
+            .binary_search_by(|(short, _)| short.cmp(&name))
+            .ok()?;
         by_key(SHORT_NAMES[index].1)
     })
 }
@@ -58,10 +60,13 @@ pub fn extension_icon(owner: &str, path: &std::path::Path) -> Option<&'static st
     let name = path.file_name()?.to_str()?.to_ascii_lowercase();
     let extension = name.rsplit_once('.').map(|(_, e)| e);
     let first = name.split('.').next().filter(|f| !f.is_empty());
-    [Some(name.as_str()), extension, first].into_iter().flatten().find_map(|token| {
-        let index = EXTENSIONS
-            .binary_search_by(|(d, e, _)| (*d, *e).cmp(&(owner, token)))
-            .ok()?;
-        Some(EXTENSIONS[index].2)
-    })
+    [Some(name.as_str()), extension, first]
+        .into_iter()
+        .flatten()
+        .find_map(|token| {
+            let index = EXTENSIONS
+                .binary_search_by(|(d, e, _)| (*d, *e).cmp(&(owner, token)))
+                .ok()?;
+            Some(EXTENSIONS[index].2)
+        })
 }

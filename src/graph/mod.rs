@@ -46,7 +46,9 @@ fn publish(graph: Option<Arc<Graph>>) {
 }
 
 fn now() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
 }
 
 /// What the interface shows of the graph.
@@ -100,7 +102,14 @@ pub struct Service {
 
 impl Default for Service {
     fn default() -> Self {
-        Self { root: PathBuf::new(), sender: None, status: Arc::default(), decided: true, offerable: false, postponed: false }
+        Self {
+            root: PathBuf::new(),
+            sender: None,
+            status: Arc::default(),
+            decided: true,
+            offerable: false,
+            postponed: false,
+        }
     }
 }
 
@@ -113,7 +122,9 @@ impl Service {
         let setting = crate::atelier::graph_setting(root);
         self.decided = setting.is_some();
         self.postponed = false;
-        self.offerable = [".git", "Cargo.toml", "package.json", "tsconfig.json"].iter().any(|f| root.join(f).exists());
+        self.offerable = [".git", "Cargo.toml", "package.json", "tsconfig.json"]
+            .iter()
+            .any(|f| root.join(f).exists());
         if setting == Some(true) {
             self.start(wake);
         }
@@ -123,7 +134,9 @@ impl Service {
         let (sender, receiver) = mpsc::channel();
         let (root, status) = (self.root.clone(), self.status.clone());
         *status.lock().unwrap_or_else(|e| e.into_inner()) = Status::default();
-        let spawned = std::thread::Builder::new().name("graph".into()).spawn(move || run(&root, &receiver, &status, &*wake));
+        let spawned = std::thread::Builder::new()
+            .name("graph".into())
+            .spawn(move || run(&root, &receiver, &status, &*wake));
         if spawned.is_ok() {
             self.sender = Some(sender);
         }
@@ -191,7 +204,10 @@ impl Service {
     }
 
     pub fn status(&self) -> Status {
-        self.status.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.status
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 }
 
@@ -206,7 +222,9 @@ fn scan(root: &Path) -> Vec<(String, PathBuf, u64, u64)> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        let Ok(children) = crate::project::searchable_children(&dir) else { continue };
+        let Ok(children) = crate::project::searchable_children(&dir) else {
+            continue;
+        };
         for child in children {
             let name = child.file_name().and_then(|n| n.to_str()).unwrap_or("");
             if child.is_dir() {
@@ -216,15 +234,30 @@ fn scan(root: &Path) -> Vec<(String, PathBuf, u64, u64)> {
                 }
                 continue;
             }
-            if child.extension().and_then(|e| e.to_str()).and_then(extract::language_of).is_none() {
+            if child
+                .extension()
+                .and_then(|e| e.to_str())
+                .and_then(extract::language_of)
+                .is_none()
+            {
                 continue;
             }
-            let Ok(meta) = fs::metadata(&child) else { continue };
+            let Ok(meta) = fs::metadata(&child) else {
+                continue;
+            };
             if meta.len() > MAX_SOURCE {
                 continue;
             }
-            let mtime = meta.modified().ok().and_then(|m| m.duration_since(UNIX_EPOCH).ok()).map_or(0, |d| d.as_millis() as u64);
-            let rel = child.strip_prefix(root).unwrap_or(&child).to_string_lossy().replace('\\', "/");
+            let mtime = meta
+                .modified()
+                .ok()
+                .and_then(|m| m.duration_since(UNIX_EPOCH).ok())
+                .map_or(0, |d| d.as_millis() as u64);
+            let rel = child
+                .strip_prefix(root)
+                .unwrap_or(&child)
+                .to_string_lossy()
+                .replace('\\', "/");
             out.push((rel, child, mtime, meta.len()));
             if out.len() >= MAX_FILES {
                 return out;
@@ -240,14 +273,25 @@ fn load_cache(root: &Path) -> Cache {
         .ok()
         .and_then(|b| serde_json::from_slice::<Cache>(&b).ok())
         .filter(|c| c.version == CACHE_VERSION)
-        .unwrap_or_else(|| Cache { version: CACHE_VERSION, files: BTreeMap::new() })
+        .unwrap_or_else(|| Cache {
+            version: CACHE_VERSION,
+            files: BTreeMap::new(),
+        })
 }
 
-fn write_outputs(root: &Path, graph: &Graph, cache: &Cache, cache_changed: bool) -> std::io::Result<()> {
+fn write_outputs(
+    root: &Path,
+    graph: &Graph,
+    cache: &Cache,
+    cache_changed: bool,
+) -> std::io::Result<()> {
     let dir = folder(root);
     fs::create_dir_all(&dir)?;
     crate::atelier::ensure_ignored(root, "graph/");
-    fs::write(dir.join("graph.json"), serde_json::to_vec(&report::json(graph))?)?;
+    fs::write(
+        dir.join("graph.json"),
+        serde_json::to_vec(&report::json(graph))?,
+    )?;
     fs::write(dir.join("GRAPH_REPORT.md"), report::markdown(graph))?;
     if cache_changed {
         fs::write(dir.join("cache.json"), serde_json::to_vec(cache)?)?;
@@ -257,14 +301,31 @@ fn write_outputs(root: &Path, graph: &Graph, cache: &Cache, cache_changed: bool)
 
 /// Looks at the files, extracts again what changed and builds the graph again if anything did.
 /// Whether it did.
-fn update(root: &Path, cache: &mut Cache, force: bool, status: &Mutex<Status>, wake: &(dyn Fn() + Send + Sync)) -> bool {
+fn update(
+    root: &Path,
+    cache: &mut Cache,
+    force: bool,
+    status: &Mutex<Status>,
+    wake: &(dyn Fn() + Send + Sync),
+) -> bool {
     let files = scan(root);
     let present: std::collections::HashSet<&str> = files.iter().map(|f| f.0.as_str()).collect();
     let stale: Vec<&(String, PathBuf, u64, u64)> = files
         .iter()
-        .filter(|(rel, _, mtime, size)| force || cache.files.get(rel).is_none_or(|e| e.mtime != *mtime || e.size != *size))
+        .filter(|(rel, _, mtime, size)| {
+            force
+                || cache
+                    .files
+                    .get(rel)
+                    .is_none_or(|e| e.mtime != *mtime || e.size != *size)
+        })
         .collect();
-    let removed: Vec<String> = cache.files.keys().filter(|k| !present.contains(k.as_str())).cloned().collect();
+    let removed: Vec<String> = cache
+        .files
+        .keys()
+        .filter(|k| !present.contains(k.as_str()))
+        .cloned()
+        .collect();
     if stale.is_empty() && removed.is_empty() && current().is_some() {
         return false;
     }
@@ -275,12 +336,29 @@ fn update(root: &Path, cache: &mut Cache, force: bool, status: &Mutex<Status>, w
         cache.files.remove(rel);
     }
     for (rel, path, mtime, size) in &stale {
-        let language = path.extension().and_then(|e| e.to_str()).and_then(extract::language_of).unwrap_or("js");
+        let language = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .and_then(extract::language_of)
+            .unwrap_or("js");
         // A file that cannot be read as text says nothing.
-        let facts = fs::read_to_string(path).map(|text| extract::extract(language, &text)).unwrap_or_default();
-        cache.files.insert(rel.clone(), Entry { mtime: *mtime, size: *size, facts });
+        let facts = fs::read_to_string(path)
+            .map(|text| extract::extract(language, &text))
+            .unwrap_or_default();
+        cache.files.insert(
+            rel.clone(),
+            Entry {
+                mtime: *mtime,
+                size: *size,
+                facts,
+            },
+        );
     }
-    let facts: BTreeMap<String, Facts> = cache.files.iter().map(|(k, v)| (k.clone(), v.facts.clone())).collect();
+    let facts: BTreeMap<String, Facts> = cache
+        .files
+        .iter()
+        .map(|(k, v)| (k.clone(), v.facts.clone()))
+        .collect();
     let mut graph = build::build(root, &facts, now());
     for node in graph.nodes.iter_mut().filter(|n| n.kind == "file") {
         node.size = cache.files.get(&node.file).map_or(0, |e| e.size);
@@ -293,7 +371,9 @@ fn update(root: &Path, cache: &mut Cache, force: bool, status: &Mutex<Status>, w
         symbols: report::symbols(&graph),
         groups: graph.communities.len(),
         updated: graph.generated,
-        error: written.err().map(|e| format!("Écriture de .atelier/graph impossible : {e}")),
+        error: written
+            .err()
+            .map(|e| format!("Écriture de .atelier/graph impossible : {e}")),
     };
     drop(state);
     publish(Some(Arc::new(graph)));
@@ -301,7 +381,12 @@ fn update(root: &Path, cache: &mut Cache, force: bool, status: &Mutex<Status>, w
     true
 }
 
-fn run(root: &Path, messages: &mpsc::Receiver<Msg>, status: &Mutex<Status>, wake: &(dyn Fn() + Send + Sync)) {
+fn run(
+    root: &Path,
+    messages: &mpsc::Receiver<Msg>,
+    status: &Mutex<Status>,
+    wake: &(dyn Fn() + Send + Sync),
+) {
     let mut cache = load_cache(root);
     let mut force = false;
     loop {
@@ -340,18 +425,29 @@ mod tests {
 
     #[test]
     fn the_graph_is_made_kept_up_to_date_and_dropped_when_turned_off() {
-        let root = std::env::temp_dir().join(format!("atelier-graph-service-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("atelier-graph-service-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join("src")).unwrap();
-        fs::write(root.join("src/a.js"), "import './b.js';\nexport function first() { second(); }\n").unwrap();
+        fs::write(
+            root.join("src/a.js"),
+            "import './b.js';\nexport function first() { second(); }\n",
+        )
+        .unwrap();
         fs::write(root.join("src/b.js"), "export function second() {}\n").unwrap();
         let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
         let mut service = Service::default();
         service.set_root(&root, wake.clone());
-        assert!(!service.enabled() && !service.should_offer(), "off until the user says so (and no repository here, so no offer)");
+        assert!(
+            !service.enabled() && !service.should_offer(),
+            "off until the user says so (and no repository here, so no offer)"
+        );
         fs::create_dir_all(root.join(".git")).unwrap();
         service.set_root(&root, wake.clone());
-        assert!(service.should_offer(), "a repository nobody answered for is offered the graph");
+        assert!(
+            service.should_offer(),
+            "a repository nobody answered for is offered the graph"
+        );
         service.postpone();
         assert!(!service.should_offer());
         service.enable(wake.clone());
@@ -360,16 +456,30 @@ mod tests {
         assert!(current().is_some_and(|g| g.nodes.iter().any(|n| n.label == "first")));
         let dir = folder(&root);
         assert!(dir.join("graph.json").exists() && dir.join("cache.json").exists());
-        assert!(fs::read_to_string(dir.join("GRAPH_REPORT.md")).unwrap().contains("# Context graph"));
-        assert_eq!(fs::read_to_string(root.join(".atelier/.gitignore")).unwrap(), "graph/\n");
+        assert!(
+            fs::read_to_string(dir.join("GRAPH_REPORT.md"))
+                .unwrap()
+                .contains("# Context graph")
+        );
+        assert_eq!(
+            fs::read_to_string(root.join(".atelier/.gitignore")).unwrap(),
+            "graph/\n"
+        );
         // A file changes, one appears, one goes: the graph follows without a new request.
-        fs::write(root.join("src/a.js"), "import './b.js';\nexport function first() { second(); }\nexport function third() {}\n").unwrap();
+        fs::write(
+            root.join("src/a.js"),
+            "import './b.js';\nexport function first() { second(); }\nexport function third() {}\n",
+        )
+        .unwrap();
         fs::write(root.join("src/c.rs"), "pub fn fourth() {}\n").unwrap();
         fs::remove_file(root.join("src/b.js")).unwrap();
         service.file_changed();
         let status = wait_for(&service, |s| s.symbols == 3 && s.files == 2);
         assert_eq!(status.groups, current().map_or(0, |g| g.communities.len()));
-        assert!(current().is_some_and(|g| g.nodes.iter().any(|n| n.label == "fourth") && !g.nodes.iter().any(|n| n.label == "second")));
+        assert!(
+            current().is_some_and(|g| g.nodes.iter().any(|n| n.label == "fourth")
+                && !g.nodes.iter().any(|n| n.label == "second"))
+        );
         // A restart reads nothing again: the cache answers for the files that did not change.
         let cached = load_cache(&root);
         assert_eq!(cached.files.len(), 2);

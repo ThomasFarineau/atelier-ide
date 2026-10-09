@@ -5,14 +5,14 @@
 use super::{EditorState, Options, column_of, is_word};
 use crate::{
     languages::{
-        Completion, CompletionItem, Diagnostic, DocRef, FileEdit, Hover, ItemKind, Location, Oneshot, QuickFix,
-        Service, Severity, Symbol, TextEdit, fuzzy_match,
+        Completion, CompletionItem, Diagnostic, DocRef, FileEdit, Hover, ItemKind, Location,
+        Oneshot, QuickFix, Service, Severity, Symbol, TextEdit, fuzzy_match,
     },
     ui::Theme,
 };
 use eframe::egui::{
-    self, Align2, Color32, FontId, Key, Modifiers, Order, Painter, Pos2, Rect, RichText, Stroke, StrokeKind, Ui,
-    pos2, text::CCursor, vec2,
+    self, Align2, Color32, FontId, Key, Modifiers, Order, Painter, Pos2, Rect, RichText, Stroke,
+    StrokeKind, Ui, pos2, text::CCursor, vec2,
 };
 use std::{
     ops::Range,
@@ -182,7 +182,11 @@ struct UsageState {
 fn scroll_chooser(chooser: &mut Chooser, lines: f32) {
     let max = chooser.shown.len().saturating_sub(ROWS);
     let step = lines.abs().ceil() as usize;
-    chooser.scroll = if lines < 0.0 { (chooser.scroll + step).min(max) } else { chooser.scroll.saturating_sub(step) };
+    chooser.scroll = if lines < 0.0 {
+        (chooser.scroll + step).min(max)
+    } else {
+        chooser.scroll.saturating_sub(step)
+    };
 }
 
 fn place_entries(locations: Vec<Location>) -> Vec<Entry> {
@@ -192,7 +196,9 @@ fn place_entries(locations: Vec<Location>) -> Vec<Entry> {
             detail: match &location.path {
                 Some(path) => format!(
                     "{}:{}",
-                    path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+                    path.file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default(),
                     location.line + 1
                 ),
                 None => format!("ligne {}", location.line + 1),
@@ -309,7 +315,12 @@ impl EditorState {
         if let Some(mut rename) = self.assist.rename.take() {
             if std::mem::take(&mut rename.submit) {
                 rename.error = None;
-                rename.answer = Some(assist.service.rename(&assist.doc, text, rename.word.start, rename.name.trim()));
+                rename.answer = Some(assist.service.rename(
+                    &assist.doc,
+                    text,
+                    rename.word.start,
+                    rename.name.trim(),
+                ));
             }
             let mut keep = true;
             if let Some(answer) = &rename.answer {
@@ -379,7 +390,9 @@ impl EditorState {
         }
         self.poll_goto(ui, text, opt);
         if let Some(explicit) = self.assist.want.take() {
-            let answer = assist.service.complete(&assist.doc, text, self.cursor, explicit);
+            let answer = assist
+                .service
+                .complete(&assist.doc, text, self.cursor, explicit);
             self.assist.pending = Some(Pending { answer, explicit });
         }
         if let Some(pending) = &self.assist.pending {
@@ -408,7 +421,10 @@ impl EditorState {
                 && popup.items[*index].raw.is_some()
             {
                 let index = *index;
-                popup.resolving = Some((index, assist.service.resolve(&assist.doc, &popup.items[index])));
+                popup.resolving = Some((
+                    index,
+                    assist.service.resolve(&assist.doc, &popup.items[index]),
+                ));
             }
             if popup.resolving.is_some() {
                 ui.ctx().request_repaint_after(Duration::from_millis(30));
@@ -430,7 +446,8 @@ impl EditorState {
             return;
         };
         // The caret may have moved on since the request.
-        if self.cursor < completion.from || completion.from > text.len() || self.cursor > text.len() {
+        if self.cursor < completion.from || completion.from > text.len() || self.cursor > text.len()
+        {
             return;
         }
         let mut popup = Popup {
@@ -477,7 +494,8 @@ impl EditorState {
         }
         let Some(c) = typed else { return };
         let word_start = word_start_of(text, self.cursor);
-        let trigger = c == '.' || c == '/' || (is_word(c) && self.cursor - word_start >= 1 && c != ' ');
+        let trigger =
+            c == '.' || c == '/' || (is_word(c) && self.cursor - word_start >= 1 && c != ' ');
         if trigger {
             self.assist.want = Some(false);
         }
@@ -528,7 +546,11 @@ impl EditorState {
             let count = chooser.shown.len();
             if count == 0 && key != Key::Backspace {
                 self.assist.chooser = None;
-                return if key == Key::Escape { Some(false) } else { None };
+                return if key == Key::Escape {
+                    Some(false)
+                } else {
+                    None
+                };
             }
             match key {
                 Key::Backspace if chooser.filter.is_some() => {
@@ -548,7 +570,11 @@ impl EditorState {
                 }
                 _ => {
                     self.assist.chooser = None;
-                    return if key == Key::Escape { Some(false) } else { None };
+                    return if key == Key::Escape {
+                        Some(false)
+                    } else {
+                        None
+                    };
                 }
             }
             if chooser.selected < chooser.scroll {
@@ -581,7 +607,9 @@ impl EditorState {
                 scroll_to_selection(popup);
                 Some(false)
             }
-            Key::Enter | Key::Tab if !m.shift && !m.command => Some(self.accept_completion(text, key == Key::Tab)),
+            Key::Enter | Key::Tab if !m.shift && !m.command => {
+                Some(self.accept_completion(text, key == Key::Tab))
+            }
             Key::Escape => {
                 self.assist.popup = None;
                 Some(false)
@@ -616,10 +644,15 @@ impl EditorState {
         }
         // Lines after the first keep the indentation of the current one.
         let line_start = self.lines[self.line_of(from)];
-        let indent: String = text[line_start..from].chars().take_while(|c| *c == ' ' || *c == '\t').collect();
+        let indent: String = text[line_start..from]
+            .chars()
+            .take_while(|c| *c == ' ' || *c == '\t')
+            .collect();
         let insert = item.insert.replace('\n', &format!("\n{indent}"));
         let caret = item.caret.map(|c| {
-            let newlines = item.insert[..c.min(item.insert.len())].matches('\n').count();
+            let newlines = item.insert[..c.min(item.insert.len())]
+                .matches('\n')
+                .count();
             c + newlines * indent.len()
         });
         self.replace(text, from..to, &insert, false);
@@ -791,7 +824,13 @@ impl EditorState {
                 Nav::Implementation => assist.service.implementation(&assist.doc, text, offset),
                 Nav::Usages => assist.service.references(&assist.doc, text, offset),
             };
-            self.assist.job = Some(Job { word, offset, kind, usages, answer });
+            self.assist.job = Some(Job {
+                word,
+                offset,
+                kind,
+                usages,
+                answer,
+            });
         }
         let Some(job) = &self.assist.job else { return };
         let Some(places) = job.answer.take() else {
@@ -871,8 +910,12 @@ impl EditorState {
 
     /// Typing while a list is open filters it, when it can be.
     pub(super) fn assist_text(&mut self, typed: &str) -> bool {
-        let Some(chooser) = &mut self.assist.chooser else { return false };
-        let Some(filter) = &mut chooser.filter else { return false };
+        let Some(chooser) = &mut self.assist.chooser else {
+            return false;
+        };
+        let Some(filter) = &mut chooser.filter else {
+            return false;
+        };
         filter.push_str(typed);
         chooser.refilter();
         true
@@ -883,7 +926,10 @@ impl EditorState {
         let Some(assist) = &opt.assist else { return };
         let word = {
             let w = self.word_at(text, self.cursor);
-            let starts_with_digit = text[w.clone()].chars().next().is_some_and(|c| c.is_ascii_digit());
+            let starts_with_digit = text[w.clone()]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_digit());
             (self.selection().is_empty() && !w.is_empty() && !starts_with_digit).then_some(w)
         };
         let rev = self.rev;
@@ -909,7 +955,10 @@ impl EditorState {
             }
         }
         if !state.requested {
-            if state.since.is_some_and(|s| s.elapsed() >= Duration::from_millis(150)) {
+            if state
+                .since
+                .is_some_and(|s| s.elapsed() >= Duration::from_millis(150))
+            {
                 state.requested = true;
                 state.answer = Some(assist.service.highlights(&assist.doc, text, cursor));
             } else {
@@ -920,7 +969,18 @@ impl EditorState {
 
     /// Background of the two brackets of the pair at the caret.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn bracket_highlights(&self, painter: &Painter, text: &str, line: Range<usize>, galley: &egui::Galley, text_left: f32, y: f32, row: f32, color: Color32, pair: Option<(usize, usize)>) {
+    pub(super) fn bracket_highlights(
+        &self,
+        painter: &Painter,
+        text: &str,
+        line: Range<usize>,
+        galley: &egui::Galley,
+        text_left: f32,
+        y: f32,
+        row: f32,
+        color: Color32,
+        pair: Option<(usize, usize)>,
+    ) {
         let Some((a, b)) = pair else { return };
         for at in [a, b] {
             if at < line.start || at >= line.end {
@@ -931,13 +991,28 @@ impl EditorState {
             let to = column_of(text_line, at - line.start + 1);
             let x0 = text_left + galley.pos_from_cursor(CCursor::new(from)).min.x;
             let x1 = text_left + galley.pos_from_cursor(CCursor::new(to)).min.x;
-            painter.rect_filled(Rect::from_min_max(pos2(x0, y + 1.0), pos2(x1, y + row - 1.0)), 2.0, color);
+            painter.rect_filled(
+                Rect::from_min_max(pos2(x0, y + 1.0), pos2(x1, y + row - 1.0)),
+                2.0,
+                color,
+            );
         }
     }
 
     /// Background of the given sorted ranges (the matches of the find bar).
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn range_highlights(&self, painter: &Painter, text: &str, line: Range<usize>, galley: &egui::Galley, text_left: f32, y: f32, row: f32, color: Color32, ranges: &[Range<usize>]) {
+    pub(super) fn range_highlights(
+        &self,
+        painter: &Painter,
+        text: &str,
+        line: Range<usize>,
+        galley: &egui::Galley,
+        text_left: f32,
+        y: f32,
+        row: f32,
+        color: Color32,
+        ranges: &[Range<usize>],
+    ) {
         let first = ranges.partition_point(|r| r.end < line.start);
         for range in ranges[first..].iter().take_while(|r| r.start <= line.end) {
             if range.is_empty() {
@@ -948,13 +1023,27 @@ impl EditorState {
             let to = column_of(text_line, range.end.min(line.end) - line.start);
             let x0 = text_left + galley.pos_from_cursor(CCursor::new(from)).min.x;
             let x1 = text_left + galley.pos_from_cursor(CCursor::new(to)).min.x;
-            painter.rect_filled(Rect::from_min_max(pos2(x0 - 1.0, y + 1.0), pos2(x1 + 1.0, y + row - 1.0)), 2.0, color);
+            painter.rect_filled(
+                Rect::from_min_max(pos2(x0 - 1.0, y + 1.0), pos2(x1 + 1.0, y + row - 1.0)),
+                2.0,
+                color,
+            );
         }
     }
 
     /// Background of the places where the name under the caret appears.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn usage_highlights(&self, painter: &Painter, text: &str, line: Range<usize>, galley: &egui::Galley, text_left: f32, y: f32, row: f32, color: Color32) {
+    pub(super) fn usage_highlights(
+        &self,
+        painter: &Painter,
+        text: &str,
+        line: Range<usize>,
+        galley: &egui::Galley,
+        text_left: f32,
+        y: f32,
+        row: f32,
+        color: Color32,
+    ) {
         for range in &self.assist.usages.ranges {
             if range.end < line.start || range.start > line.end || range.is_empty() {
                 continue;
@@ -964,7 +1053,11 @@ impl EditorState {
             let to = column_of(text_line, range.end.min(line.end) - line.start);
             let x0 = text_left + galley.pos_from_cursor(CCursor::new(from)).min.x;
             let x1 = text_left + galley.pos_from_cursor(CCursor::new(to)).min.x;
-            painter.rect_filled(Rect::from_min_max(pos2(x0 - 1.0, y + 1.0), pos2(x1 + 1.0, y + row - 1.0)), 2.0, color);
+            painter.rect_filled(
+                Rect::from_min_max(pos2(x0 - 1.0, y + 1.0), pos2(x1 + 1.0, y + row - 1.0)),
+                2.0,
+                color,
+            );
         }
     }
 
@@ -975,9 +1068,21 @@ impl EditorState {
 
     /// Underlines the word that Ctrl+click would follow.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn link_underline(&self, painter: &Painter, text: &str, line: Range<usize>, galley: &egui::Galley, text_left: f32, y: f32, row: f32, color: Color32) {
+    pub(super) fn link_underline(
+        &self,
+        painter: &Painter,
+        text: &str,
+        line: Range<usize>,
+        galley: &egui::Galley,
+        text_left: f32,
+        y: f32,
+        row: f32,
+        color: Color32,
+    ) {
         let hover = &self.assist.goto_hover;
-        let Some(word) = hover.word.as_ref().filter(|_| hover.link) else { return };
+        let Some(word) = hover.word.as_ref().filter(|_| hover.link) else {
+            return;
+        };
         if word.start < line.start || word.end > line.end {
             return;
         }
@@ -986,15 +1091,31 @@ impl EditorState {
         let to = column_of(text_line, word.end - line.start);
         let x0 = text_left + galley.pos_from_cursor(CCursor::new(from)).min.x;
         let x1 = text_left + galley.pos_from_cursor(CCursor::new(to)).min.x;
-        painter.line_segment([pos2(x0, y + row - 3.0), pos2(x1, y + row - 3.0)], Stroke::new(1.2_f32, color));
+        painter.line_segment(
+            [pos2(x0, y + row - 3.0), pos2(x1, y + row - 3.0)],
+            Stroke::new(1.2_f32, color),
+        );
     }
 
     /// Wavy underline of the problems of one line, under the glyphs of `galley`.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn squiggles(&self, painter: &Painter, text: &str, line: Range<usize>, galley: &egui::Galley, text_left: f32, y: f32, row: f32, char_width: f32) {
+    pub(super) fn squiggles(
+        &self,
+        painter: &Painter,
+        text: &str,
+        line: Range<usize>,
+        galley: &egui::Galley,
+        text_left: f32,
+        y: f32,
+        row: f32,
+        char_width: f32,
+    ) {
         for diagnostic in self.assist.diagnostics.iter() {
             let range = &diagnostic.range;
-            if range.start > line.end || range.end < line.start || (range.end == range.start && range.start > line.end) {
+            if range.start > line.end
+                || range.end < line.start
+                || (range.end == range.start && range.start > line.end)
+            {
                 continue;
             }
             let start = range.start.max(line.start);
@@ -1009,7 +1130,13 @@ impl EditorState {
             }
             // Hints (unused names…) are for the tooltip only.
             if diagnostic.severity != Severity::Hint {
-                wave(painter, x0, x1, y + row - 3.0, severity_color(diagnostic.severity));
+                wave(
+                    painter,
+                    x0,
+                    x1,
+                    y + row - 3.0,
+                    severity_color(diagnostic.severity),
+                );
             }
         }
     }
@@ -1025,10 +1152,19 @@ impl EditorState {
 
     /// Follows the pointer: after a rest over a word, asks what it is. `offset` is the byte
     /// under the pointer, None when the pointer is not over code.
-    pub(super) fn assist_hover(&mut self, ui: &Ui, text: &str, opt: &Options, offset: Option<usize>, ctrl: bool) {
+    pub(super) fn assist_hover(
+        &mut self,
+        ui: &Ui,
+        text: &str,
+        opt: &Options,
+        offset: Option<usize>,
+        ctrl: bool,
+    ) {
         let Some(assist) = &opt.assist else { return };
         // With Ctrl held, the word under the pointer is a link when it leads somewhere.
-        let word_here = offset.map(|o| (o, self.word_at(text, o))).filter(|(_, w)| ctrl && !w.is_empty());
+        let word_here = offset
+            .map(|o| (o, self.word_at(text, o)))
+            .filter(|(_, w)| ctrl && !w.is_empty());
         match word_here {
             Some((offset, word)) => {
                 if self.assist.goto_hover.word.as_ref() != Some(&word) {
@@ -1046,7 +1182,8 @@ impl EditorState {
                             .filter(|l| {
                                 l.path.is_some() || {
                                     let range = l.range_in(text);
-                                    !(range.start < word.end && word.start < range.end.max(range.start + 1))
+                                    !(range.start < word.end
+                                        && word.start < range.end.max(range.start + 1))
                                 }
                             })
                             .collect();
@@ -1097,11 +1234,26 @@ impl EditorState {
 
     /// Marks of the problems of the document along the right edge of `rect`. Returns the line
     /// that was clicked.
-    pub(super) fn problem_stripe(&self, ui: &mut Ui, rect: Rect, id: egui::Id, row: f32) -> Option<usize> {
+    pub(super) fn problem_stripe(
+        &self,
+        ui: &mut Ui,
+        rect: Rect,
+        id: egui::Id,
+        row: f32,
+    ) -> Option<usize> {
         // A file shorter than the window keeps its marks at the place of their lines.
-        let lines = self.lines.len().max((rect.height() / row.max(1.0)) as usize).max(1);
+        let lines = self
+            .lines
+            .len()
+            .max((rect.height() / row.max(1.0)) as usize)
+            .max(1);
         let strip = Rect::from_min_max(pos2(rect.right() - 9.0, rect.top()), rect.right_bottom());
-        if self.assist.diagnostics.iter().all(|d| d.severity == Severity::Hint) {
+        if self
+            .assist
+            .diagnostics
+            .iter()
+            .all(|d| d.severity == Severity::Hint)
+        {
             return None;
         }
         // Errors are drawn last, on top of warnings.
@@ -1117,7 +1269,11 @@ impl EditorState {
         for (line, severity) in marks {
             let y = strip.top() + (line as f32 + 0.5) / lines as f32 * strip.height();
             let color = severity_color(severity);
-            painter.rect_filled(Rect::from_center_size(pos2(strip.center().x, y), vec2(7.0, 3.0)), 1.0, color);
+            painter.rect_filled(
+                Rect::from_center_size(pos2(strip.center().x, y), vec2(7.0, 3.0)),
+                1.0,
+                color,
+            );
         }
         let response = ui.interact(strip, id.with("problem_stripe"), egui::Sense::click());
         if response.hovered() {
@@ -1168,7 +1324,11 @@ impl EditorState {
         {
             let max = popup.filtered.len().saturating_sub(ROWS);
             let step = (wheel.abs() / ROW_HEIGHT).ceil().clamp(1.0, 3.0) as usize;
-            popup.scroll = if wheel < 0.0 { (popup.scroll + step).min(max) } else { popup.scroll.saturating_sub(step) };
+            popup.scroll = if wheel < 0.0 {
+                (popup.scroll + step).min(max)
+            } else {
+                popup.scroll.saturating_sub(step)
+            };
             ui.ctx().input_mut(|i| {
                 i.smooth_scroll_delta = egui::Vec2::ZERO;
                 i.raw_scroll_delta = egui::Vec2::ZERO;
@@ -1178,7 +1338,9 @@ impl EditorState {
 
     /// The field where the new name is typed.
     fn rename_popup(&mut self, ui: &Ui, t: &Theme, at: Pos2, occurrences: usize) {
-        let Some(rename) = &mut self.assist.rename else { return };
+        let Some(rename) = &mut self.assist.rename else {
+            return;
+        };
         let busy = rename.answer.is_some();
         let mut cancel = false;
         egui::Area::new(egui::Id::new("rename_popup"))
@@ -1245,13 +1407,19 @@ impl EditorState {
         pointer: Option<Pos2>,
     ) {
         let t = opt.theme;
-        let painter = ui.ctx().layer_painter(egui::LayerId::new(Order::Foreground, egui::Id::new("editor_assist")));
+        let painter = ui.ctx().layer_painter(egui::LayerId::new(
+            Order::Foreground,
+            egui::Id::new("editor_assist"),
+        ));
         let screen = ui.ctx().content_rect();
         let line = self.line_of(self.cursor);
         let caret_y = origin.y + (self.row_of(line) + 1) as f32 * row;
         let galley = |s: &mut Self, offset: usize| -> f32 {
             let range = s.line_range(text, s.line_of(offset));
-            let column = column_of(&text[range.clone()], offset.saturating_sub(range.start).min(range.len()));
+            let column = column_of(
+                &text[range.clone()],
+                offset.saturating_sub(range.start).min(range.len()),
+            );
             let g = s.galley(ui, text, s.line_of(offset), opt);
             g.pos_from_cursor(CCursor::new(column)).min.x
         };
@@ -1280,7 +1448,15 @@ impl EditorState {
         if let Some(from) = self.assist.popup.as_ref().map(|p| p.from) {
             let x = text_left + galley(self, from.min(self.cursor));
             if let Some(popup) = &mut self.assist.popup {
-                popup.rect = Some(draw_popup(&painter, popup, &t, &opt.font, pos2(x, caret_y), row, screen));
+                popup.rect = Some(draw_popup(
+                    &painter,
+                    popup,
+                    &t,
+                    &opt.font,
+                    pos2(x, caret_y),
+                    row,
+                    screen,
+                ));
             }
             return;
         }
@@ -1289,15 +1465,27 @@ impl EditorState {
             && let (Some(pointer), Some(place)) = (pointer, self.assist.goto_hover.places.first())
         {
             let source = match &place.path {
-                Some(path) => format!("{}:{}", path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), place.line + 1),
+                Some(path) => format!(
+                    "{}:{}",
+                    path.file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default(),
+                    place.line + 1
+                ),
                 None => format!("ligne {}", place.line + 1),
             };
-            let hover = Hover { range: 0..0, title: place.preview.clone(), body: source };
+            let hover = Hover {
+                range: 0..0,
+                title: place.preview.clone(),
+                body: source,
+            };
             draw_hover(&painter, &t, &opt.font, &[], Some(&hover), pointer, screen);
             return;
         }
         let hover = &self.assist.hover;
-        let (Some(pointer), Some(since)) = (pointer, hover.since) else { return };
+        let (Some(pointer), Some(since)) = (pointer, hover.since) else {
+            return;
+        };
         if !hover.requested || since.elapsed() < HOVER_DELAY {
             return;
         }
@@ -1310,7 +1498,15 @@ impl EditorState {
         if problems.is_empty() && hover.shown.is_none() {
             return;
         }
-        draw_hover(&painter, &t, &opt.font, &problems, hover.shown.as_ref(), pointer, screen);
+        draw_hover(
+            &painter,
+            &t,
+            &opt.font,
+            &problems,
+            hover.shown.as_ref(),
+            pointer,
+            screen,
+        );
     }
 }
 
@@ -1350,9 +1546,12 @@ fn refilter(popup: &mut Popup, query: &str) {
         .collect();
     // A better match first; among equals the lower rank, then the label.
     scored.sort_by(|a, b| {
-        b.0.cmp(&a.0)
-            .then(a.1.cmp(&b.1))
-            .then_with(|| popup.items[a.2].label.to_lowercase().cmp(&popup.items[b.2].label.to_lowercase()))
+        b.0.cmp(&a.0).then(a.1.cmp(&b.1)).then_with(|| {
+            popup.items[a.2]
+                .label
+                .to_lowercase()
+                .cmp(&popup.items[b.2].label.to_lowercase())
+        })
     });
     popup.filtered = scored.into_iter().map(|(_, _, i, p)| (i, p)).collect();
     popup.selected = 0;
@@ -1372,7 +1571,15 @@ fn wave(painter: &Painter, x0: f32, x1: f32, y: f32, color: Color32) {
     painter.add(egui::Shape::line(points, Stroke::new(1.2_f32, color)));
 }
 
-fn draw_popup(painter: &Painter, popup: &Popup, t: &Theme, font: &FontId, anchor: Pos2, row: f32, screen: Rect) -> Rect {
+fn draw_popup(
+    painter: &Painter,
+    popup: &Popup,
+    t: &Theme,
+    font: &FontId,
+    anchor: Pos2,
+    row: f32,
+    screen: Rect,
+) -> Rect {
     let rows = popup.filtered.len().min(ROWS);
     let doc = popup
         .filtered
@@ -1380,13 +1587,23 @@ fn draw_popup(painter: &Painter, popup: &Popup, t: &Theme, font: &FontId, anchor
         .and_then(|(i, _)| popup.items[*i].doc.as_deref())
         .filter(|d| !d.is_empty());
     let doc_galley = doc.map(|d| {
-        painter.layout(d.to_string(), FontId::proportional(12.5), t.text_secondary, POPUP_WIDTH - 20.0)
+        painter.layout(
+            d.to_string(),
+            FontId::proportional(12.5),
+            t.text_secondary,
+            POPUP_WIDTH - 20.0,
+        )
     });
-    let doc_height = doc_galley.as_ref().map_or(0.0, |g| g.size().y.min(90.0) + 14.0);
+    let doc_height = doc_galley
+        .as_ref()
+        .map_or(0.0, |g| g.size().y.min(90.0) + 14.0);
     let list_height = rows as f32 * ROW_HEIGHT + 8.0;
     let height = list_height + doc_height;
     let width = POPUP_WIDTH.min(screen.width() - 16.0);
-    let mut x = anchor.x.min(screen.right() - width - 8.0).max(screen.left() + 8.0);
+    let mut x = anchor
+        .x
+        .min(screen.right() - width - 8.0)
+        .max(screen.left() + 8.0);
     let below = screen.bottom() - anchor.y - 8.0;
     let y = if below >= height || below >= anchor.y - row - screen.top() {
         anchor.y + 2.0
@@ -1395,19 +1612,41 @@ fn draw_popup(painter: &Painter, popup: &Popup, t: &Theme, font: &FontId, anchor
     };
     x = x.max(0.0);
     let rect = Rect::from_min_size(pos2(x, y), vec2(width, height));
-    painter.rect(rect, 5.0, t.popup, Stroke::new(1.0_f32, t.border), StrokeKind::Inside);
+    painter.rect(
+        rect,
+        5.0,
+        t.popup,
+        Stroke::new(1.0_f32, t.border),
+        StrokeKind::Inside,
+    );
     let mono = FontId::proportional(font.size.min(14.0).max(12.0));
-    for (visible, (index, positions)) in popup.filtered.iter().skip(popup.scroll).take(rows).enumerate() {
+    for (visible, (index, positions)) in popup
+        .filtered
+        .iter()
+        .skip(popup.scroll)
+        .take(rows)
+        .enumerate()
+    {
         let item = &popup.items[*index];
         let top = rect.top() + 4.0 + visible as f32 * ROW_HEIGHT;
-        let row_rect = Rect::from_min_size(pos2(rect.left() + 3.0, top), vec2(width - 6.0, ROW_HEIGHT));
+        let row_rect =
+            Rect::from_min_size(pos2(rect.left() + 3.0, top), vec2(width - 6.0, ROW_HEIGHT));
         if popup.scroll + visible == popup.selected {
             painter.rect_filled(row_rect, 4.0, t.selection);
         }
         let (letter, color) = kind_style(item.kind);
-        let badge = Rect::from_center_size(pos2(row_rect.left() + 14.0, row_rect.center().y), vec2(15.0, 15.0));
+        let badge = Rect::from_center_size(
+            pos2(row_rect.left() + 14.0, row_rect.center().y),
+            vec2(15.0, 15.0),
+        );
         painter.rect_filled(badge, 4.0, color.gamma_multiply(0.22));
-        painter.text(badge.center(), Align2::CENTER_CENTER, letter, FontId::monospace(11.0), color);
+        painter.text(
+            badge.center(),
+            Align2::CENTER_CENTER,
+            letter,
+            FontId::monospace(11.0),
+            color,
+        );
         // The label, with the characters of the match in the accent color.
         let mut x = row_rect.left() + 29.0;
         let mut run = String::new();
@@ -1436,47 +1675,94 @@ fn draw_popup(painter: &Painter, popup: &Popup, t: &Theme, font: &FontId, anchor
         }
         flush(&mut x, &mut run, matched_run);
         if let Some(detail) = &item.detail {
-            let galley = painter.layout_no_wrap(detail.clone(), FontId::proportional(12.0), t.text_secondary);
+            let galley = painter.layout_no_wrap(
+                detail.clone(),
+                FontId::proportional(12.0),
+                t.text_secondary,
+            );
             let max = (row_rect.right() - 10.0 - (x + 12.0)).max(0.0);
             if max > 30.0 {
                 let w = galley.size().x.min(max);
-                let clip = Rect::from_min_size(pos2(row_rect.right() - 8.0 - w, row_rect.top()), vec2(w, ROW_HEIGHT));
-                painter
-                    .with_clip_rect(clip)
-                    .galley(pos2(clip.left(), row_rect.center().y - galley.size().y / 2.0), galley, t.text_secondary);
+                let clip = Rect::from_min_size(
+                    pos2(row_rect.right() - 8.0 - w, row_rect.top()),
+                    vec2(w, ROW_HEIGHT),
+                );
+                painter.with_clip_rect(clip).galley(
+                    pos2(clip.left(), row_rect.center().y - galley.size().y / 2.0),
+                    galley,
+                    t.text_secondary,
+                );
             }
         }
     }
     if popup.filtered.len() > rows {
         // A thin scroll bar at the right edge.
-        let track = Rect::from_min_size(pos2(rect.right() - 5.0, rect.top() + 4.0), vec2(3.0, rows as f32 * ROW_HEIGHT));
+        let track = Rect::from_min_size(
+            pos2(rect.right() - 5.0, rect.top() + 4.0),
+            vec2(3.0, rows as f32 * ROW_HEIGHT),
+        );
         let share = rows as f32 / popup.filtered.len() as f32;
         let offset = popup.scroll as f32 / popup.filtered.len() as f32;
         painter.rect_filled(
-            Rect::from_min_size(pos2(track.left(), track.top() + offset * track.height()), vec2(3.0, (share * track.height()).max(14.0))),
+            Rect::from_min_size(
+                pos2(track.left(), track.top() + offset * track.height()),
+                vec2(3.0, (share * track.height()).max(14.0)),
+            ),
             1.5,
             t.border,
         );
     }
     if let Some(galley) = doc_galley {
         let sep_y = rect.top() + list_height;
-        painter.line_segment([pos2(rect.left() + 1.0, sep_y), pos2(rect.right() - 1.0, sep_y)], Stroke::new(1.0_f32, t.separator));
+        painter.line_segment(
+            [
+                pos2(rect.left() + 1.0, sep_y),
+                pos2(rect.right() - 1.0, sep_y),
+            ],
+            Stroke::new(1.0_f32, t.separator),
+        );
         painter
-            .with_clip_rect(Rect::from_min_size(pos2(rect.left(), sep_y), vec2(width, doc_height - 2.0)))
-            .galley(pos2(rect.left() + 10.0, sep_y + 7.0), galley, t.text_secondary);
+            .with_clip_rect(Rect::from_min_size(
+                pos2(rect.left(), sep_y),
+                vec2(width, doc_height - 2.0),
+            ))
+            .galley(
+                pos2(rect.left() + 10.0, sep_y + 7.0),
+                galley,
+                t.text_secondary,
+            );
     }
     rect
 }
 
-fn draw_chooser(painter: &Painter, chooser: &Chooser, t: &Theme, anchor: Pos2, screen: Rect) -> Rect {
+fn draw_chooser(
+    painter: &Painter,
+    chooser: &Chooser,
+    t: &Theme,
+    anchor: Pos2,
+    screen: Rect,
+) -> Rect {
     let rows = chooser.shown.len().clamp(1, ROWS);
     let title_height = 26.0;
     let height = rows as f32 * ROW_HEIGHT + 8.0 + title_height;
     let width = 560.0_f32.min(screen.width() - 16.0);
-    let x = anchor.x.min(screen.right() - width - 8.0).max(screen.left() + 8.0);
-    let y = if screen.bottom() - anchor.y - 8.0 >= height { anchor.y + 6.0 } else { (anchor.y - height - 6.0).max(screen.top()) };
+    let x = anchor
+        .x
+        .min(screen.right() - width - 8.0)
+        .max(screen.left() + 8.0);
+    let y = if screen.bottom() - anchor.y - 8.0 >= height {
+        anchor.y + 6.0
+    } else {
+        (anchor.y - height - 6.0).max(screen.top())
+    };
     let rect = Rect::from_min_size(pos2(x, y), vec2(width, height));
-    painter.rect(rect, 5.0, t.popup, Stroke::new(1.0_f32, t.border), StrokeKind::Inside);
+    painter.rect(
+        rect,
+        5.0,
+        t.popup,
+        Stroke::new(1.0_f32, t.border),
+        StrokeKind::Inside,
+    );
     painter.text(
         pos2(rect.left() + 12.0, rect.top() + 14.0),
         Align2::LEFT_CENTER,
@@ -1489,7 +1775,10 @@ fn draw_chooser(painter: &Painter, chooser: &Chooser, t: &Theme, anchor: Pos2, s
     );
     if chooser.shown.is_empty() {
         painter.text(
-            pos2(rect.left() + 12.0, rect.top() + title_height + 4.0 + ROW_HEIGHT / 2.0),
+            pos2(
+                rect.left() + 12.0,
+                rect.top() + title_height + 4.0 + ROW_HEIGHT / 2.0,
+            ),
             Align2::LEFT_CENTER,
             "Aucun résultat",
             FontId::proportional(13.0),
@@ -1497,49 +1786,115 @@ fn draw_chooser(painter: &Painter, chooser: &Chooser, t: &Theme, anchor: Pos2, s
         );
     }
     let list_top = rect.top() + title_height;
-    painter.line_segment([pos2(rect.left() + 1.0, list_top - 2.0), pos2(rect.right() - 1.0, list_top - 2.0)], Stroke::new(1.0_f32, t.separator));
-    for (visible, entry) in chooser.shown.iter().filter_map(|i| chooser.entries.get(*i)).skip(chooser.scroll).take(rows).enumerate() {
+    painter.line_segment(
+        [
+            pos2(rect.left() + 1.0, list_top - 2.0),
+            pos2(rect.right() - 1.0, list_top - 2.0),
+        ],
+        Stroke::new(1.0_f32, t.separator),
+    );
+    for (visible, entry) in chooser
+        .shown
+        .iter()
+        .filter_map(|i| chooser.entries.get(*i))
+        .skip(chooser.scroll)
+        .take(rows)
+        .enumerate()
+    {
         let top = list_top + 4.0 + visible as f32 * ROW_HEIGHT;
-        let row_rect = Rect::from_min_size(pos2(rect.left() + 3.0, top), vec2(width - 6.0, ROW_HEIGHT));
+        let row_rect =
+            Rect::from_min_size(pos2(rect.left() + 3.0, top), vec2(width - 6.0, ROW_HEIGHT));
         if chooser.scroll + visible == chooser.selected {
             painter.rect_filled(row_rect, 4.0, t.selection);
         }
-        let detail = painter.layout_no_wrap(entry.detail.clone(), FontId::proportional(12.0), t.text_secondary);
+        let detail = painter.layout_no_wrap(
+            entry.detail.clone(),
+            FontId::proportional(12.0),
+            t.text_secondary,
+        );
         let detail_width = detail.size().x;
-        painter.galley(pos2(row_rect.right() - 10.0 - detail_width, row_rect.center().y - detail.size().y / 2.0), detail, t.text_secondary);
+        painter.galley(
+            pos2(
+                row_rect.right() - 10.0 - detail_width,
+                row_rect.center().y - detail.size().y / 2.0,
+            ),
+            detail,
+            t.text_secondary,
+        );
         let mut left = row_rect.left() + 10.0 + entry.indent as f32 * 14.0;
         if let Some(kind) = entry.kind {
             let (letter, color) = kind_style(kind);
-            let badge = Rect::from_center_size(pos2(left + 7.5, row_rect.center().y), vec2(15.0, 15.0));
+            let badge =
+                Rect::from_center_size(pos2(left + 7.5, row_rect.center().y), vec2(15.0, 15.0));
             painter.rect_filled(badge, 4.0, color.gamma_multiply(0.22));
-            painter.text(badge.center(), Align2::CENTER_CENTER, letter, FontId::monospace(11.0), color);
+            painter.text(
+                badge.center(),
+                Align2::CENTER_CENTER,
+                letter,
+                FontId::monospace(11.0),
+                color,
+            );
             left += 22.0;
         }
-        let font = if matches!(entry.choice, Choice::Go(_)) && entry.kind.is_none() { FontId::monospace(12.5) } else { FontId::proportional(13.0) };
+        let font = if matches!(entry.choice, Choice::Go(_)) && entry.kind.is_none() {
+            FontId::monospace(12.5)
+        } else {
+            FontId::proportional(13.0)
+        };
         let label = painter.layout_no_wrap(entry.label.clone(), font, t.text);
-        let clip = Rect::from_min_max(pos2(left, row_rect.top()), pos2(row_rect.right() - 20.0 - detail_width, row_rect.bottom()));
-        painter.with_clip_rect(clip).galley(pos2(clip.left(), row_rect.center().y - label.size().y / 2.0), label, t.text);
+        let clip = Rect::from_min_max(
+            pos2(left, row_rect.top()),
+            pos2(row_rect.right() - 20.0 - detail_width, row_rect.bottom()),
+        );
+        painter.with_clip_rect(clip).galley(
+            pos2(clip.left(), row_rect.center().y - label.size().y / 2.0),
+            label,
+            t.text,
+        );
     }
     rect
 }
 
-fn draw_hover(painter: &Painter, t: &Theme, font: &FontId, problems: &[(Severity, String)], hover: Option<&Hover>, pointer: Pos2, screen: Rect) {
+fn draw_hover(
+    painter: &Painter,
+    t: &Theme,
+    font: &FontId,
+    problems: &[(Severity, String)],
+    hover: Option<&Hover>,
+    pointer: Pos2,
+    screen: Rect,
+) {
     let width = 460.0_f32.min(screen.width() - 16.0);
     let mut parts: Vec<(Arc<egui::Galley>, Option<Color32>)> = Vec::new();
     for (severity, message) in problems {
         parts.push((
-            painter.layout(message.clone(), FontId::proportional(12.5), severity_color(*severity), width - 20.0),
+            painter.layout(
+                message.clone(),
+                FontId::proportional(12.5),
+                severity_color(*severity),
+                width - 20.0,
+            ),
             Some(severity_color(*severity)),
         ));
     }
     if let Some(hover) = hover {
         parts.push((
-            painter.layout(hover.title.clone(), FontId::monospace((font.size - 1.0).max(11.0)), t.text, width - 20.0),
+            painter.layout(
+                hover.title.clone(),
+                FontId::monospace((font.size - 1.0).max(11.0)),
+                t.text,
+                width - 20.0,
+            ),
             None,
         ));
         if !hover.body.is_empty() {
             parts.push((
-                painter.layout(hover.body.clone(), FontId::proportional(12.5), t.text_secondary, width - 20.0),
+                painter.layout(
+                    hover.body.clone(),
+                    FontId::proportional(12.5),
+                    t.text_secondary,
+                    width - 20.0,
+                ),
                 None,
             ));
         }
@@ -1558,7 +1913,13 @@ fn draw_hover(painter: &Painter, t: &Theme, font: &FontId, problems: &[(Severity
         at.y = (pointer.y - size.y - 10.0).max(screen.top());
     }
     let rect = Rect::from_min_size(at, size);
-    painter.rect(rect, 5.0, t.popup, Stroke::new(1.0_f32, t.border), StrokeKind::Inside);
+    painter.rect(
+        rect,
+        5.0,
+        t.popup,
+        Stroke::new(1.0_f32, t.border),
+        StrokeKind::Inside,
+    );
     let mut y = rect.top() + 7.0;
     for (galley, color) in parts {
         let height = galley.size().y;
@@ -1573,7 +1934,13 @@ mod tests {
     use crate::languages::Provider;
 
     /// A provider that answers with a fixed list, fixed places and one problem.
-    struct Fixed(Vec<CompletionItem>, Vec<Location>, Vec<Location>, Vec<QuickFix>, Vec<Symbol>);
+    struct Fixed(
+        Vec<CompletionItem>,
+        Vec<Location>,
+        Vec<Location>,
+        Vec<QuickFix>,
+        Vec<Symbol>,
+    );
 
     impl Provider for Fixed {
         fn handles(&self, language: &str) -> bool {
@@ -1589,9 +1956,20 @@ mod tests {
                 source: "test".into(),
             }])
         }
-        fn complete(&mut self, _: &DocRef, text: &str, offset: usize, _: bool) -> Oneshot<Option<Completion>> {
-            let from = text[..offset].rfind(|c: char| !is_word(c)).map_or(0, |i| i + 1);
-            Oneshot::ready(Some(Completion { from, items: self.0.clone() }))
+        fn complete(
+            &mut self,
+            _: &DocRef,
+            text: &str,
+            offset: usize,
+            _: bool,
+        ) -> Oneshot<Option<Completion>> {
+            let from = text[..offset]
+                .rfind(|c: char| !is_word(c))
+                .map_or(0, |i| i + 1);
+            Oneshot::ready(Some(Completion {
+                from,
+                items: self.0.clone(),
+            }))
         }
         fn hover(&mut self, _: &DocRef, _: &str, _: usize) -> Oneshot<Option<Hover>> {
             Oneshot::ready(None)
@@ -1617,16 +1995,46 @@ mod tests {
         setup_places(items, Vec::new(), Vec::new())
     }
 
-    fn setup_places(items: Vec<CompletionItem>, definition: Vec<Location>, references: Vec<Location>) -> (Service, DocRef) {
+    fn setup_places(
+        items: Vec<CompletionItem>,
+        definition: Vec<Location>,
+        references: Vec<Location>,
+    ) -> (Service, DocRef) {
         let service = Service::default();
-        service.add(Box::new(Fixed(items, definition, references, Vec::new(), Vec::new())));
-        (service, DocRef { key: 1, path: None, language: "js".into() })
+        service.add(Box::new(Fixed(
+            items,
+            definition,
+            references,
+            Vec::new(),
+            Vec::new(),
+        )));
+        (
+            service,
+            DocRef {
+                key: 1,
+                path: None,
+                language: "js".into(),
+            },
+        )
     }
 
     fn setup_extras(fixes: Vec<QuickFix>, symbols: Vec<Symbol>) -> (Service, DocRef) {
         let service = Service::default();
-        service.add(Box::new(Fixed(Vec::new(), Vec::new(), Vec::new(), fixes, symbols)));
-        (service, DocRef { key: 1, path: None, language: "js".into() })
+        service.add(Box::new(Fixed(
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            fixes,
+            symbols,
+        )));
+        (
+            service,
+            DocRef {
+                key: 1,
+                path: None,
+                language: "js".into(),
+            },
+        )
     }
 
     fn place(line: usize, column: usize, end: usize) -> Location {
@@ -1649,7 +2057,10 @@ mod tests {
             marks: &[],
             annotations: None,
             gutter_commands: &[],
-            assist: Some(Assist { service, doc: doc.clone() }),
+            assist: Some(Assist {
+                service,
+                doc: doc.clone(),
+            }),
             search: &[],
         };
         let _ = ctx.run(Default::default(), |ctx| {
@@ -1677,11 +2088,23 @@ mod tests {
         let mut text = "co".to_string();
         let mut state = state_for(&text);
         state.assist_after_edit(&text, Some('o'), false);
-        assert_eq!(state.assist.want, Some(false), "a letter typed after one starts completion");
+        assert_eq!(
+            state.assist.want,
+            Some(false),
+            "a letter typed after one starts completion"
+        );
         frame(&mut state, &service, &doc, &text);
         let popup = state.assist.popup.as_ref().expect("the popup opens");
-        let shown: Vec<&str> = popup.filtered.iter().map(|(i, _)| popup.items[*i].label.as_str()).collect();
-        assert_eq!(shown, ["console", "const", "continue"], "alert does not match, best first");
+        let shown: Vec<&str> = popup
+            .filtered
+            .iter()
+            .map(|(i, _)| popup.items[*i].label.as_str())
+            .collect();
+        assert_eq!(
+            shown,
+            ["console", "const", "continue"],
+            "alert does not match, best first"
+        );
         // One more letter narrows the list.
         text.push('n');
         state.cursor = text.len();
@@ -1693,8 +2116,14 @@ mod tests {
         let popup = state.assist.popup.as_ref().unwrap();
         assert_eq!(popup.filtered.len(), 2, "console and const");
         // Down then Enter takes the second one.
-        assert_eq!(state.assist_key(&mut text, Key::ArrowDown, Modifiers::NONE), Some(false));
-        assert_eq!(state.assist_key(&mut text, Key::Enter, Modifiers::NONE), Some(true));
+        assert_eq!(
+            state.assist_key(&mut text, Key::ArrowDown, Modifiers::NONE),
+            Some(false)
+        );
+        assert_eq!(
+            state.assist_key(&mut text, Key::Enter, Modifiers::NONE),
+            Some(true)
+        );
         assert_eq!(text, "const");
         assert_eq!(state.cursor, 5);
         assert!(state.assist.popup.is_none());
@@ -1707,7 +2136,8 @@ mod tests {
 
     #[test]
     fn items_place_the_caret_and_keep_the_indentation() {
-        let snippet = CompletionItem::new("if", ItemKind::Snippet).insert("if () {\n    \n}", Some(4));
+        let snippet =
+            CompletionItem::new("if", ItemKind::Snippet).insert("if () {\n    \n}", Some(4));
         let call = CompletionItem::new("log", ItemKind::Method).insert("log()", Some(4));
         let (service, doc) = setup(vec![snippet, call]);
 
@@ -1715,15 +2145,25 @@ mod tests {
         let mut state = state_for(&text);
         state.assist.want = Some(true);
         frame(&mut state, &service, &doc, &text);
-        assert_eq!(state.assist_key(&mut text, Key::Tab, Modifiers::NONE), Some(true));
+        assert_eq!(
+            state.assist_key(&mut text, Key::Tab, Modifiers::NONE),
+            Some(true)
+        );
         assert_eq!(text, "function f() {\n    if () {\n        \n    }");
-        assert_eq!(&text[state.cursor - 4..state.cursor], "if (", "the caret is between the parentheses");
+        assert_eq!(
+            &text[state.cursor - 4..state.cursor],
+            "if (",
+            "the caret is between the parentheses"
+        );
 
         let mut text = "console.lo".to_string();
         let mut state = state_for(&text);
         state.assist.want = Some(true);
         frame(&mut state, &service, &doc, &text);
-        assert_eq!(state.assist_key(&mut text, Key::Enter, Modifiers::NONE), Some(true));
+        assert_eq!(
+            state.assist_key(&mut text, Key::Enter, Modifiers::NONE),
+            Some(true)
+        );
         assert_eq!(text, "console.log()");
         assert_eq!(state.cursor, "console.log(".len());
     }
@@ -1738,14 +2178,20 @@ mod tests {
         state.assist.want = Some(true);
         frame(&mut state, &service, &doc, &text);
         assert!(state.assist.popup.is_some());
-        assert_eq!(state.assist_key(&mut text, Key::Tab, Modifiers::NONE), Some(true));
+        assert_eq!(
+            state.assist_key(&mut text, Key::Tab, Modifiers::NONE),
+            Some(true)
+        );
         assert_eq!(text, "arr.length");
 
         let mut text = "arr.le".to_string();
         let mut state = state_for(&text);
         state.assist.want = Some(true);
         frame(&mut state, &service, &doc, &text);
-        assert_eq!(state.assist_key(&mut text, Key::Escape, Modifiers::NONE), Some(false));
+        assert_eq!(
+            state.assist_key(&mut text, Key::Escape, Modifiers::NONE),
+            Some(false)
+        );
         assert!(state.assist.popup.is_none());
         assert_eq!(text, "arr.le");
     }
@@ -1766,20 +2212,34 @@ mod tests {
     fn a_declaration_leads_to_its_usages_and_several_places_are_chosen_from() {
         // The definition is the word itself: the usages are asked for.
         let text = "function add() {}\nadd();\nadd();\n";
-        let (service, doc) = setup_places(Vec::new(), vec![place(0, 9, 12)], vec![place(1, 0, 3), place(2, 0, 3)]);
+        let (service, doc) = setup_places(
+            Vec::new(),
+            vec![place(0, 9, 12)],
+            vec![place(1, 0, 3), place(2, 0, 3)],
+        );
         let mut state = state_for(text);
         state.cursor = 10;
         state.assist_goto(10);
         frame(&mut state, &service, &doc, text);
         frame(&mut state, &service, &doc, text);
         assert!(state.assist.navigate.is_none());
-        let chooser = state.assist.chooser.as_ref().expect("two usages to choose from");
+        let chooser = state
+            .assist
+            .chooser
+            .as_ref()
+            .expect("two usages to choose from");
         assert_eq!(chooser.title, "Utilisations");
         assert_eq!(chooser.entries.len(), 2);
         // Down and Enter go to the second.
         let mut text = text.to_string();
-        assert_eq!(state.assist_key(&mut text, Key::ArrowDown, Modifiers::NONE), Some(false));
-        assert_eq!(state.assist_key(&mut text, Key::Enter, Modifiers::NONE), Some(false));
+        assert_eq!(
+            state.assist_key(&mut text, Key::ArrowDown, Modifiers::NONE),
+            Some(false)
+        );
+        assert_eq!(
+            state.assist_key(&mut text, Key::Enter, Modifiers::NONE),
+            Some(false)
+        );
         assert_eq!(state.assist.navigate, Some(place(2, 0, 3)));
         assert!(state.assist.chooser.is_none());
     }
@@ -1789,50 +2249,107 @@ mod tests {
         use crate::languages::TextEdit;
         let fix = QuickFix {
             title: "Importer « helper »".into(),
-            edits: vec![TextEdit { range: 0..0, new_text: "import { helper } from './u.js';\n".into() }],
+            edits: vec![TextEdit {
+                range: 0..0,
+                new_text: "import { helper } from './u.js';\n".into(),
+            }],
         };
-        let other = QuickFix { title: "Autre".into(), edits: vec![TextEdit { range: 0..0, new_text: "x".into() }] };
+        let other = QuickFix {
+            title: "Autre".into(),
+            edits: vec![TextEdit {
+                range: 0..0,
+                new_text: "x".into(),
+            }],
+        };
         let (service, doc) = setup_extras(vec![fix, other], Vec::new());
         let mut text = "helper();\n".to_string();
         let mut state = state_for(&text);
         state.cursor = 3;
         state.anchor = 3;
-        assert_eq!(state.assist_key(&mut text, Key::Enter, Modifiers::ALT), Some(false));
+        assert_eq!(
+            state.assist_key(&mut text, Key::Enter, Modifiers::ALT),
+            Some(false)
+        );
         frame(&mut state, &service, &doc, &text);
-        let chooser = state.assist.chooser.as_ref().expect("the actions are listed");
+        let chooser = state
+            .assist
+            .chooser
+            .as_ref()
+            .expect("the actions are listed");
         assert_eq!(chooser.title, "Corrections rapides");
         assert_eq!(chooser.entries.len(), 2);
-        assert_eq!(state.assist_key(&mut text, Key::Enter, Modifiers::NONE), Some(true));
+        assert_eq!(
+            state.assist_key(&mut text, Key::Enter, Modifiers::NONE),
+            Some(true)
+        );
         assert_eq!(text, "import { helper } from './u.js';\nhelper();\n");
-        assert_eq!(state.cursor, 3 + "import { helper } from './u.js';\n".len(), "the caret stays on the same code");
+        assert_eq!(
+            state.cursor,
+            3 + "import { helper } from './u.js';\n".len(),
+            "the caret stays on the same code"
+        );
     }
 
     #[test]
     fn the_file_structure_is_filtered_by_typing_and_goes_to_the_symbol() {
         let text = "function alpha() {}\nclass Beta {\n  gamma() {}\n}\n";
         let symbols = vec![
-            Symbol { name: "alpha".into(), kind: ItemKind::Function, detail: "()".into(), range: 9..14, depth: 0 },
-            Symbol { name: "Beta".into(), kind: ItemKind::Class, detail: String::new(), range: 26..30, depth: 0 },
-            Symbol { name: "gamma".into(), kind: ItemKind::Method, detail: "()".into(), range: 35..40, depth: 1 },
+            Symbol {
+                name: "alpha".into(),
+                kind: ItemKind::Function,
+                detail: "()".into(),
+                range: 9..14,
+                depth: 0,
+            },
+            Symbol {
+                name: "Beta".into(),
+                kind: ItemKind::Class,
+                detail: String::new(),
+                range: 26..30,
+                depth: 0,
+            },
+            Symbol {
+                name: "gamma".into(),
+                kind: ItemKind::Method,
+                detail: "()".into(),
+                range: 35..40,
+                depth: 1,
+            },
         ];
         let (service, doc) = setup_extras(Vec::new(), symbols);
         let mut state = state_for(text);
         state.cursor = 36;
         state.anchor = 36;
-        assert_eq!(state.assist_key(&mut text.to_string(), Key::F12, Modifiers::COMMAND), Some(false));
+        assert_eq!(
+            state.assist_key(&mut text.to_string(), Key::F12, Modifiers::COMMAND),
+            Some(false)
+        );
         frame(&mut state, &service, &doc, text);
         let chooser = state.assist.chooser.as_ref().expect("the structure opens");
         assert_eq!(chooser.shown.len(), 3);
-        assert_eq!(chooser.selected, 2, "the symbol the caret is in comes pre-selected");
+        assert_eq!(
+            chooser.selected, 2,
+            "the symbol the caret is in comes pre-selected"
+        );
         // Typing filters, in no document: the text stays as it was.
         assert!(state.assist_text("be"));
         let chooser = state.assist.chooser.as_ref().unwrap();
         assert_eq!(chooser.shown.len(), 1);
         assert_eq!(chooser.entries[chooser.shown[0]].label, "Beta");
         let mut owned = text.to_string();
-        assert_eq!(state.assist_key(&mut owned, Key::Backspace, Modifiers::NONE), Some(false));
-        assert_eq!(state.assist.chooser.as_ref().unwrap().shown.len(), 1, "one letter left: still `b`");
-        assert_eq!(state.assist_key(&mut owned, Key::Enter, Modifiers::NONE), Some(false));
+        assert_eq!(
+            state.assist_key(&mut owned, Key::Backspace, Modifiers::NONE),
+            Some(false)
+        );
+        assert_eq!(
+            state.assist.chooser.as_ref().unwrap().shown.len(),
+            1,
+            "one letter left: still `b`"
+        );
+        assert_eq!(
+            state.assist_key(&mut owned, Key::Enter, Modifiers::NONE),
+            Some(false)
+        );
         let target = state.assist.navigate.clone().expect("a place to go to");
         assert_eq!(target.range_in(text), 26..30);
         assert_eq!(target.preview, "class Beta {");
@@ -1847,7 +2364,10 @@ mod tests {
         state.cursor = 1;
         state.anchor = 1;
         frame(&mut state, &service, &doc, text);
-        assert!(state.assist.usages.ranges.is_empty(), "not before the pause");
+        assert!(
+            state.assist.usages.ranges.is_empty(),
+            "not before the pause"
+        );
         std::thread::sleep(Duration::from_millis(200));
         frame(&mut state, &service, &doc, text);
         frame(&mut state, &service, &doc, text);
@@ -1867,7 +2387,11 @@ mod tests {
         };
         assert_eq!(pair(&mut state, 2), Some((1, 16)), "after the opening one");
         assert_eq!(pair(&mut state, 17), Some((1, 16)), "after the closing one");
-        assert_eq!(pair(&mut state, 5), Some((3, 5)), "before the closing bracket of `a[1]`");
+        assert_eq!(
+            pair(&mut state, 5),
+            Some((3, 5)),
+            "before the closing bracket of `a[1]`"
+        );
         assert_eq!(pair(&mut state, 0), None, "no bracket next to the caret");
     }
 
@@ -1878,14 +2402,22 @@ add();
 add();
 add();
 ";
-        let (service, doc) = setup_places(Vec::new(), vec![place(0, 9, 12)], vec![place(1, 0, 3), place(2, 0, 3), place(3, 0, 3)]);
+        let (service, doc) = setup_places(
+            Vec::new(),
+            vec![place(0, 9, 12)],
+            vec![place(1, 0, 3), place(2, 0, 3), place(3, 0, 3)],
+        );
         let mut state = state_for(text);
         state.cursor = 10;
         state.assist_goto(10);
         for _ in 0..3 {
             frame(&mut state, &service, &doc, text);
         }
-        let chooser = state.assist.chooser.as_mut().expect("three usages to choose from");
+        let chooser = state
+            .assist
+            .chooser
+            .as_mut()
+            .expect("three usages to choose from");
         let rect = Rect::from_min_size(pos2(100.0, 100.0), vec2(560.0, 140.0));
         chooser.rect = Some(rect);
         let mut owned = text.to_string();
@@ -1920,21 +2452,50 @@ add();
         fn diagnostics(&mut self, _: u64) -> Arc<Vec<Diagnostic>> {
             Arc::default()
         }
-        fn complete(&mut self, _: &DocRef, _: &str, _: usize, _: bool) -> Oneshot<Option<Completion>> {
+        fn complete(
+            &mut self,
+            _: &DocRef,
+            _: &str,
+            _: usize,
+            _: bool,
+        ) -> Oneshot<Option<Completion>> {
             Oneshot::ready(None)
         }
         fn hover(&mut self, _: &DocRef, _: &str, _: usize) -> Oneshot<Option<Hover>> {
             Oneshot::ready(None)
         }
-        fn rename(&mut self, _: &DocRef, text: &str, offset: usize, new_name: &str) -> Oneshot<Result<Vec<FileEdit>, String>> {
+        fn rename(
+            &mut self,
+            _: &DocRef,
+            text: &str,
+            offset: usize,
+            new_name: &str,
+        ) -> Oneshot<Result<Vec<FileEdit>, String>> {
             if new_name == "taken" {
                 return Oneshot::ready(Err("« taken » existe déjà ici".into()));
             }
-            let start = text[..offset].rfind(|c: char| !c.is_alphanumeric()).map_or(0, |i| i + 1);
-            let old = start..text[start..].find(|c: char| !c.is_alphanumeric()).map_or(text.len(), |i| start + i);
+            let start = text[..offset]
+                .rfind(|c: char| !c.is_alphanumeric())
+                .map_or(0, |i| i + 1);
+            let old = start
+                ..text[start..]
+                    .find(|c: char| !c.is_alphanumeric())
+                    .map_or(text.len(), |i| start + i);
             Oneshot::ready(Ok(vec![
-                FileEdit { path: None, edits: vec![TextEdit { range: old, new_text: new_name.into() }] },
-                FileEdit { path: Some("other.js".into()), edits: vec![TextEdit { range: 0..3, new_text: new_name.into() }] },
+                FileEdit {
+                    path: None,
+                    edits: vec![TextEdit {
+                        range: old,
+                        new_text: new_name.into(),
+                    }],
+                },
+                FileEdit {
+                    path: Some("other.js".into()),
+                    edits: vec![TextEdit {
+                        range: 0..3,
+                        new_text: new_name.into(),
+                    }],
+                },
             ]))
         }
     }
@@ -1943,19 +2504,29 @@ add();
     fn renaming_asks_for_a_name_and_returns_the_changes_of_every_file() {
         let service = Service::default();
         service.add(Box::new(Renamer));
-        let doc = DocRef { key: 1, path: None, language: "js".into() };
+        let doc = DocRef {
+            key: 1,
+            path: None,
+            language: "js".into(),
+        };
         let mut text = "old + old".to_string();
         let mut state = state_for(&text);
         state.cursor = 1;
         state.anchor = 1;
         // Shift+F6 opens the field with the name in it.
-        assert_eq!(state.assist_key(&mut text, Key::F6, Modifiers::SHIFT), Some(false));
+        assert_eq!(
+            state.assist_key(&mut text, Key::F6, Modifiers::SHIFT),
+            Some(false)
+        );
         assert_eq!(state.assist.rename.as_ref().unwrap().name, "old");
         // A refused name keeps the field open with the reason.
         state.assist.rename.as_mut().unwrap().name = "taken".into();
         state.assist.rename.as_mut().unwrap().submit = true;
         frame(&mut state, &service, &doc, &text);
-        assert_eq!(state.assist.rename.as_ref().unwrap().error.as_deref(), Some("« taken » existe déjà ici"));
+        assert_eq!(
+            state.assist.rename.as_ref().unwrap().error.as_deref(),
+            Some("« taken » existe déjà ici")
+        );
         // A good one closes it and hands the changes over.
         state.assist.rename.as_mut().unwrap().name = "fresh".into();
         state.assist.rename.as_mut().unwrap().submit = true;
@@ -1965,7 +2536,10 @@ add();
         state.apply_edits(&mut text, edits);
         assert_eq!(text, "fresh + old");
         assert_eq!(state.assist.file_edits.len(), 1);
-        assert_eq!(state.assist.file_edits[0].0, std::path::PathBuf::from("other.js"));
+        assert_eq!(
+            state.assist.file_edits[0].0,
+            std::path::PathBuf::from("other.js")
+        );
         // One undo brings everything back.
         assert!(state.undo(&mut text));
         assert_eq!(text, "old + old");
@@ -1979,7 +2553,11 @@ add();
         state.assist_goto(1);
         frame(&mut state, &service, &doc, text);
         frame(&mut state, &service, &doc, text);
-        assert!(state.assist.navigate.is_none() && state.assist.chooser.is_none() && state.assist.job.is_none());
+        assert!(
+            state.assist.navigate.is_none()
+                && state.assist.chooser.is_none()
+                && state.assist.job.is_none()
+        );
     }
 
     #[test]

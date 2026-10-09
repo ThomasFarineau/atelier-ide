@@ -1873,7 +1873,11 @@ impl GitPlugin {
                         ui.spacing_mut().item_spacing.y = 0.0;
                         let (rect, _) = tree_row(ui, false);
                         kit::paint_chevron(ui, pos2(rect.left() + 14.0, rect.center().y), true);
-                        egui::Image::new(crate::icons::folder(true, crate::ui::theme(ui.ctx()).dark)).paint_at(
+                        egui::Image::new(crate::icons::folder(
+                            true,
+                            crate::ui::theme(ui.ctx()).dark,
+                        ))
+                        .paint_at(
                             ui,
                             Rect::from_min_size(
                                 pos2(rect.left() + 26.0, rect.center().y - 8.0),

@@ -27,7 +27,12 @@ impl Font {
         self as usize
     }
     fn base_name(self) -> &'static str {
-        ["Helvetica", "Helvetica-Bold", "Helvetica-Oblique", "Helvetica-BoldOblique"][self.index()]
+        [
+            "Helvetica",
+            "Helvetica-Bold",
+            "Helvetica-Oblique",
+            "Helvetica-BoldOblique",
+        ][self.index()]
     }
     fn bold(self) -> bool {
         matches!(self, Self::Bold | Self::BoldItalic)
@@ -36,7 +41,8 @@ impl Font {
 
 /// Advance widths of Helvetica for the characters 32 to 126, in 1/1000 em.
 const ASCII_WIDTHS: [u16; 95] = [
-    278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278, // space - /
+    278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278,
+    278, // space - /
     556, 556, 556, 556, 556, 556, 556, 556, 556, 556, // 0-9
     278, 278, 584, 584, 584, 556, 1015, // : ; < = > ? @
     667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, // A-M
@@ -108,7 +114,11 @@ fn encode(c: char) -> Option<u8> {
 }
 
 pub fn text_width(font: Font, size: f32, text: &str) -> f32 {
-    let em: f32 = text.chars().filter(|c| encode(*c).is_some()).map(glyph_width).sum();
+    let em: f32 = text
+        .chars()
+        .filter(|c| encode(*c).is_some())
+        .map(glyph_width)
+        .sum();
     em * size / 1000.0 * if font.bold() { 1.05 } else { 1.0 }
 }
 
@@ -203,8 +213,15 @@ impl Pdf {
         let page_h = self.cur().h;
         let mut bytes = Vec::with_capacity(text.len() + 32);
         bytes.extend_from_slice(
-            format!("BT /F{} {} Tf {} rg {} {} Td (", font.index(), num(size), rgb(color), num(x), num(page_h - y))
-                .as_bytes(),
+            format!(
+                "BT /F{} {} Tf {} rg {} {} Td (",
+                font.index(),
+                num(size),
+                rgb(color),
+                num(x),
+                num(page_h - y)
+            )
+            .as_bytes(),
         );
         for byte in text.chars().filter_map(encode) {
             if matches!(byte, b'(' | b')' | b'\\') {
@@ -218,7 +235,14 @@ impl Pdf {
 
     pub fn fill_rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: Color32) {
         let page_h = self.cur().h;
-        self.op(format!("{} rg {} {} {} {} re f", rgb(color), num(x), num(page_h - y - h), num(w), num(h)));
+        self.op(format!(
+            "{} rg {} {} {} {} re f",
+            rgb(color),
+            num(x),
+            num(page_h - y - h),
+            num(w),
+            num(h)
+        ));
     }
 
     pub fn stroke_rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: Color32, width: f32) {
@@ -265,7 +289,15 @@ impl Pdf {
         self.op(ops);
     }
 
-    pub fn ellipse(&mut self, x: f32, y: f32, w: f32, h: f32, fill: Option<Color32>, stroke: Option<(Color32, f32)>) {
+    pub fn ellipse(
+        &mut self,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        fill: Option<Color32>,
+        stroke: Option<(Color32, f32)>,
+    ) {
         let page_h = self.cur().h;
         let (rx, ry) = (w / 2.0, h / 2.0);
         let (cx, cy) = (x + rx, page_h - y - ry);
@@ -335,7 +367,13 @@ impl Pdf {
     /// Everything drawn until [`Pdf::pop_clip`] is cut to this rectangle.
     pub fn push_clip(&mut self, x: f32, y: f32, w: f32, h: f32) {
         let page_h = self.cur().h;
-        self.op(format!("q {} {} {} {} re W n", num(x), num(page_h - y - h), num(w), num(h)));
+        self.op(format!(
+            "q {} {} {} {} re W n",
+            num(x),
+            num(page_h - y - h),
+            num(w),
+            num(h)
+        ));
     }
 
     pub fn pop_clip(&mut self) {
@@ -372,7 +410,13 @@ impl Pdf {
         if !page.images.contains(&index) {
             page.images.push(index);
         }
-        self.op(format!("q {} 0 0 {} {} {} cm /Im{index} Do Q", num(w), num(h), num(x), num(page_h - y - h)));
+        self.op(format!(
+            "q {} 0 0 {} {} {} cm /Im{index} Do Q",
+            num(w),
+            num(h),
+            num(x),
+            num(page_h - y - h)
+        ));
     }
 
     /// Draws one line of [`flow`] with its top left corner at `(x, y)`, aligned in `avail`.
@@ -389,12 +433,33 @@ impl Pdf {
                     if let Some(bg) = span.bg {
                         self.fill_rect(cx, base - span.size * 0.93, *w, span.size * 1.15, bg);
                     }
-                    self.text(cx, base - span.raise, span.font, span.size, span.color, &span.text);
+                    self.text(
+                        cx,
+                        base - span.raise,
+                        span.font,
+                        span.size,
+                        span.color,
+                        &span.text,
+                    );
                     if span.underline {
-                        self.line(cx, base + span.size * 0.12, cx + w, base + span.size * 0.12, span.color, span.size * 0.05);
+                        self.line(
+                            cx,
+                            base + span.size * 0.12,
+                            cx + w,
+                            base + span.size * 0.12,
+                            span.color,
+                            span.size * 0.05,
+                        );
                     }
                     if span.strike {
-                        self.line(cx, base - span.size * 0.3, cx + w, base - span.size * 0.3, span.color, span.size * 0.05);
+                        self.line(
+                            cx,
+                            base - span.size * 0.3,
+                            cx + w,
+                            base - span.size * 0.3,
+                            span.color,
+                            span.size * 0.05,
+                        );
                     }
                     cx += w;
                 }
@@ -450,7 +515,11 @@ impl Pdf {
         write(
             &mut out,
             2,
-            &format!("<< /Type /Pages /Count {} /Kids [{}] >>", page_ids.len(), kids.join(" ")),
+            &format!(
+                "<< /Type /Pages /Count {} /Kids [{}] >>",
+                page_ids.len(),
+                kids.join(" ")
+            ),
             None,
         );
         for (i, id) in (3..=6).enumerate() {
@@ -523,7 +592,11 @@ impl Pdf {
             out.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
         }
         out.extend_from_slice(
-            format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", total + 1).as_bytes(),
+            format!(
+                "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+                total + 1
+            )
+            .as_bytes(),
         );
         out
     }
@@ -577,7 +650,11 @@ struct Builder {
 
 impl Builder {
     fn take(&mut self, default_size: f32) -> Line {
-        let size = if self.size > 0.0 { self.size } else { default_size };
+        let size = if self.size > 0.0 {
+            self.size
+        } else {
+            default_size
+        };
         let ascent = (size * 0.93).max(self.image);
         let line = Line {
             pieces: std::mem::take(&mut self.pieces),
@@ -724,9 +801,17 @@ mod tests {
 
     #[test]
     fn wraps_words_and_cuts_overlong_ones() {
-        let lines = flow(&[span("un deux trois quatre cinq six sept huit")], 60.0, 10.0);
+        let lines = flow(
+            &[span("un deux trois quatre cinq six sept huit")],
+            60.0,
+            10.0,
+        );
         assert!(lines.len() > 2);
-        assert!(lines.iter().all(|l| l.width <= 60.5), "{:?}", lines.iter().map(|l| l.width).collect::<Vec<_>>());
+        assert!(
+            lines.iter().all(|l| l.width <= 60.5),
+            "{:?}",
+            lines.iter().map(|l| l.width).collect::<Vec<_>>()
+        );
         let lines = flow(&[span("supercalifragilisticexpialidocious")], 50.0, 10.0);
         assert!(lines.len() > 1);
         let lines = flow(&[span("a\nb")], 100.0, 10.0);
@@ -738,11 +823,37 @@ mod tests {
     fn writes_a_well_formed_file() {
         let mut pdf = Pdf::default();
         pdf.page(200.0, 100.0);
-        pdf.text(10.0, 20.0, Font::Bold, 12.0, Color32::RED, "Bonjour (le) monde é");
+        pdf.text(
+            10.0,
+            20.0,
+            Font::Bold,
+            12.0,
+            Color32::RED,
+            "Bonjour (le) monde é",
+        );
         pdf.fill_rect(5.0, 5.0, 20.0, 10.0, Color32::BLUE);
-        pdf.ellipse(30.0, 30.0, 20.0, 10.0, Some(Color32::GREEN), Some((Color32::BLACK, 1.0)));
-        pdf.rounded_rect(60.0, 30.0, 20.0, 10.0, 3.0, None, Some((Color32::BLACK, 1.0)));
-        let img = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(2, 2, image::Rgba([1, 2, 3, 100])));
+        pdf.ellipse(
+            30.0,
+            30.0,
+            20.0,
+            10.0,
+            Some(Color32::GREEN),
+            Some((Color32::BLACK, 1.0)),
+        );
+        pdf.rounded_rect(
+            60.0,
+            30.0,
+            20.0,
+            10.0,
+            3.0,
+            None,
+            Some((Color32::BLACK, 1.0)),
+        );
+        let img = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+            2,
+            2,
+            image::Rgba([1, 2, 3, 100]),
+        ));
         let index = pdf.add_image(&img);
         pdf.image(0.0, 0.0, 10.0, 10.0, index);
         pdf.page(200.0, 100.0);

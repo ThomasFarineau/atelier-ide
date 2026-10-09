@@ -16,12 +16,16 @@ fn library_type(name: &str, args: &[Ty]) -> Ty {
     let first = args.first().cloned();
     match name {
         "Array" | "ReadonlyArray" => first.map_or(Ty::Array, |t| Ty::ArrayOf(Box::new(t))),
-        "Promise" | "PromiseLike" => first.map_or(Ty::Builtin("Promise"), |t| Ty::PromiseOf(Box::new(t))),
+        "Promise" | "PromiseLike" => {
+            first.map_or(Ty::Builtin("Promise"), |t| Ty::PromiseOf(Box::new(t)))
+        }
         "Map" | "WeakMap" | "ReadonlyMap" => Ty::Builtin("Map"),
         "Set" | "WeakSet" | "ReadonlySet" => Ty::Builtin("Set"),
         "Date" => Ty::Builtin("Date"),
         "RegExp" => Ty::Builtin("RegExp"),
-        "Error" | "TypeError" | "RangeError" | "SyntaxError" | "ReferenceError" => Ty::Builtin("Error"),
+        "Error" | "TypeError" | "RangeError" | "SyntaxError" | "ReferenceError" => {
+            Ty::Builtin("Error")
+        }
         "Function" => Ty::Builtin("Function"),
         "Object" => Ty::Builtin("Object"),
         "URL" => Ty::Builtin("URL"),
@@ -45,7 +49,12 @@ impl Analysis {
         }
         let src = self.text.as_str();
         match node.kind() {
-            "type_annotation" | "opting_type_annotation" | "omitting_type_annotation" | "adding_type_annotation" | "parenthesized_type" | "readonly_type" => node
+            "type_annotation"
+            | "opting_type_annotation"
+            | "omitting_type_annotation"
+            | "adding_type_annotation"
+            | "parenthesized_type"
+            | "readonly_type" => node
                 .named_child(0)
                 .map_or(Ty::Unknown, |inner| self.ty_from_type(inner, at, depth + 1)),
             "predefined_type" => match text(node, src) {
@@ -63,9 +72,9 @@ impl Analysis {
                 _ => Ty::Unknown,
             },
             "template_literal_type" | "index_type_query" => Ty::Str,
-            "array_type" => node
-                .named_child(0)
-                .map_or(Ty::Array, |inner| Ty::ArrayOf(Box::new(self.ty_from_type(inner, at, depth + 1)))),
+            "array_type" => node.named_child(0).map_or(Ty::Array, |inner| {
+                Ty::ArrayOf(Box::new(self.ty_from_type(inner, at, depth + 1)))
+            }),
             "tuple_type" => Ty::Array,
             "object_type" => Ty::Interface(node.byte_range()),
             "function_type" => Ty::Function(node.byte_range()),
@@ -102,11 +111,13 @@ impl Analysis {
             "type_query" => node
                 .named_child(0)
                 .filter(|n| n.kind() == "identifier")
-                .map_or(Ty::Unknown, |n| self.ty_of_name(text(n, src), at, depth + 1)),
+                .map_or(Ty::Unknown, |n| {
+                    self.ty_of_name(text(n, src), at, depth + 1)
+                }),
             "type_identifier" => self.named_type(text(node, src), &[], at, depth),
-            "nested_type_identifier" => node
-                .child_by_field_name("name")
-                .map_or(Ty::Unknown, |n| self.named_type(text(n, src), &[], at, depth)),
+            "nested_type_identifier" => node.child_by_field_name("name").map_or(Ty::Unknown, |n| {
+                self.named_type(text(n, src), &[], at, depth)
+            }),
             "generic_type" => {
                 let Some(name) = node.child_by_field_name("name") else {
                     return Ty::Unknown;
@@ -122,7 +133,8 @@ impl Analysis {
                     })
                     .unwrap_or_default();
                 let name = if name.kind() == "nested_type_identifier" {
-                    name.child_by_field_name("name").map_or("", |n| text(n, src))
+                    name.child_by_field_name("name")
+                        .map_or("", |n| text(n, src))
                 } else {
                     text(name, src)
                 };
@@ -138,12 +150,16 @@ impl Analysis {
             return library_type(name, args);
         };
         match decl.kind {
-            DeclKind::Class => self.node_at_range(&decl.node).map_or(Ty::Unknown, |n| Ty::Instance(n.byte_range())),
+            DeclKind::Class => self
+                .node_at_range(&decl.node)
+                .map_or(Ty::Unknown, |n| Ty::Instance(n.byte_range())),
             DeclKind::Interface => Ty::Interface(decl.node.clone()),
             DeclKind::TypeAlias => self
                 .node_at_range(&decl.node)
                 .and_then(|n| n.child_by_field_name("value"))
-                .map_or(Ty::Unknown, |value| self.ty_from_type(value, decl.node.start, depth + 1)),
+                .map_or(Ty::Unknown, |value| {
+                    self.ty_from_type(value, decl.node.start, depth + 1)
+                }),
             DeclKind::Enum => {
                 let strings = self
                     .node_at_range(&decl.node)
@@ -156,7 +172,10 @@ impl Analysis {
 
     /// The text of a type annotation without its colon, on one line.
     pub fn annotation_text(&self, node: Node) -> String {
-        let raw = text(node, &self.text).trim_start_matches(':').trim_start_matches('?').trim_start_matches(':');
+        let raw = text(node, &self.text)
+            .trim_start_matches(':')
+            .trim_start_matches('?')
+            .trim_start_matches(':');
         raw.split_whitespace().collect::<Vec<_>>().join(" ")
     }
 
@@ -170,16 +189,21 @@ impl Analysis {
         let body = node.child_by_field_name("body").unwrap_or(node);
         let mut cursor = body.walk();
         for member in body.named_children(&mut cursor) {
-            let Some(name) = member.child_by_field_name("name") else { continue };
+            let Some(name) = member.child_by_field_name("name") else {
+                continue;
+            };
             match member.kind() {
                 "property_signature" => {
                     let annotation = member.child_by_field_name("type");
-                    let ty = annotation.map_or(Ty::Unknown, |t| self.ty_from_type(t, at, depth + 1));
+                    let ty =
+                        annotation.map_or(Ty::Unknown, |t| self.ty_from_type(t, at, depth + 1));
                     let method = matches!(ty, Ty::Function(_));
                     props.push(Prop {
                         name: text(name, src).trim_matches(['"', '\'']).to_string(),
                         method,
-                        detail: annotation.map(|t| self.annotation_text(t)).unwrap_or_default(),
+                        detail: annotation
+                            .map(|t| self.annotation_text(t))
+                            .unwrap_or_default(),
                         doc: self.jsdoc_before(&member.byte_range()).unwrap_or_default(),
                         ty,
                         def: Some(name.byte_range()),
@@ -199,7 +223,10 @@ impl Analysis {
         // `interface B extends A, C`
         if depth < 4 {
             let mut inner = node.walk();
-            let clauses: Vec<Node> = node.children(&mut inner).filter(|c| c.kind() == "extends_type_clause").collect();
+            let clauses: Vec<Node> = node
+                .children(&mut inner)
+                .filter(|c| c.kind() == "extends_type_clause")
+                .collect();
             for clause in clauses {
                 let mut walker = clause.walk();
                 for base in clause.named_children(&mut walker) {
@@ -228,7 +255,11 @@ impl Analysis {
         let mut cursor = body.walk();
         body.named_children(&mut cursor)
             .filter_map(|member| {
-                let name = if member.kind() == "enum_assignment" { member.child_by_field_name("name")? } else { member };
+                let name = if member.kind() == "enum_assignment" {
+                    member.child_by_field_name("name")?
+                } else {
+                    member
+                };
                 if !matches!(name.kind(), "property_identifier" | "string" | "number") {
                     return None;
                 }
@@ -251,36 +282,57 @@ impl Analysis {
             return None;
         }
         let function = self.node_at_range(decl.owner.as_ref()?)?;
-        if !matches!(function.kind(), "arrow_function" | "function_expression" | "generator_function") {
+        if !matches!(
+            function.kind(),
+            "arrow_function" | "function_expression" | "generator_function"
+        ) {
             return None;
         }
         let arguments = function.parent().filter(|p| p.kind() == "arguments")?;
-        let call = arguments.parent().filter(|p| p.kind() == "call_expression")?;
+        let call = arguments
+            .parent()
+            .filter(|p| p.kind() == "call_expression")?;
         let argument_index = {
             let mut cursor = arguments.walk();
-            arguments.named_children(&mut cursor).position(|a| a.id() == function.id())?
+            arguments
+                .named_children(&mut cursor)
+                .position(|a| a.id() == function.id())?
         };
         // Which parameter of the callback is this?
         let parameter_index = if let Some(parameters) = function.child_by_field_name("parameters") {
             let mut cursor = parameters.walk();
-            parameters
-                .named_children(&mut cursor)
-                .position(|p| p.start_byte() <= decl.name_range.start && decl.name_range.end <= p.end_byte())?
+            parameters.named_children(&mut cursor).position(|p| {
+                p.start_byte() <= decl.name_range.start && decl.name_range.end <= p.end_byte()
+            })?
         } else {
             0
         };
         let callee = call.child_by_field_name("function")?;
         let src = self.text.as_str();
         if callee.kind() == "member_expression" && argument_index == 0 {
-            let object = self.ty(callee.child_by_field_name("object")?, decl.node.start, depth + 1);
+            let object = self.ty(
+                callee.child_by_field_name("object")?,
+                decl.node.start,
+                depth + 1,
+            );
             let method = text(callee.child_by_field_name("property")?, src);
             let element = match &object {
                 Ty::ArrayOf(element) => Some((**element).clone()),
                 _ => None,
             };
             return match (method, parameter_index, &object) {
-                ("map" | "filter" | "find" | "findIndex" | "findLast" | "findLastIndex" | "forEach" | "some" | "every" | "flatMap", 0, _) => element,
-                ("map" | "filter" | "find" | "findIndex" | "findLast" | "findLastIndex" | "forEach" | "some" | "every" | "flatMap", 1, _) => Some(Ty::Num),
+                (
+                    "map" | "filter" | "find" | "findIndex" | "findLast" | "findLastIndex"
+                    | "forEach" | "some" | "every" | "flatMap",
+                    0,
+                    _,
+                ) => element,
+                (
+                    "map" | "filter" | "find" | "findIndex" | "findLast" | "findLastIndex"
+                    | "forEach" | "some" | "every" | "flatMap",
+                    1,
+                    _,
+                ) => Some(Ty::Num),
                 ("reduce" | "reduceRight", 1, _) => element,
                 ("reduce" | "reduceRight", 2, _) => Some(Ty::Num),
                 ("sort" | "toSorted", 0 | 1, _) => element,
@@ -297,13 +349,16 @@ impl Analysis {
         let mut cursor = parameters.walk();
         let given = parameters.named_children(&mut cursor).nth(argument_index)?;
         let annotation = given.child_by_field_name("type")?;
-        let Ty::Function(callback_type) = self.ty_from_type(annotation, decl.node.start, depth + 1) else {
+        let Ty::Function(callback_type) = self.ty_from_type(annotation, decl.node.start, depth + 1)
+        else {
             return None;
         };
         let callback_type = self.node_at_range(&callback_type)?;
         let callback_parameters = callback_type.child_by_field_name("parameters")?;
         let mut inner = callback_parameters.walk();
-        let wanted = callback_parameters.named_children(&mut inner).nth(parameter_index)?;
+        let wanted = callback_parameters
+            .named_children(&mut inner)
+            .nth(parameter_index)?;
         let wanted = wanted.child_by_field_name("type")?;
         Some(self.ty_from_type(wanted, decl.node.start, depth + 1))
     }

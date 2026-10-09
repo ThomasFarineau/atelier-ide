@@ -6,8 +6,36 @@ use super::{build::Graph, report::describe};
 use std::collections::{HashMap, HashSet, VecDeque};
 
 const STOPWORDS: [&str; 30] = [
-    "le", "la", "les", "un", "une", "des", "du", "de", "et", "ou", "est", "dans", "pour", "que", "qui", "sur", "the", "and", "how", "what", "where", "does", "this",
-    "that", "with", "for", "are", "comment", "quoi", "fonctionne",
+    "le",
+    "la",
+    "les",
+    "un",
+    "une",
+    "des",
+    "du",
+    "de",
+    "et",
+    "ou",
+    "est",
+    "dans",
+    "pour",
+    "que",
+    "qui",
+    "sur",
+    "the",
+    "and",
+    "how",
+    "what",
+    "where",
+    "does",
+    "this",
+    "that",
+    "with",
+    "for",
+    "are",
+    "comment",
+    "quoi",
+    "fonctionne",
 ];
 
 /// The words of a text, lowercased, with `camelCase` and `snake_case` taken apart.
@@ -74,7 +102,15 @@ fn relations(graph: &Graph, adjacent: &[(usize, bool)], per_kind: usize) -> Vec<
         let link = &graph.links[i];
         let other = if outgoing { link.target } else { link.source };
         let name = relation(&link.kind, outgoing);
-        let label = format!("{}{}", graph.nodes[other].label, if link.confidence == "INFERRED" { "?" } else { "" });
+        let label = format!(
+            "{}{}",
+            graph.nodes[other].label,
+            if link.confidence == "INFERRED" {
+                "?"
+            } else {
+                ""
+            }
+        );
         match groups.iter_mut().find(|(n, _)| *n == name) {
             Some((_, list)) => list.push(label),
             None => groups.push((name, vec![label])),
@@ -84,7 +120,18 @@ fn relations(graph: &Graph, adjacent: &[(usize, bool)], per_kind: usize) -> Vec<
         .into_iter()
         .map(|(name, list)| {
             let more = list.len().saturating_sub(per_kind);
-            format!("{name}: {}{}", list.into_iter().take(per_kind).collect::<Vec<_>>().join(", "), if more > 0 { format!(" (+{more})") } else { String::new() })
+            format!(
+                "{name}: {}{}",
+                list.into_iter()
+                    .take(per_kind)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                if more > 0 {
+                    format!(" (+{more})")
+                } else {
+                    String::new()
+                }
+            )
         })
         .collect()
 }
@@ -92,7 +139,10 @@ fn relations(graph: &Graph, adjacent: &[(usize, bool)], per_kind: usize) -> Vec<
 /// What matches `question`: the nodes whose names (or files) share its words, with what they are
 /// linked to.
 pub fn query(graph: &Graph, question: &str, budget: usize) -> String {
-    let tokens: Vec<String> = words(question).into_iter().filter(|w| w.chars().count() >= 3 && !STOPWORDS.contains(&w.as_str())).collect();
+    let tokens: Vec<String> = words(question)
+        .into_iter()
+        .filter(|w| w.chars().count() >= 3 && !STOPWORDS.contains(&w.as_str()))
+        .collect();
     if tokens.is_empty() {
         return "Give at least one word of the code (a function, class or file name).".into();
     }
@@ -119,7 +169,13 @@ pub fn query(graph: &Graph, question: &str, budget: usize) -> String {
             scored.push((score, i));
         }
     }
-    scored.sort_by_key(|&(score, i)| (std::cmp::Reverse(score), std::cmp::Reverse(graph.nodes[i].degree), i));
+    scored.sort_by_key(|&(score, i)| {
+        (
+            std::cmp::Reverse(score),
+            std::cmp::Reverse(graph.nodes[i].degree),
+            i,
+        )
+    });
     if scored.is_empty() {
         return format!("Nothing in the graph matches “{question}”.");
     }
@@ -128,7 +184,14 @@ pub fn query(graph: &Graph, question: &str, budget: usize) -> String {
     let total = scored.len();
     let mut shown = 0;
     for (_, node) in scored {
-        let mut entry = format!("- {} · group {}\n", describe(graph, node), graph.communities.get(graph.nodes[node].community).map_or("?", |c| c.label.as_str()));
+        let mut entry = format!(
+            "- {} · group {}\n",
+            describe(graph, node),
+            graph
+                .communities
+                .get(graph.nodes[node].community)
+                .map_or("?", |c| c.label.as_str())
+        );
         for line in relations(graph, &adjacent[node], 8) {
             entry.push_str(&format!("    {line}\n"));
         }
@@ -139,7 +202,10 @@ pub fn query(graph: &Graph, question: &str, budget: usize) -> String {
         shown += 1;
     }
     if shown < total {
-        out.push_str(&format!("\n… {} more results: refine the question or raise the budget.\n", total - shown));
+        out.push_str(&format!(
+            "\n… {} more results: refine the question or raise the budget.\n",
+            total - shown
+        ));
     }
     out
 }
@@ -147,7 +213,9 @@ pub fn query(graph: &Graph, question: &str, budget: usize) -> String {
 /// The nodes a name stands for: by exact name first, then by the end of a path or of a name.
 fn find(graph: &Graph, name: &str) -> Vec<usize> {
     let wanted = name.trim().to_lowercase();
-    let exact: Vec<usize> = (0..graph.nodes.len()).filter(|&i| graph.nodes[i].label.to_lowercase() == wanted).collect();
+    let exact: Vec<usize> = (0..graph.nodes.len())
+        .filter(|&i| graph.nodes[i].label.to_lowercase() == wanted)
+        .collect();
     if !exact.is_empty() {
         return exact;
     }
@@ -163,13 +231,23 @@ fn find(graph: &Graph, name: &str) -> Vec<usize> {
 pub fn node(graph: &Graph, name: &str, budget: usize) -> String {
     let found = find(graph, name);
     if found.is_empty() {
-        return format!("No element named “{name}” in the graph. Try graph_query with a few words.");
+        return format!(
+            "No element named “{name}” in the graph. Try graph_query with a few words."
+        );
     }
     let adjacent = adjacency(graph);
     let mut out = String::new();
     for &i in found.iter().take(5) {
         let n = &graph.nodes[i];
-        out.push_str(&format!("{}\n  group: {} · links: {}\n", describe(graph, i), graph.communities.get(n.community).map_or("?", |c| c.label.as_str()), n.degree));
+        out.push_str(&format!(
+            "{}\n  group: {} · links: {}\n",
+            describe(graph, i),
+            graph
+                .communities
+                .get(n.community)
+                .map_or("?", |c| c.label.as_str()),
+            n.degree
+        ));
         for line in relations(graph, &adjacent[i], 15) {
             out.push_str(&format!("  {line}\n"));
         }
@@ -179,7 +257,10 @@ pub fn node(graph: &Graph, name: &str, budget: usize) -> String {
         }
     }
     if found.len() > 5 {
-        out.push_str(&format!("… and {} more elements of that name.\n", found.len() - 5));
+        out.push_str(&format!(
+            "… and {} more elements of that name.\n",
+            found.len() - 5
+        ));
     }
     out
 }
@@ -188,7 +269,10 @@ pub fn node(graph: &Graph, name: &str, budget: usize) -> String {
 pub fn path(graph: &Graph, from: &str, to: &str) -> String {
     let (starts, goals) = (find(graph, from), find(graph, to));
     if starts.is_empty() || goals.is_empty() {
-        return format!("“{}” is not in the graph.", if starts.is_empty() { from } else { to });
+        return format!(
+            "“{}” is not in the graph.",
+            if starts.is_empty() { from } else { to }
+        );
     }
     let adjacent = adjacency(graph);
     let goal: HashSet<usize> = goals.iter().copied().collect();
@@ -223,7 +307,11 @@ pub fn path(graph: &Graph, from: &str, to: &str) -> String {
     let mut out = format!("{}\n", describe(graph, at));
     for (previous, link, outgoing, next) in steps {
         let _ = previous;
-        out.push_str(&format!("  → {} {}\n", relation(&graph.links[link].kind, outgoing), describe(graph, next)));
+        out.push_str(&format!(
+            "  → {} {}\n",
+            relation(&graph.links[link].kind, outgoing),
+            describe(graph, next)
+        ));
     }
     out
 }
@@ -238,13 +326,23 @@ mod tests {
         // One folder per call: the tests run side by side and each removes its own.
         static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let root = std::env::temp_dir().join(format!("atelier-graph-query-{}-{n}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("atelier-graph-query-{}-{n}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("src")).unwrap();
         let sources = [
-            ("src/math.js", "export function addNumbers(a, b) { return a + b; }\n"),
-            ("src/app.js", "import { addNumbers } from './math.js';\nexport function computeTotal(x) { return addNumbers(x, 1); }\n"),
-            ("src/view.js", "import { computeTotal } from './app.js';\nexport function renderTotal() { return computeTotal(2); }\n"),
+            (
+                "src/math.js",
+                "export function addNumbers(a, b) { return a + b; }\n",
+            ),
+            (
+                "src/app.js",
+                "import { addNumbers } from './math.js';\nexport function computeTotal(x) { return addNumbers(x, 1); }\n",
+            ),
+            (
+                "src/view.js",
+                "import { computeTotal } from './app.js';\nexport function renderTotal() { return computeTotal(2); }\n",
+            ),
             ("src/unrelated.js", "export function standalone() {}\n"),
         ];
         let mut facts = BTreeMap::new();
@@ -260,18 +358,30 @@ mod tests {
 
     #[test]
     fn words_are_taken_apart_by_case_and_separators() {
-        assert_eq!(words("computeTotal_value-2"), ["compute", "total", "value", "2"]);
+        assert_eq!(
+            words("computeTotal_value-2"),
+            ["compute", "total", "value", "2"]
+        );
     }
 
     #[test]
     fn a_question_finds_the_matching_elements_with_their_relations() {
         let graph = graph();
         let answer = query(&graph, "where is the total computed?", 4000);
-        assert!(answer.contains("computeTotal") && answer.contains("renderTotal"), "{answer}");
-        assert!(answer.contains("calls: addNumbers") || answer.contains("called by: renderTotal"), "{answer}");
+        assert!(
+            answer.contains("computeTotal") && answer.contains("renderTotal"),
+            "{answer}"
+        );
+        assert!(
+            answer.contains("calls: addNumbers") || answer.contains("called by: renderTotal"),
+            "{answer}"
+        );
         assert!(!answer.contains("standalone"), "{answer}");
         assert!(query(&graph, "blablabla", 4000).starts_with("Nothing in the graph"));
-        assert!(query(&graph, "the and for", 4000).contains("at least one word"), "only stop words");
+        assert!(
+            query(&graph, "the and for", 4000).contains("at least one word"),
+            "only stop words"
+        );
     }
 
     #[test]
@@ -286,10 +396,18 @@ mod tests {
     fn a_node_lists_what_it_is_connected_to_and_a_path_links_two_names() {
         let graph = graph();
         let info = node(&graph, "computeTotal", 4000);
-        assert!(info.contains("calls: addNumbers") && info.contains("called by: renderTotal"), "{info}");
+        assert!(
+            info.contains("calls: addNumbers") && info.contains("called by: renderTotal"),
+            "{info}"
+        );
         assert!(node(&graph, "n'existe pas", 4000).starts_with("No element named"));
         let route = path(&graph, "renderTotal", "addNumbers");
-        assert!(route.contains("renderTotal") && route.contains("computeTotal") && route.contains("addNumbers"), "{route}");
+        assert!(
+            route.contains("renderTotal")
+                && route.contains("computeTotal")
+                && route.contains("addNumbers"),
+            "{route}"
+        );
         assert!(path(&graph, "standalone", "addNumbers").starts_with("No path between"));
     }
 }

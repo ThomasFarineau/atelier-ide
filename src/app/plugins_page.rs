@@ -51,30 +51,58 @@ fn paint_check(ui: &egui::Ui, t: &Theme, rect: Rect, checked: bool) {
         painter.rect_filled(rect, 3.0, t.accent);
         let (x, y) = (rect.left(), rect.top());
         painter.add(egui::Shape::line(
-            vec![pos2(x + 3.5, y + 8.5), pos2(x + 6.5, y + 11.5), pos2(x + 12.5, y + 4.5)],
+            vec![
+                pos2(x + 3.5, y + 8.5),
+                pos2(x + 6.5, y + 11.5),
+                pos2(x + 12.5, y + 4.5),
+            ],
             Stroke::new(1.8_f32, Color32::WHITE),
         ));
     } else {
-        painter.rect_stroke(rect, 3.0, Stroke::new(1.0_f32, t.border), StrokeKind::Inside);
+        painter.rect_stroke(
+            rect,
+            3.0,
+            Stroke::new(1.0_f32, t.border),
+            StrokeKind::Inside,
+        );
     }
 }
 
 /// The icon of a plugin: its own, or a colored square with its initial.
-fn plugin_icon(ui: &mut egui::Ui, t: &Theme, icon: Option<&str>, name: &str, rect: Rect, enabled: bool) {
+fn plugin_icon(
+    ui: &mut egui::Ui,
+    t: &Theme,
+    icon: Option<&str>,
+    name: &str,
+    rect: Rect,
+    enabled: bool,
+) {
     match icon {
         Some(icon) => {
             let image = ui::icon(ui, icon).fit_to_exact_size(rect.size());
-            let image = if enabled { image } else { image.tint(t.text_disabled) };
+            let image = if enabled {
+                image
+            } else {
+                image.tint(t.text_disabled)
+            };
             image.paint_at(ui, rect.shrink(rect.width() * 0.1));
         }
         None => {
-            let fill = if enabled { t.accent } else { t.accent.gamma_multiply(0.4) };
+            let fill = if enabled {
+                t.accent
+            } else {
+                t.accent.gamma_multiply(0.4)
+            };
             let painter = ui.painter();
             painter.rect_filled(rect, rect.width() * 0.2, fill);
             painter.text(
                 rect.center(),
                 Align2::CENTER_CENTER,
-                name.chars().next().unwrap_or('?').to_uppercase().to_string(),
+                name.chars()
+                    .next()
+                    .unwrap_or('?')
+                    .to_uppercase()
+                    .to_string(),
                 ui::semibold(rect.width() * 0.5),
                 Color32::WHITE,
             );
@@ -98,7 +126,8 @@ fn list_row(
     ui::paint_row(ui, rect, selected, response.hovered());
     let icon_rect = Rect::from_min_size(rect.left_top() + vec2(10.0, 10.0), vec2(32.0, 32.0));
     plugin_icon(ui, t, icon, name, icon_rect, enabled);
-    let check = Rect::from_center_size(pos2(rect.right() - 18.0, rect.center().y), vec2(16.0, 16.0));
+    let check =
+        Rect::from_center_size(pos2(rect.right() - 18.0, rect.center().y), vec2(16.0, 16.0));
     let text_area = Rect::from_min_max(
         pos2(rect.left() + 52.0, rect.top()),
         pos2(check.left() - 8.0, rect.bottom()),
@@ -123,7 +152,11 @@ fn list_row(
         FontId::proportional(11.5),
         sub,
     );
-    let toggle = ui.interact(check.expand(6.0), response.id.with("toggle"), Sense::click());
+    let toggle = ui.interact(
+        check.expand(6.0),
+        response.id.with("toggle"),
+        Sense::click(),
+    );
     paint_check(ui, t, check, enabled);
     (response.clicked() && !toggle.clicked(), toggle.clicked())
 }
@@ -139,7 +172,14 @@ fn group_header(ui: &mut egui::Ui, t: &Theme, title: &str, count: usize) -> bool
     }
     ui::paint_row(ui, rect, false, response.hovered());
     ui::paint_chevron(ui, pos2(rect.left() + 16.0, rect.center().y), open);
-    let x = ui::paint_text(ui, rect, rect.left() + 30.0, title, t.text, ui::semibold(12.5));
+    let x = ui::paint_text(
+        ui,
+        rect,
+        rect.left() + 30.0,
+        title,
+        t.text,
+        ui::semibold(12.5),
+    );
     ui::paint_text(
         ui,
         rect,
@@ -155,22 +195,33 @@ fn group_header(ui: &mut egui::Ui, t: &Theme, title: &str, count: usize) -> bool
 fn tab(ui: &mut egui::Ui, t: &Theme, text: &str, selected: bool) -> bool {
     let galley = ui.painter().layout_no_wrap(
         text.into(),
-        if selected { ui::semibold(13.0) } else { FontId::proportional(13.0) },
+        if selected {
+            ui::semibold(13.0)
+        } else {
+            FontId::proportional(13.0)
+        },
         if selected { t.text } else { t.text_secondary },
     );
     let (rect, response) =
         ui.allocate_exact_size(vec2(galley.size().x + 24.0, 30.0), Sense::click());
     if response.hovered() && !selected {
-        ui.painter().rect_filled(rect.shrink2(vec2(0.0, 2.0)), 5.0, t.hover);
+        ui.painter()
+            .rect_filled(rect.shrink2(vec2(0.0, 2.0)), 5.0, t.hover);
     }
     ui.painter().galley(
-        pos2(rect.center().x - galley.size().x / 2.0, rect.center().y - galley.size().y / 2.0 - 1.0),
+        pos2(
+            rect.center().x - galley.size().x / 2.0,
+            rect.center().y - galley.size().y / 2.0 - 1.0,
+        ),
         galley,
         t.text,
     );
     if selected {
         ui.painter().rect_filled(
-            Rect::from_min_max(pos2(rect.left() + 8.0, rect.bottom() - 3.0), pos2(rect.right() - 8.0, rect.bottom() - 1.0)),
+            Rect::from_min_max(
+                pos2(rect.left() + 8.0, rect.bottom() - 3.0),
+                pos2(rect.right() - 8.0, rect.bottom() - 1.0),
+            ),
             1.0,
             t.accent,
         );
@@ -180,9 +231,9 @@ fn tab(ui: &mut egui::Ui, t: &Theme, text: &str, selected: bool) -> bool {
 
 /// A shortcut drawn as a small rounded key.
 fn key_badge(ui: &mut egui::Ui, t: &Theme, text: &str) {
-    let galley = ui
-        .painter()
-        .layout_no_wrap(text.into(), FontId::proportional(11.0), t.text_secondary);
+    let galley =
+        ui.painter()
+            .layout_no_wrap(text.into(), FontId::proportional(11.0), t.text_secondary);
     let (rect, _) = ui.allocate_exact_size(galley.size() + vec2(12.0, 6.0), Sense::hover());
     ui.painter().rect(
         rect,
@@ -191,7 +242,8 @@ fn key_badge(ui: &mut egui::Ui, t: &Theme, text: &str) {
         Stroke::new(1.0_f32, t.border),
         StrokeKind::Inside,
     );
-    ui.painter().galley(rect.min + vec2(6.0, 3.0), galley, t.text_secondary);
+    ui.painter()
+        .galley(rect.min + vec2(6.0, 3.0), galley, t.text_secondary);
 }
 
 /// A line of the contributions list: label on the left, shortcut on the right.
@@ -200,14 +252,21 @@ fn contribution(ui: &mut egui::Ui, t: &Theme, label: &str, shortcut: &str) {
         ui.set_min_height(24.0);
         ui.label(label);
         if !shortcut.is_empty() {
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| key_badge(ui, t, shortcut));
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                key_badge(ui, t, shortcut)
+            });
         }
     });
 }
 
 impl Ide {
     /// Draws the page. `command` receives the shell command of a project plugin to run.
-    pub(super) fn plugins_page(&mut self, ui: &mut egui::Ui, t: Theme, command: &mut Option<String>) {
+    pub(super) fn plugins_page(
+        &mut self,
+        ui: &mut egui::Ui,
+        t: Theme,
+        command: &mut Option<String>,
+    ) {
         let builtins: Vec<Builtin> = self
             .builtins
             .iter()
@@ -218,7 +277,11 @@ impl Ide {
                 description: p.description(),
                 icon: p.icon(),
                 version: p.version(),
-                tools: p.tool_windows().iter().map(|w| (w.title, w.shortcut)).collect(),
+                tools: p
+                    .tool_windows()
+                    .iter()
+                    .map(|w| (w.title, w.shortcut))
+                    .collect(),
                 commands: p
                     .commands()
                     .into_iter()
@@ -243,11 +306,15 @@ impl Ide {
         ui.painter().rect_filled(line, 0.0, t.separator);
         ui.add_space(8.0);
 
-        let (body, _) = ui.allocate_exact_size(vec2(ui.available_width(), BODY_HEIGHT), Sense::hover());
+        let (body, _) =
+            ui.allocate_exact_size(vec2(ui.available_width(), BODY_HEIGHT), Sense::hover());
         let left = Rect::from_min_size(body.min, vec2(LIST_WIDTH, BODY_HEIGHT));
         let right = Rect::from_min_max(pos2(left.right() + 20.0, body.top()), body.max);
         ui.painter().rect_filled(
-            Rect::from_min_max(pos2(left.right() + 9.0, body.top()), pos2(left.right() + 10.0, body.bottom())),
+            Rect::from_min_max(
+                pos2(left.right() + 9.0, body.top()),
+                pos2(left.right() + 10.0, body.bottom()),
+            ),
             0.0,
             t.separator,
         );
@@ -259,7 +326,11 @@ impl Ide {
             Some(("p", id)) => ide.plugins.iter().any(|p| p.id == id),
             _ => false,
         };
-        if !self.plugin_selected.as_deref().is_some_and(|k| exists(k, self)) {
+        if !self
+            .plugin_selected
+            .as_deref()
+            .is_some_and(|k| exists(k, self))
+        {
             self.plugin_selected = builtins.first().map(|b| format!("b:{}", b.id));
         }
         let selected = self.plugin_selected.clone().unwrap_or_default();
@@ -270,7 +341,12 @@ impl Ide {
         let mut list = child(ui, left);
         {
             let ui = &mut list;
-            ui::search_field(ui, &mut self.plugin_filter, "Rechercher parmi les plugins", LIST_WIDTH);
+            ui::search_field(
+                ui,
+                &mut self.plugin_filter,
+                "Rechercher parmi les plugins",
+                LIST_WIDTH,
+            );
             ui.add_space(6.0);
             ui.spacing_mut().item_spacing.y = 0.0;
             let visible_builtins: Vec<&Builtin> = builtins
@@ -290,7 +366,9 @@ impl Ide {
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = 0.0;
-                    if !visible_builtins.is_empty() && group_header(ui, &t, "Intégrés", visible_builtins.len()) {
+                    if !visible_builtins.is_empty()
+                        && group_header(ui, &t, "Intégrés", visible_builtins.len())
+                    {
                         for b in &visible_builtins {
                             let key = format!("b:{}", b.id);
                             let subtitle = format!("Intégré · {}", b.version);
@@ -328,10 +406,20 @@ impl Ide {
                         for &i in &visible_project {
                             let plugin = &self.plugins[i];
                             let key = format!("p:{}", plugin.id);
-                            let enabled = self.settings.enabled_plugins.contains(&self.plugin_key(&plugin.id));
+                            let enabled = self
+                                .settings
+                                .enabled_plugins
+                                .contains(&self.plugin_key(&plugin.id));
                             let subtitle = format!("Projet · {}", plugin.version);
-                            let (clicked, toggle) =
-                                list_row(ui, &t, None, &plugin.name, &subtitle, selected == key, enabled);
+                            let (clicked, toggle) = list_row(
+                                ui,
+                                &t,
+                                None,
+                                &plugin.name,
+                                &subtitle,
+                                selected == key,
+                                enabled,
+                            );
                             if toggle {
                                 toggled = Some(key.clone());
                             }
@@ -401,7 +489,12 @@ impl Ide {
     ) {
         let tab_id = ui.make_persistent_id(("plugin_tab", selected));
         // Title, version and the enable button.
-        let header = |ui: &mut egui::Ui, icon: Option<&str>, name: &str, meta: String, enabled: bool| -> bool {
+        let header = |ui: &mut egui::Ui,
+                      icon: Option<&str>,
+                      name: &str,
+                      meta: String,
+                      enabled: bool|
+         -> bool {
             let mut clicked = false;
             ui.horizontal(|ui| {
                 let (rect, _) = ui.allocate_exact_size(vec2(48.0, 48.0), Sense::hover());
@@ -456,7 +549,10 @@ impl Ide {
                     }
                 } else {
                     if b.tools.is_empty() && b.commands.is_empty() {
-                        ui.label(RichText::new("Ce plugin ne contribue ni fenêtre ni action.").color(t.text_secondary));
+                        ui.label(
+                            RichText::new("Ce plugin ne contribue ni fenêtre ni action.")
+                                .color(t.text_secondary),
+                        );
                     }
                     if !b.tools.is_empty() {
                         ui::section(ui, "Fenêtres d'outils");
@@ -498,7 +594,10 @@ impl Ide {
                 } else {
                     ui::section(ui, "Commandes");
                     if !enabled {
-                        ui.label(RichText::new("Activez l'extension pour lancer ses commandes.").color(t.text_secondary));
+                        ui.label(
+                            RichText::new("Activez l'extension pour lancer ses commandes.")
+                                .color(t.text_secondary),
+                        );
                     }
                     for cmd in &plugin.commands {
                         let shell = plugins::shell_command(&cmd.program, &cmd.args);
@@ -510,8 +609,13 @@ impl Ide {
                                 }
                             });
                             ui.add(
-                                egui::Label::new(RichText::new(&shell).small().monospace().color(t.text_secondary))
-                                    .truncate(),
+                                egui::Label::new(
+                                    RichText::new(&shell)
+                                        .small()
+                                        .monospace()
+                                        .color(t.text_secondary),
+                                )
+                                .truncate(),
                             );
                         });
                     }
