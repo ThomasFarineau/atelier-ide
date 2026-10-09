@@ -1,0 +1,113 @@
+name: Release
+
+# Pushing a tag `vX.Y.Z` builds the IDE and its bootstrap for Windows, Linux and macOS and
+# publishes them as a GitHub release. The bootstrap (`atelier`) is what users start: it finds
+# the latest release by itself and updates the IDE before running it (src/bin/atelier.rs).
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# Started by hand, the workflow only builds and keeps the files as artifacts.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build (${{ matrix.os_name }}-${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: windows-latest, target: x86_64-pc-windows-msvc, os_name: windows, arch: x86_64 }
+          - { runner: ubuntu-latest, target: x86_64-unknown-linux-gnu, os_name: linux, arch: x86_64 }
+          - { runner: macos-latest, target: aarch64-apple-darwin, os_name: macos, arch: aarch64 }
+          - { runner: macos-latest, target: x86_64-apple-darwin, os_name: macos, arch: x86_64 }
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The tag matches the version of the crate
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          if [ "v$version" != "${GITHUB_REF_NAME}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} but Cargo.toml says $version" >&2
+            exit 1
+          fi
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libxkbcommon-dev libxcb-render0-dev \
+            libxcb-shape0-dev libxcb-xfixes0-dev libssl-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked --bins --target ${{ matrix.target }}
+
+      - name: Package
+        run: |
+          ext=""
+          if [ "${{ matrix.os_name }}" = "windows" ]; then ext=".exe"; fi
+          out="target/${{ matrix.target }}/release"
+          mkdir -p dist/stage
+          cp "$out/atelier-ide$ext" "$out/atelier$ext" dist/stage/
+          name="atelier-ide-${{ matrix.os_name }}-${{ matrix.arch }}"
+          # The archive the bootstrap installs from: the IDE and the next bootstrap.
+          if [ "${{ matrix.os_name }}" = "windows" ]; then
+            (cd dist/stage && 7z a -tzip "../$name.zip" atelier-ide.exe atelier.exe)
+          else
+            tar -czf "dist/$name.tar.gz" -C dist/stage atelier-ide atelier
+          fi
+          # The program users download once.
+          cp "$out/atelier$ext" "dist/atelier-${{ matrix.os_name }}-${{ matrix.arch }}$ext"
+          rm -r dist/stage
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: atelier-${{ matrix.os_name }}-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums of the archives the bootstrap downloads
+        run: |
+          cd dist
+          sha256sum atelier-ide-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "Atelier IDE ${GITHUB_REF_NAME}" \
+            --generate-notes
