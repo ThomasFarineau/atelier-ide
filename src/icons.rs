@@ -1,54 +1,31 @@
-//! File-type icons (SVG, embedded in the binary, rasterized by egui_extras).
+//! File-type icons: which icon of `assets/icons` a file gets (see `icon_set` for the variants).
 
-use eframe::egui::{ImageSource, include_image};
+use eframe::egui::ImageSource;
 use std::path::Path;
 
-pub fn folder(open: bool) -> ImageSource<'static> {
+pub fn folder(open: bool, dark: bool) -> ImageSource<'static> {
+    source(folder_key(open), dark)
+}
+
+fn source(key: &str, dark: bool) -> ImageSource<'static> {
+    crate::icon_set::source(key, dark).expect("file icon")
+}
+
+fn folder_key(open: bool) -> &'static str {
     if open {
-        include_image!("../assets/icons/folder-open.svg")
+        "file/folder-open"
     } else {
-        include_image!("../assets/icons/folder.svg")
+        "file/folder"
     }
 }
 
-pub fn file(path: &Path) -> ImageSource<'static> {
-    let name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    match name.as_str() {
-        "cargo.toml" => return include_image!("../assets/icons/cargo.svg"),
-        ".gitignore" | ".gitattributes" | ".gitmodules" => {
-            return include_image!("../assets/icons/git.svg");
-        }
-        _ if name.ends_with(".lock") || name == "package-lock.json" => {
-            return include_image!("../assets/icons/lock.svg");
-        }
-        _ => {}
-    }
-    let extension = name.rsplit_once('.').map_or("", |(_, ext)| ext);
-    match extension {
-        "rs" => include_image!("../assets/icons/rust.svg"),
-        "py" | "pyw" | "pyi" => include_image!("../assets/icons/python.svg"),
-        "java" | "jar" | "class" => include_image!("../assets/icons/java.svg"),
-        "js" | "mjs" | "cjs" | "jsx" => include_image!("../assets/icons/javascript.svg"),
-        "ts" | "tsx" | "mts" | "cts" => include_image!("../assets/icons/typescript.svg"),
-        "html" | "htm" => include_image!("../assets/icons/html.svg"),
-        "css" | "scss" | "sass" | "less" => include_image!("../assets/icons/css.svg"),
-        "json" | "jsonc" => include_image!("../assets/icons/json.svg"),
-        "toml" | "yaml" | "yml" | "ini" | "cfg" | "conf" | "env" => {
-            include_image!("../assets/icons/config.svg")
-        }
-        "md" | "markdown" => include_image!("../assets/icons/markdown.svg"),
-        "png" | "jpg" | "jpeg" | "gif" | "svg" | "webp" | "ico" | "bmp" => {
-            include_image!("../assets/icons/image.svg")
-        }
-        "sh" | "bash" | "zsh" | "ps1" | "bat" | "cmd" => {
-            include_image!("../assets/icons/shell.svg")
-        }
-        _ => include_image!("../assets/icons/file.svg"),
-    }
+pub fn file(path: &Path, dark: bool) -> ImageSource<'static> {
+    source(file_key(path), dark)
+}
+
+/// Key of the icon of a file type: the `extensions` files of the languages and of `assets`.
+pub fn file_key(path: &Path) -> &'static str {
+    crate::icon_set::extension_icon("file", path).unwrap_or("file/file")
 }
 
 #[cfg(test)]
@@ -57,37 +34,37 @@ mod tests {
 
     #[test]
     fn special_names_win_over_extensions() {
-        assert_eq!(file(Path::new("Cargo.toml")).uri(), cargo_uri());
-        assert_eq!(file(Path::new("Cargo.lock")).uri(), lock_uri());
-        assert_eq!(file(Path::new("a/main.RS")).uri(), rust_uri());
-        assert_eq!(file(Path::new("README")).uri(), file_uri());
+        assert_eq!(file_key(Path::new("Cargo.toml")), "file/extensions/cargo.toml");
+        assert_eq!(file_key(Path::new("Cargo.lock")), "file/extensions/lock+package-lock.json");
+        assert_eq!(file_key(Path::new("a/main.RS")), "file/extensions/rs");
+        assert_eq!(file_key(Path::new("README")), "file/file");
+        assert_eq!(file_key(Path::new("Dockerfile")), "file/extensions/dockerfile+containerfile+.dockerignore");
+        assert_eq!(file_key(Path::new("build.gradle.kts")), "file/extensions/kt+kts");
     }
-    fn cargo_uri() -> Option<&'static str> {
-        include_image!("../assets/icons/cargo.svg").uri()
-    }
-    fn lock_uri() -> Option<&'static str> {
-        include_image!("../assets/icons/lock.svg").uri()
-    }
-    fn rust_uri() -> Option<&'static str> {
-        include_image!("../assets/icons/rust.svg").uri()
-    }
-    fn file_uri() -> Option<&'static str> {
-        include_image!("../assets/icons/file.svg").uri()
+
+    /// Every key the table hands out must exist.
+    #[test]
+    fn every_file_type_has_an_icon() {
+        for name in ["a.rs", "a.py", "a.java", "a.js", "a.ts", "a.tsx", "a.vue", "a.svelte", "a.html",
+            "a.css", "a.scss", "a.go", "a.c", "a.cpp", "a.cs", "a.kt", "a.gradle", "a.rb", "a.php",
+            "a.dart", "a.hs", "a.json", "a.toml", "a.sh", "x", "Cargo.toml", "Dockerfile",
+            "package.json", "a.lock"] {
+            for dark in [false, true] {
+                let _ = file(Path::new(name), dark);
+            }
+        }
+        let _ = (folder(true, true), folder(false, false));
     }
 
     /// Every embedded icon must parse, otherwise egui shows an error glyph at runtime.
     #[test]
     fn all_icons_are_valid_svg() {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/icons");
-        for entry in std::fs::read_dir(dir).unwrap().flatten() {
-            let bytes = std::fs::read(entry.path()).unwrap();
-            let image = egui_extras::image::load_svg_bytes(&bytes, &Default::default());
-            assert!(
-                image.is_ok(),
-                "{}: {:?}",
-                entry.path().display(),
-                image.err()
-            );
+        assert!(crate::icon_set::ICONS.len() > 100);
+        for icon in crate::icon_set::ICONS {
+            for variant in icon.variants.iter().flatten().filter(|v| v.uri.ends_with(".svg")) {
+                let image = egui_extras::image::load_svg_bytes(variant.bytes, &Default::default());
+                assert!(image.is_ok(), "{}: {:?}", variant.uri, image.err());
+            }
         }
     }
 }
