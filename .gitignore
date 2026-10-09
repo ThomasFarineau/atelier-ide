@@ -3,8 +3,8 @@
 **/*.rs.bk
 *.pdb
 
-# Forge IDE (données locales du projet)
-/.forge
+# Atelier IDE (données locales du projet)
+/.atelier
 examples/demo/target
 
 # Éditeurs / IDE
