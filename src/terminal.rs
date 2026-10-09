@@ -56,7 +56,11 @@ impl Shell {
         let mut shells = vec![Self::default_shell()];
         if cfg!(windows) {
             if on_path("pwsh.exe") {
-                shells.push(Self::new("PowerShell 7", "pwsh.exe", &["-NoLogo", "-NoExit"]));
+                shells.push(Self::new(
+                    "PowerShell 7",
+                    "pwsh.exe",
+                    &["-NoLogo", "-NoExit"],
+                ));
             }
             shells.push(Self::new("Invite de commandes", "cmd.exe", &[]));
             let git_bash = [
@@ -72,8 +76,14 @@ impl Shell {
                 shells.push(Self::wsl(&distro));
             }
         } else {
-            for (name, path) in [("bash", "/bin/bash"), ("zsh", "/bin/zsh"), ("sh", "/bin/sh")] {
-                if Path::new(path).is_file() && shells.iter().all(|s| s.program != path && s.name != name) {
+            for (name, path) in [
+                ("bash", "/bin/bash"),
+                ("zsh", "/bin/zsh"),
+                ("sh", "/bin/sh"),
+            ] {
+                if Path::new(path).is_file()
+                    && shells.iter().all(|s| s.program != path && s.name != name)
+                {
                     shells.push(Self::new(name, path, &[]));
                 }
             }
@@ -95,7 +105,10 @@ fn on_path(program: &str) -> bool {
 
 /// Installed WSL distributions; `wsl -l -q` prints UTF-16.
 fn wsl_distributions() -> Vec<String> {
-    let Ok(output) = std::process::Command::new("wsl.exe").args(["-l", "-q"]).output() else {
+    let Ok(output) = std::process::Command::new("wsl.exe")
+        .args(["-l", "-q"])
+        .output()
+    else {
         return Vec::new();
     };
     if !output.status.success() {
@@ -108,7 +121,10 @@ fn wsl_distributions() -> Vec<String> {
         .collect();
     String::from_utf16_lossy(&units)
         .lines()
-        .map(|l| l.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}' || c == '\0').to_string())
+        .map(|l| {
+            l.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}' || c == '\0')
+                .to_string()
+        })
         // Docker's internal distributions are not meant to be opened.
         .filter(|l| !l.is_empty() && !l.starts_with("docker-desktop"))
         .collect()
@@ -161,7 +177,9 @@ impl Terminal {
                         .windows(2)
                         .any(|a| a[0] == "-d" && a[1].eq_ignore_ascii_case(&wsl.distro));
                     cmd.args(["--cd", if same { wsl.linux.as_str() } else { "~" }]);
-                    cmd.cwd(std::env::var_os("USERPROFILE").map_or_else(std::env::temp_dir, Into::into));
+                    cmd.cwd(
+                        std::env::var_os("USERPROFILE").map_or_else(std::env::temp_dir, Into::into),
+                    );
                 }
                 None => cmd.cwd(crate::project::simplify(root)),
             }
@@ -174,7 +192,14 @@ impl Terminal {
         if is_wsl(shell) && !mcp.is_empty() {
             let shared: Vec<&str> = mcp.iter().map(|(name, _)| *name).collect();
             let existing = std::env::var("WSLENV").unwrap_or_default();
-            cmd.env("WSLENV", if existing.is_empty() { shared.join(":") } else { format!("{existing}:{}", shared.join(":")) });
+            cmd.env(
+                "WSLENV",
+                if existing.is_empty() {
+                    shared.join(":")
+                } else {
+                    format!("{existing}:{}", shared.join(":"))
+                },
+            );
         }
         for (name, value) in mcp {
             cmd.env(name, value);
@@ -222,6 +247,10 @@ impl Terminal {
             pending_ai: None,
         })
     }
+    /// The process id of the shell, which the processes started in this terminal descend from.
+    pub fn pid(&self) -> Option<u32> {
+        self.child.as_ref().and_then(|c| c.process_id())
+    }
     /// Registers the function that wakes the UI on output; set once.
     pub fn on_output(&self, wake: impl Fn() + Send + Sync + 'static) {
         let _ = self.repaint.set(Box::new(wake));
@@ -235,7 +264,9 @@ impl Terminal {
     /// Scrolls the history: positive goes back in time. The alternate screen has none.
     pub fn scroll(&mut self, lines: isize) {
         let current = self.parser.screen().scrollback() as isize;
-        self.parser.screen_mut().set_scrollback((current + lines).max(0) as usize);
+        self.parser
+            .screen_mut()
+            .set_scrollback((current + lines).max(0) as usize);
     }
     pub fn scroll_to_bottom(&mut self) {
         self.parser.screen_mut().set_scrollback(0);
@@ -344,12 +375,17 @@ mod tests {
     fn available_shells_start_with_the_default_one() {
         let shells = Shell::available();
         assert_eq!(shells[0], Shell::default_shell());
-        assert!(shells.iter().all(|s| !s.name.is_empty() && !s.program.is_empty()));
+        assert!(
+            shells
+                .iter()
+                .all(|s| !s.name.is_empty() && !s.program.is_empty())
+        );
     }
     #[test]
     fn real_shell_executes_and_keeps_its_working_directory() {
         let root = std::env::current_dir().unwrap();
-        let mut terminal = Terminal::start(&root, &Shell::default_shell()).expect("A native shell is required");
+        let mut terminal =
+            Terminal::start(&root, &Shell::default_shell()).expect("A native shell is required");
         let command = if cfg!(windows) {
             "Write-Output ('ATELIER_' + 'PTY_OK'); Write-Output ((Get-Location).Path)"
         } else {
@@ -359,7 +395,10 @@ mod tests {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
         while terminal.screen().trim().is_empty() {
             terminal.poll();
-            assert!(std::time::Instant::now() < deadline, "The shell did not start");
+            assert!(
+                std::time::Instant::now() < deadline,
+                "The shell did not start"
+            );
             std::thread::sleep(std::time::Duration::from_millis(25));
         }
         terminal.command(command).unwrap();
@@ -389,13 +428,17 @@ mod tests {
         if !folder.is_dir() {
             return;
         }
-        let verbatim = std::path::PathBuf::from(format!(r"\\?\UNC\{}", &folder.to_string_lossy()[2..]));
+        let verbatim =
+            std::path::PathBuf::from(format!(r"\\?\UNC\{}", &folder.to_string_lossy()[2..]));
         for root in [folder, verbatim] {
             let mut terminal = Terminal::start(&root, &shell).expect("wsl.exe starts");
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
             while terminal.screen().trim().is_empty() {
                 terminal.poll();
-                assert!(std::time::Instant::now() < deadline, "The shell did not start");
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "The shell did not start"
+                );
                 std::thread::sleep(std::time::Duration::from_millis(25));
             }
             terminal.command("echo CWD_IS:$(pwd)").unwrap();
