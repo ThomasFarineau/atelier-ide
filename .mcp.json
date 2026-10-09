@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "atelier": {
+      "type": "http",
+      "url": "${ATELIER_MCP_URL}",
+      "headers": {
+        "Authorization": "Bearer ${ATELIER_MCP_TOKEN}"
+      }
+    }
+  }
+}
