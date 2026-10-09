@@ -92,10 +92,19 @@ const SHORTCUTS: [(&str, &str); 36] = [
     ("F5", "Exécuter le fichier actif"),
     ("Ctrl+Espace", "Complétion du code"),
     ("Maj+F6", "Renommer"),
-    ("Ctrl+F / Ctrl+R / F3", "Rechercher / Remplacer / occurrence suivante"),
+    (
+        "Ctrl+F / Ctrl+R / F3",
+        "Rechercher / Remplacer / occurrence suivante",
+    ),
     ("Ctrl+Maj+F", "Rechercher dans le projet"),
-    ("Ctrl+clic / Ctrl+B", "Aller à la déclaration (ou aux utilisations)"),
-    ("Ctrl+Maj+B / Ctrl+Alt+B", "Déclaration du type / implémentations"),
+    (
+        "Ctrl+clic / Ctrl+B",
+        "Aller à la déclaration (ou aux utilisations)",
+    ),
+    (
+        "Ctrl+Maj+B / Ctrl+Alt+B",
+        "Déclaration du type / implémentations",
+    ),
     ("Alt+F7", "Utilisations"),
     ("Ctrl+F12", "Structure du fichier"),
     ("Alt+Entrée", "Actions rapides (importer…)"),
@@ -500,7 +509,10 @@ impl Ide {
         let mut ide = Self::blank(root, settings, crate::dev::listen(&cc.egui_ctx));
         let ctx = cc.egui_ctx.clone();
         ide.repaint = Arc::new(move || ctx.request_repaint());
-        ide.languages = Arc::new(crate::languages::Service::new(&ide.root, ide.repaint.clone()));
+        ide.languages = Arc::new(crate::languages::Service::new(
+            &ide.root,
+            ide.repaint.clone(),
+        ));
         egui_extras::install_image_loaders(&cc.egui_ctx);
         // `atelier <folder|file>`: a folder is the project, a file opens in the current one.
         let target = crate::cli::target();
@@ -714,7 +726,8 @@ impl Ide {
             self.last_watch = Instant::now();
             let mut errors = Vec::new();
             for doc in &mut self.documents {
-                if !doc.dirty() && doc.changed_on_disk()
+                if !doc.dirty()
+                    && doc.changed_on_disk()
                     && let Err(e) = doc.reload()
                 {
                     errors.push(format!("{} : {e:#}", doc.title()));
@@ -844,7 +857,10 @@ impl Ide {
         let root = self.root.clone();
         self.remember(&root);
         (self.plugins, self.plugin_errors) = plugins::load(&self.root);
-        self.languages = Arc::new(crate::languages::Service::new(&self.root, self.repaint.clone()));
+        self.languages = Arc::new(crate::languages::Service::new(
+            &self.root,
+            self.repaint.clone(),
+        ));
         self.problems = (0, 0);
         self.graph.set_root(&self.root, self.repaint.clone());
         self.status = format!("Projet : {}", self.root.display());
@@ -912,7 +928,8 @@ impl Ide {
         match action {
             Pending::Close(index) => {
                 if index < self.documents.len() {
-                    self.languages.close(doc_key(&self.documents[index].path, index));
+                    self.languages
+                        .close(doc_key(&self.documents[index].path, index));
                     self.documents.remove(index);
                     self.active = self
                         .active
@@ -946,7 +963,8 @@ impl Ide {
     fn start_terminal(&mut self, shell: Option<Shell>) {
         // A project of a WSL distribution gets a shell inside that distribution.
         let shell = shell.unwrap_or_else(|| {
-            crate::wsl::parse(&self.root).map_or_else(Shell::default_shell, |w| Shell::wsl(&w.distro))
+            crate::wsl::parse(&self.root)
+                .map_or_else(Shell::default_shell, |w| Shell::wsl(&w.distro))
         });
         if let Some(pane) = self.new_pane(&shell) {
             self.terminals.push(TerminalTab {
@@ -994,7 +1012,11 @@ impl Ide {
     }
     /// Sends the Enter that was held back when an AI was typed in a pane.
     fn release_enter(&mut self, pane: u64) {
-        let found = self.terminals.iter_mut().flat_map(|tab| tab.root.leaves_mut()).find(|p| p.id == pane);
+        let found = self
+            .terminals
+            .iter_mut()
+            .flat_map(|tab| tab.root.leaves_mut())
+            .find(|p| p.id == pane);
         if let Some(pane) = found {
             let _ = pane.term.write(b"\r");
         }
@@ -1005,7 +1027,11 @@ impl Ide {
     fn offer_mcp(&mut self, pane: u64, agent: crate::plugins::builtins::mcp::agents::Agent) {
         use crate::plugins::builtins::mcp::agents;
         let key = format!("{}|{}", self.root.display(), agent.id());
-        if agents::is_connected(agent, &self.root, crate::plugins::builtins::mcp::address().as_deref()) {
+        if agents::is_connected(
+            agent,
+            &self.root,
+            crate::plugins::builtins::mcp::address().as_deref(),
+        ) {
             return self.release_enter(pane);
         }
         match self.settings.mcp_choices.get(&key) {
@@ -1019,7 +1045,11 @@ impl Ide {
     }
 
     fn connect_mcp(&mut self, agent: crate::plugins::builtins::mcp::agents::Agent) {
-        match crate::plugins::builtins::mcp::agents::connect(agent, &self.root, crate::plugins::builtins::mcp::address().as_deref()) {
+        match crate::plugins::builtins::mcp::agents::connect(
+            agent,
+            &self.root,
+            crate::plugins::builtins::mcp::address().as_deref(),
+        ) {
             Ok(_) => self.status = format!("{} connecté au MCP d'Atelier", agent.name()),
             Err(e) => self.push_note("MCP", e, true, true),
         }
@@ -1039,7 +1069,12 @@ impl Ide {
             pane.term.want_focus = true;
             let new = pane.id;
             let tab = &mut self.terminals[self.active_terminal];
-            if tab.root.split_with(&|p: &Pane| p.id == target, stacked, before, Node::Leaf(pane)) {
+            if tab.root.split_with(
+                &|p: &Pane| p.id == target,
+                stacked,
+                before,
+                Node::Leaf(pane),
+            ) {
                 tab.active = new;
             }
         }
@@ -1067,7 +1102,9 @@ impl Ide {
         if self.terminals.is_empty() {
             self.show_terminal = false;
         }
-        self.active_terminal = self.active_terminal.min(self.terminals.len().saturating_sub(1));
+        self.active_terminal = self
+            .active_terminal
+            .min(self.terminals.len().saturating_sub(1));
     }
     fn execute(&mut self, command: &str) {
         self.set_terminal(true);
@@ -1183,7 +1220,10 @@ impl Ide {
         let Some(doc) = self.documents.get_mut(self.active) else {
             return;
         };
-        let from = doc.path.clone().map(|path| NavPoint { path, offset: doc.view.cursor });
+        let from = doc.path.clone().map(|path| NavPoint {
+            path,
+            offset: doc.view.cursor,
+        });
         let offset = doc.view.offset_at(&doc.text, line, column);
         doc.view.select(offset, offset);
         if let Some(from) = from {
@@ -1220,10 +1260,12 @@ impl Ide {
 
     /// Back or forward through the places left by jumps.
     fn navigate_history(&mut self, back: bool) {
-        let here = self
-            .documents
-            .get(self.active)
-            .and_then(|d| Some(NavPoint { path: d.path.clone()?, offset: d.view.cursor }));
+        let here = self.documents.get(self.active).and_then(|d| {
+            Some(NavPoint {
+                path: d.path.clone()?,
+                offset: d.view.cursor,
+            })
+        });
         let (from, to) = if back {
             (&mut self.nav_back, &mut self.nav_forward)
         } else {
@@ -1258,7 +1300,11 @@ impl Ide {
         let mut changed = 0;
         for (path, edits) in files {
             let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
-            if let Some(doc) = self.documents.iter_mut().find(|d| d.path.as_ref() == Some(&canonical)) {
+            if let Some(doc) = self
+                .documents
+                .iter_mut()
+                .find(|d| d.path.as_ref() == Some(&canonical))
+            {
                 let new = apply(&doc.text, &edits);
                 doc.view.replace_text(&mut doc.text, &new);
                 changed += 1;
@@ -1275,7 +1321,9 @@ impl Ide {
     fn selected_text(&self) -> Option<String> {
         let doc = self.documents.get(self.active)?;
         let range = doc.view.selection();
-        (!range.is_empty() && range.end <= doc.text.len()).then(|| doc.text.get(range).map(str::to_string)).flatten()
+        (!range.is_empty() && range.end <= doc.text.len())
+            .then(|| doc.text.get(range).map(str::to_string))
+            .flatten()
     }
 
     fn open_palette(&mut self) {
@@ -2033,19 +2081,38 @@ impl Ide {
         ui::menu_title(ui, "Graphe de contexte");
         let status = self.graph.status();
         if !self.graph.enabled() {
-            if ui::menu_item(ui, Some("refresh"), "Générer le graphe de contexte", None, false).clicked() {
+            if ui::menu_item(
+                ui,
+                Some("refresh"),
+                "Générer le graphe de contexte",
+                None,
+                false,
+            )
+            .clicked()
+            {
                 self.graph.enable(self.repaint.clone());
                 ui.close();
             }
-            ui.label(RichText::new("Les IA lisent ce plan du projet au lieu de ses fichiers.").small().color(self.theme(ui.ctx()).text_secondary));
+            ui.label(
+                RichText::new("Les IA lisent ce plan du projet au lieu de ses fichiers.")
+                    .small()
+                    .color(self.theme(ui.ctx()).text_secondary),
+            );
             return;
         }
         let state = if status.busy {
             "Mise à jour…".to_string()
         } else {
-            format!("À jour · {} fichiers · {} éléments · {} groupes", status.files, status.symbols, status.groups)
+            format!(
+                "À jour · {} fichiers · {} éléments · {} groupes",
+                status.files, status.symbols, status.groups
+            )
         };
-        ui.label(RichText::new(state).small().color(self.theme(ui.ctx()).text_secondary));
+        ui.label(
+            RichText::new(state)
+                .small()
+                .color(self.theme(ui.ctx()).text_secondary),
+        );
         if let Some(error) = &status.error {
             ui.colored_label(self.theme(ui.ctx()).error, error);
         }
@@ -2124,8 +2191,18 @@ impl Ide {
                     if ui::icon_button(ui, "add", "Nouveau fichier").clicked() {
                         ide.show_new_file = true;
                     }
-                    let graph = ui::icon_button(ui, "graph", if ide.graph.enabled() { "Graphe de contexte (activé)" } else { "Graphe de contexte" });
-                    egui::Popup::menu(&graph).id(egui::Id::new("graph_menu")).show(|ui| ide.graph_menu(ui));
+                    let graph = ui::icon_button(
+                        ui,
+                        "graph",
+                        if ide.graph.enabled() {
+                            "Graphe de contexte (activé)"
+                        } else {
+                            "Graphe de contexte"
+                        },
+                    );
+                    egui::Popup::menu(&graph)
+                        .id(egui::Id::new("graph_menu"))
+                        .show(|ui| ide.graph_menu(ui));
                 });
                 if hide {
                     self.show_project = false;
@@ -2209,10 +2286,13 @@ impl Ide {
                 .collect();
             if selection.len() > 1 && selection.iter().any(|p| p == path) {
                 ui::menu_title(ui, &format!("{} éléments sélectionnés", selection.len()));
-                if ui::menu_item(ui, Some("delete"), "Supprimer…", Some("Suppr"), true).clicked() {
+                if ui::menu_item(ui, Some("delete"), "Supprimer…", Some("Suppr"), true).clicked()
+                {
                     self.tree_dialog = Some(TreeDialog::Delete(selection));
                     ui.close();
-                } else if ui::menu_item(ui, Some("copy"), "Copier les chemins", None, false).clicked() {
+                } else if ui::menu_item(ui, Some("copy"), "Copier les chemins", None, false)
+                    .clicked()
+                {
                     let paths: Vec<_> = selection
                         .iter()
                         .map(|p| project::simplify(p).display().to_string())
@@ -2222,7 +2302,9 @@ impl Ide {
                 }
                 return;
             }
-            if !is_dir && ui::menu_item(ui, Some("openNewTab"), "Ouvrir", Some("Entrée"), false).clicked() {
+            if !is_dir
+                && ui::menu_item(ui, Some("openNewTab"), "Ouvrir", Some("Entrée"), false).clicked()
+            {
                 self.open_file(path.to_path_buf());
                 ui.close();
             }
@@ -2238,7 +2320,8 @@ impl Ide {
                     if p.is_empty() { p } else { format!("{p}/") }
                 })
                 .unwrap_or_default();
-            if ui::menu_item(ui, Some("add"), "Nouveau fichier…", Some("Ctrl+N"), false).clicked() {
+            if ui::menu_item(ui, Some("add"), "Nouveau fichier…", Some("Ctrl+N"), false).clicked()
+            {
                 self.new_name = prefix.clone();
                 self.show_new_file = true;
                 ui.close();
@@ -2250,18 +2333,27 @@ impl Ide {
             if !is_root {
                 ui::menu_separator(ui);
                 if ui::menu_item(ui, Some("edit"), "Renommer…", Some("F2"), false).clicked() {
-                    let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
-                    self.tree_dialog = Some(TreeDialog::Rename { path: path.to_path_buf(), name });
+                    let name = path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .into_owned();
+                    self.tree_dialog = Some(TreeDialog::Rename {
+                        path: path.to_path_buf(),
+                        name,
+                    });
                     ui.close();
                 }
-                if ui::menu_item(ui, Some("delete"), "Supprimer…", Some("Suppr"), true).clicked() {
+                if ui::menu_item(ui, Some("delete"), "Supprimer…", Some("Suppr"), true).clicked()
+                {
                     self.tree_dialog = Some(TreeDialog::Delete(vec![path.to_path_buf()]));
                     ui.close();
                 }
             }
             ui::menu_separator(ui);
             if ui::menu_item(ui, Some("copy"), "Copier le chemin", None, false).clicked() {
-                ui.ctx().copy_text(project::simplify(path).display().to_string());
+                ui.ctx()
+                    .copy_text(project::simplify(path).display().to_string());
                 ui.close();
             }
             if ui::menu_item(ui, None, "Copier le chemin relatif", None, false).clicked() {
@@ -2270,7 +2362,15 @@ impl Ide {
                 ui.close();
             }
             ui::menu_separator(ui);
-            if ui::menu_item(ui, Some("locate"), "Afficher dans l'explorateur", None, false).clicked() {
+            if ui::menu_item(
+                ui,
+                Some("locate"),
+                "Afficher dans l'explorateur",
+                None,
+                false,
+            )
+            .clicked()
+            {
                 let target = project::simplify(path);
                 #[cfg(windows)]
                 let _ = std::process::Command::new("explorer")
@@ -2282,7 +2382,10 @@ impl Ide {
                     .spawn();
                 ui.close();
             }
-            if is_dir && ui::menu_item(ui, Some("terminal"), "Ouvrir dans le terminal", None, false).clicked() {
+            if is_dir
+                && ui::menu_item(ui, Some("terminal"), "Ouvrir dans le terminal", None, false)
+                    .clicked()
+            {
                 let dir = project::simplify(path).display().to_string();
                 let command = if cfg!(windows) {
                     format!("Set-Location -LiteralPath '{}'", dir.replace('\'', "''"))
@@ -2320,7 +2423,13 @@ impl Ide {
     }
 
     /// Drag and drop of a tree row: the folder under the pointer receives the dragged entry.
-    fn tree_drag_row(&mut self, ui: &egui::Ui, response: &egui::Response, entry: &Path, is_dir: bool) {
+    fn tree_drag_row(
+        &mut self,
+        ui: &egui::Ui,
+        response: &egui::Response,
+        entry: &Path,
+        is_dir: bool,
+    ) {
         if response.dragged()
             && ui.input(|i| i.pointer.is_decidedly_dragging())
             && entry != self.root
@@ -2345,12 +2454,10 @@ impl Ide {
             .pointer_interact_pos()
             .is_some_and(|p| response.rect.contains(p));
         if over {
-            let dir = if is_dir {
-                Some(entry)
-            } else {
-                entry.parent()
-            };
-            if let Some(dir) = dir.filter(|d| !self.tree_drag_set.iter().any(|from| d.starts_with(from))) {
+            let dir = if is_dir { Some(entry) } else { entry.parent() };
+            if let Some(dir) =
+                dir.filter(|d| !self.tree_drag_set.iter().any(|from| d.starts_with(from)))
+            {
                 self.tree_drop_next = Some(dir.to_path_buf());
             }
         }
@@ -2364,11 +2471,23 @@ impl Ide {
             let name = if self.tree_drag_set.len() > 1 {
                 format!("{} éléments", self.tree_drag_set.len())
             } else {
-                from.file_name().unwrap_or_default().to_string_lossy().into_owned()
+                from.file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned()
             };
             let t = self.theme(ctx);
-            ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("tree_drag")))
-                .text(pointer + vec2(12.0, 12.0), Align2::LEFT_TOP, name, FontId::proportional(13.0), t.text);
+            ctx.layer_painter(egui::LayerId::new(
+                egui::Order::Tooltip,
+                egui::Id::new("tree_drag"),
+            ))
+            .text(
+                pointer + vec2(12.0, 12.0),
+                Align2::LEFT_TOP,
+                name,
+                FontId::proportional(13.0),
+                t.text,
+            );
         }
         let target = self.tree_drop_next.take();
         if self.tree_drag.is_some() {
@@ -2439,7 +2558,11 @@ impl Ide {
             .map(|p| remap(p).unwrap_or_else(|| p.clone()))
             .collect();
         self.tree_selected = self.tree_selected.take().map(|p| remap(&p).unwrap_or(p));
-        self.tree_multi = self.tree_multi.iter().map(|p| remap(p).unwrap_or_else(|| p.clone())).collect();
+        self.tree_multi = self
+            .tree_multi
+            .iter()
+            .map(|p| remap(p).unwrap_or_else(|| p.clone()))
+            .collect();
         self.tree_anchor = self.tree_anchor.take().map(|p| remap(&p).unwrap_or(p));
         self.tree.clear();
         self.project_files = None;
@@ -2456,12 +2579,19 @@ impl Ide {
         self.documents
             .retain(|d| !d.path.as_deref().is_some_and(|p| p.starts_with(path)));
         self.active = match active {
-            Some(Some(p)) => self.documents.iter().position(|d| d.path.as_ref() == Some(&p)),
+            Some(Some(p)) => self
+                .documents
+                .iter()
+                .position(|d| d.path.as_ref() == Some(&p)),
             _ => None,
         }
         .unwrap_or_else(|| self.active.min(self.documents.len().saturating_sub(1)));
         self.expanded.retain(|p| !p.starts_with(path));
-        if self.tree_selected.as_deref().is_some_and(|p| p.starts_with(path)) {
+        if self
+            .tree_selected
+            .as_deref()
+            .is_some_and(|p| p.starts_with(path))
+        {
             self.tree_selected = None;
         }
         self.tree_multi.retain(|p| !p.starts_with(path));
@@ -2507,8 +2637,13 @@ impl Ide {
     /// Selects every row between the anchor and `to`.
     fn tree_select_range(&mut self, to: &Path) {
         let rows = self.visible_rows();
-        let anchor = self.tree_anchor.clone().or_else(|| self.tree_selected.clone());
-        let from = anchor.as_ref().and_then(|a| rows.iter().position(|(p, _)| p == a));
+        let anchor = self
+            .tree_anchor
+            .clone()
+            .or_else(|| self.tree_selected.clone());
+        let from = anchor
+            .as_ref()
+            .and_then(|a| rows.iter().position(|(p, _)| p == a));
         let end = rows.iter().position(|(p, _)| p == to);
         let (Some(from), Some(end)) = (from, end) else {
             self.tree_select_only(to);
@@ -2551,7 +2686,12 @@ impl Ide {
             }
             self.tree_anchor = Some(path.to_path_buf());
             if self.tree_multi.len() < 2 {
-                self.tree_selected = self.tree_multi.iter().next().cloned().or(self.tree_selected.take());
+                self.tree_selected = self
+                    .tree_multi
+                    .iter()
+                    .next()
+                    .cloned()
+                    .or(self.tree_selected.take());
                 self.tree_multi.clear();
             }
             return false;
@@ -2620,13 +2760,19 @@ impl Ide {
         if key(Key::ArrowDown) {
             select = rows.get(current.map_or(0, |i| i + 1)).map(|r| r.0.clone());
         } else if key(Key::ArrowUp) {
-            select = current.and_then(|i| i.checked_sub(1)).and_then(|i| rows.get(i)).map(|r| r.0.clone());
+            select = current
+                .and_then(|i| i.checked_sub(1))
+                .and_then(|i| rows.get(i))
+                .map(|r| r.0.clone());
         }
         if let Some((path, is_dir)) = current.map(|i| rows[i].clone()) {
             let expanded = self.expanded.contains(&path);
             if key(Key::ArrowRight) && is_dir {
                 if expanded {
-                    select = rows.get(current.unwrap() + 1).filter(|r| r.0.parent() == Some(&path)).map(|r| r.0.clone());
+                    select = rows
+                        .get(current.unwrap() + 1)
+                        .filter(|r| r.0.parent() == Some(&path))
+                        .map(|r| r.0.clone());
                 } else {
                     self.expanded.insert(path.clone());
                 }
@@ -2643,8 +2789,15 @@ impl Ide {
                     self.open_file(path.clone());
                 }
             } else if path != self.root && key(Key::F2) {
-                let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
-                self.tree_dialog = Some(TreeDialog::Rename { path: path.clone(), name });
+                let name = path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned();
+                self.tree_dialog = Some(TreeDialog::Rename {
+                    path: path.clone(),
+                    name,
+                });
             } else if path != self.root && key(Key::Delete) {
                 let selection: Vec<_> = self
                     .tree_selection()
@@ -2661,7 +2814,9 @@ impl Ide {
     }
 
     fn tree_dialogs(&mut self, ctx: &egui::Context) {
-        let Some(dialog) = self.tree_dialog.take() else { return };
+        let Some(dialog) = self.tree_dialog.take() else {
+            return;
+        };
         let t = self.theme(ctx);
         let mut keep = None;
         match dialog {
@@ -2675,7 +2830,11 @@ impl Ide {
                             .desired_width(f32::INFINITY),
                     )
                     .request_focus();
-                    ui.label(RichText::new("Chemin relatif au projet").small().color(t.text_secondary));
+                    ui.label(
+                        RichText::new("Chemin relatif au projet")
+                            .small()
+                            .color(t.text_secondary),
+                    );
                     ui::dialog_buttons(ui, "Créer")
                 });
                 let (ok, cancel) = modal.inner;
@@ -2741,7 +2900,10 @@ impl Ide {
                 if ok {
                     for path in &paths {
                         // Inside a folder that is deleted too: already gone.
-                        if paths.iter().any(|other| other != path && path.starts_with(other)) {
+                        if paths
+                            .iter()
+                            .any(|other| other != path && path.starts_with(other))
+                        {
                             continue;
                         }
                         match project::delete_path(path) {
@@ -2775,7 +2937,8 @@ impl Ide {
                             (is_dir || p.is_file()).then_some((p, is_dir))
                         })
                         .collect();
-                    self.tree_stamps.insert(path.into(), project::modified(path));
+                    self.tree_stamps
+                        .insert(path.into(), project::modified(path));
                     self.tree.insert(path.into(), entries);
                 }
                 Err(e) => {
@@ -2821,7 +2984,8 @@ impl Ide {
         const INDENT: f32 = 19.0;
         let t = self.theme(ui.ctx());
         let width = ui.available_width().max(200.0);
-        let (rect, response) = ui.allocate_exact_size(vec2(width, ui::ROW), Sense::click_and_drag());
+        let (rect, response) =
+            ui.allocate_exact_size(vec2(width, ui::ROW), Sense::click_and_drag());
         #[cfg(test)]
         self.row_rects.push((path.to_path_buf(), rect));
         if !ui.is_rect_visible(rect) {
@@ -2831,7 +2995,12 @@ impl Ide {
         if self.tree_selected.as_deref() == Some(path) && self.scroll_to_selected {
             response.scroll_to_me(None);
         }
-        ui::paint_row(ui, rect, selected, response.hovered() && self.tree_drag.is_none());
+        ui::paint_row(
+            ui,
+            rect,
+            selected,
+            response.hovered() && self.tree_drag.is_none(),
+        );
         if self.tree_drag.is_some() && self.tree_drop.as_deref() == Some(path) {
             ui.painter().rect(
                 rect.shrink2(vec2(4.0, 0.0)),
@@ -2942,17 +3111,19 @@ impl Ide {
                 split = Some(false);
             }
             let plus = ui::icon_button(ui, "add", "Nouveau terminal");
-            egui::Popup::menu(&plus).id(egui::Id::new("terminal_shells")).show(|ui| {
-                ui::menu_begin(ui);
-                ui::menu_title(ui, "Nouveau terminal");
-                let shells = ide.shells.get_or_insert_with(Shell::available);
-                for shell in shells.iter() {
-                    if ui::menu_item(ui, Some("terminal"), &shell.name, None, false).clicked() {
-                        new_shell = Some(shell.clone());
-                        ui.close();
+            egui::Popup::menu(&plus)
+                .id(egui::Id::new("terminal_shells"))
+                .show(|ui| {
+                    ui::menu_begin(ui);
+                    ui::menu_title(ui, "Nouveau terminal");
+                    let shells = ide.shells.get_or_insert_with(Shell::available);
+                    for shell in shells.iter() {
+                        if ui::menu_item(ui, Some("terminal"), &shell.name, None, false).clicked() {
+                            new_shell = Some(shell.clone());
+                            ui.close();
+                        }
                     }
-                }
-            });
+                });
         });
         // Session tabs, next to the title.
         let top = ui.min_rect().top() + 6.0;
@@ -2963,15 +3134,35 @@ impl Ide {
         let mut close_pane = false;
         let mut tab_rects: Vec<Rect> = Vec::new();
         for (index, tab) in self.terminals.iter().enumerate() {
-            let galley = ui.painter().layout_no_wrap(tab.name().to_string(), FontId::proportional(12.5), t.text);
-            let width = galley.size().x + 44.0;
+            let galley = ui.painter().layout_no_wrap(
+                tab.name().to_string(),
+                FontId::proportional(12.5),
+                t.text,
+            );
+            // What the shells of the tab and their programs use, in a cell of fixed width so that
+            // the values changing never move the tabs.
+            let usage = tab_usage(tab);
+            let usage_width = ui
+                .painter()
+                .layout_no_wrap(
+                    crate::stats::WIDEST_USAGE.into(),
+                    FontId::proportional(11.0),
+                    t.text_secondary,
+                )
+                .size()
+                .x;
+            let width = galley.size().x + 44.0 + usage_width + 8.0;
             if x + width > limit {
                 break;
             }
             let rect = Rect::from_min_size(pos2(x, top), vec2(width, 26.0));
             tab_rects.push(rect);
             let active = index == self.active_terminal;
-            let response = ui.interact(rect, egui::Id::new(("terminal_tab", index)), Sense::click_and_drag());
+            let response = ui.interact(
+                rect,
+                egui::Id::new(("terminal_tab", index)),
+                Sense::click_and_drag(),
+            );
             if response.dragged() && ui.input(|i| i.pointer.is_decidedly_dragging()) {
                 self.drag = Some(Drag::Tab(index));
             }
@@ -2980,7 +3171,14 @@ impl Ide {
                     rect,
                     6.0,
                     if active { t.frame } else { t.hover },
-                    Stroke::new(1.0_f32, if active { t.border } else { Color32::TRANSPARENT }),
+                    Stroke::new(
+                        1.0_f32,
+                        if active {
+                            t.border
+                        } else {
+                            Color32::TRANSPARENT
+                        },
+                    ),
                     StrokeKind::Inside,
                 );
             }
@@ -2989,8 +3187,24 @@ impl Ide {
                 galley,
                 t.text,
             );
-            let cross = Rect::from_center_size(pos2(rect.right() - 14.0, rect.center().y), vec2(18.0, 18.0));
-            let cross_response = ui.interact(cross, egui::Id::new(("terminal_close", index)), Sense::click());
+            if let Some(text) = usage {
+                ui.painter().text(
+                    pos2(rect.right() - 30.0, rect.center().y),
+                    Align2::RIGHT_CENTER,
+                    text,
+                    FontId::proportional(11.0),
+                    t.text_secondary,
+                );
+            }
+            let cross = Rect::from_center_size(
+                pos2(rect.right() - 14.0, rect.center().y),
+                vec2(18.0, 18.0),
+            );
+            let cross_response = ui.interact(
+                cross,
+                egui::Id::new(("terminal_close", index)),
+                Sense::click(),
+            );
             if cross_response.hovered() {
                 ui.painter().rect_filled(cross, 4.0, t.pressed);
             }
@@ -3009,16 +3223,22 @@ impl Ide {
             response.context_menu(|ui| {
                 ui::menu_begin(ui);
                 select = Some(index);
-                if ui::menu_item(ui, Some("sideBySide"), "Fractionner à droite", None, false).clicked() {
+                if ui::menu_item(ui, Some("sideBySide"), "Fractionner à droite", None, false)
+                    .clicked()
+                {
                     split = Some(false);
                     ui.close();
                 }
-                if ui::menu_item(ui, Some("unified"), "Fractionner vers le bas", None, false).clicked() {
+                if ui::menu_item(ui, Some("unified"), "Fractionner vers le bas", None, false)
+                    .clicked()
+                {
                     split = Some(true);
                     ui.close();
                 }
                 ui::menu_separator(ui);
-                if tab.count() > 1 && ui::menu_item(ui, None, "Fermer le volet", None, false).clicked() {
+                if tab.count() > 1
+                    && ui::menu_item(ui, None, "Fermer le volet", None, false).clicked()
+                {
                     close_pane = true;
                     ui.close();
                 }
@@ -3071,9 +3291,7 @@ impl Ide {
                 let Some(tab) = self.terminals.get_mut(self.active_terminal) else {
                     return;
                 };
-                if tab.count() == 1
-                    && tab.root.leaves().first().is_some_and(|p| p.term.exited)
-                {
+                if tab.count() == 1 && tab.root.leaves().first().is_some_and(|p| p.term.exited) {
                     ui.colored_label(
                         t.warning,
                         "Session terminée · Redémarrer pour ouvrir un nouveau shell",
@@ -3097,14 +3315,39 @@ impl Ide {
                         // The title of a pane: a handle to drag it elsewhere.
                         let head = Rect::from_min_size(rect.min, vec2(rect.width(), HEAD));
                         body.min.y += HEAD;
-                        let response = ui.interact(head, egui::Id::new(("pane_head", pane.id)), Sense::click_and_drag());
-                        ui.painter().rect_filled(head, 0.0, if pane.id == active_id { t.hover } else { t.frame });
+                        let response = ui.interact(
+                            head,
+                            egui::Id::new(("pane_head", pane.id)),
+                            Sense::click_and_drag(),
+                        );
+                        ui.painter().rect_filled(
+                            head,
+                            0.0,
+                            if pane.id == active_id {
+                                t.hover
+                            } else {
+                                t.frame
+                            },
+                        );
+                        if let Some(usage) = pane.term.pid().and_then(crate::stats::watch) {
+                            ui.painter().text(
+                                pos2(head.right() - 8.0, head.center().y),
+                                Align2::RIGHT_CENTER,
+                                crate::stats::format_usage(usage.0, usage.1),
+                                FontId::proportional(11.0),
+                                t.text_secondary,
+                            );
+                        }
                         ui.painter().text(
                             pos2(head.left() + 8.0, head.center().y),
                             Align2::LEFT_CENTER,
                             &pane.term.shell.name,
                             FontId::proportional(12.0),
-                            if pane.id == active_id { t.text } else { t.text_secondary },
+                            if pane.id == active_id {
+                                t.text
+                            } else {
+                                t.text_secondary
+                            },
                         );
                         if response.clicked() {
                             focused = Some(pane.id);
@@ -3117,7 +3360,12 @@ impl Ide {
                     }
                     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(body));
                     pane.term.ai_watch = ai_watch;
-                    let area = crate::terminal_ui::show(&mut child, &mut pane.term, &mut pane.selection, &t);
+                    let area = crate::terminal_ui::show(
+                        &mut child,
+                        &mut pane.term,
+                        &mut pane.selection,
+                        &t,
+                    );
                     if let Some(agent) = pane.term.pending_ai.take() {
                         mcp_offers.push((pane.id, agent));
                     }
@@ -3126,20 +3374,40 @@ impl Ide {
                     }
                     area.context_menu(|ui| {
                         ui::menu_begin(ui);
-                        if ui::menu_item(ui, Some("sideBySide"), "Fractionner à droite", None, false).clicked() {
+                        if ui::menu_item(
+                            ui,
+                            Some("sideBySide"),
+                            "Fractionner à droite",
+                            None,
+                            false,
+                        )
+                        .clicked()
+                        {
                             menu_split = Some(false);
                             ui.close();
                         }
-                        if ui::menu_item(ui, Some("unified"), "Fractionner vers le bas", None, false).clicked() {
+                        if ui::menu_item(
+                            ui,
+                            Some("unified"),
+                            "Fractionner vers le bas",
+                            None,
+                            false,
+                        )
+                        .clicked()
+                        {
                             menu_split = Some(true);
                             ui.close();
                         }
                         ui::menu_separator(ui);
-                        if split_view && ui::menu_item(ui, None, "Fermer le volet", None, false).clicked() {
+                        if split_view
+                            && ui::menu_item(ui, None, "Fermer le volet", None, false).clicked()
+                        {
                             menu_close_pane = true;
                             ui.close();
                         }
-                        if ui::menu_item(ui, Some("closeSmall"), "Fermer l'onglet", None, false).clicked() {
+                        if ui::menu_item(ui, Some("closeSmall"), "Fermer l'onglet", None, false)
+                            .clicked()
+                        {
                             menu_close_tab = true;
                             ui.close();
                         }
@@ -3158,27 +3426,50 @@ impl Ide {
                 // wider area, makes it easy to grab.
                 let mut moves = Vec::new();
                 for (index, divider) in dividers.iter().enumerate() {
-                    let grab = divider.rect.expand(if divider.stacked { 0.0 } else { 3.0 }).expand2(
-                        if divider.stacked { vec2(0.0, 3.0) } else { vec2(0.0, 0.0) },
-                    );
+                    let grab = divider
+                        .rect
+                        .expand(if divider.stacked { 0.0 } else { 3.0 })
+                        .expand2(if divider.stacked {
+                            vec2(0.0, 3.0)
+                        } else {
+                            vec2(0.0, 0.0)
+                        });
                     let response = ui
-                        .interact(grab, egui::Id::new(("terminal_divider", index)), Sense::drag())
+                        .interact(
+                            grab,
+                            egui::Id::new(("terminal_divider", index)),
+                            Sense::drag(),
+                        )
                         .on_hover_cursor(if divider.stacked {
                             egui::CursorIcon::ResizeVertical
                         } else {
                             egui::CursorIcon::ResizeHorizontal
                         });
                     let line = if divider.stacked {
-                        Rect::from_center_size(divider.rect.center(), vec2(divider.rect.width(), 1.0))
+                        Rect::from_center_size(
+                            divider.rect.center(),
+                            vec2(divider.rect.width(), 1.0),
+                        )
                     } else {
-                        Rect::from_center_size(divider.rect.center(), vec2(1.0, divider.rect.height()))
+                        Rect::from_center_size(
+                            divider.rect.center(),
+                            vec2(1.0, divider.rect.height()),
+                        )
                     };
-                    let color = if response.hovered() || response.dragged() { t.border } else { t.separator };
+                    let color = if response.hovered() || response.dragged() {
+                        t.border
+                    } else {
+                        t.separator
+                    };
                     ui.painter().rect_filled(line, 0.0, color);
                     if let Some(pointer) = response.interact_pointer_pos()
                         && response.dragged()
                     {
-                        let at = if divider.stacked { pointer.y } else { pointer.x };
+                        let at = if divider.stacked {
+                            pointer.y
+                        } else {
+                            pointer.x
+                        };
                         moves.push((divider.path.clone(), divider.ratio_at(at, GAP)));
                     }
                 }
@@ -3203,8 +3494,14 @@ impl Ide {
                     }
                 {
                     let (stacked, before, zone) = drop_zone(*rect, pointer);
-                    ui.painter().rect_filled(zone, 4.0, t.accent.gamma_multiply(0.3));
-                    ui.painter().rect_stroke(zone, 4.0, Stroke::new(1.5_f32, t.accent), StrokeKind::Inside);
+                    ui.painter()
+                        .rect_filled(zone, 4.0, t.accent.gamma_multiply(0.3));
+                    ui.painter().rect_stroke(
+                        zone,
+                        4.0,
+                        Stroke::new(1.5_f32, t.accent),
+                        StrokeKind::Inside,
+                    );
                     drop = Some((pane.id, stacked, before));
                 }
                 ui.allocate_rect(full, Sense::hover());
@@ -3244,7 +3541,12 @@ impl Ide {
                     t.accent,
                 );
             } else {
-                ui.painter().rect_stroke(bar.shrink(2.0), 4.0, Stroke::new(1.5_f32, t.accent), StrokeKind::Inside);
+                ui.painter().rect_stroke(
+                    bar.shrink(2.0),
+                    4.0,
+                    Stroke::new(1.5_f32, t.accent),
+                    StrokeKind::Inside,
+                );
             }
         }
         if let Some(drag) = self.drag
@@ -3261,15 +3563,26 @@ impl Ide {
                     .map(|p| p.term.shell.name.clone()),
             };
             if let Some(name) = name {
-                ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("terminal_drag")))
-                    .text(pointer + vec2(12.0, 12.0), Align2::LEFT_TOP, name, FontId::proportional(12.5), t.text);
+                ctx.layer_painter(egui::LayerId::new(
+                    egui::Order::Tooltip,
+                    egui::Id::new("terminal_drag"),
+                ))
+                .text(
+                    pointer + vec2(12.0, 12.0),
+                    Align2::LEFT_TOP,
+                    name,
+                    FontId::proportional(12.5),
+                    t.text,
+                );
             }
         }
         if ctx.input(|i| i.pointer.any_released())
             && let Some(drag) = self.drag.take()
         {
             match (drag, drop) {
-                (Drag::Tab(from), Some((target, stacked, before))) if from == self.active_terminal => {
+                (Drag::Tab(from), Some((target, stacked, before)))
+                    if from == self.active_terminal =>
+                {
                     self.split_terminal_at(target, stacked, before)
                 }
                 (Drag::Tab(from), Some((target, stacked, before))) => {
@@ -3323,8 +3636,12 @@ impl Ide {
             return;
         }
         if let Some(pane) = tab.root.take(&|p: &Pane| p.id == id) {
-            tab.root
-                .split_with(&|p: &Pane| p.id == target, stacked, before, Node::Leaf(pane));
+            tab.root.split_with(
+                &|p: &Pane| p.id == target,
+                stacked,
+                before,
+                Node::Leaf(pane),
+            );
             tab.active = id;
             if let Some(pane) = tab.pane() {
                 pane.term.want_focus = true;
@@ -3363,7 +3680,10 @@ impl Ide {
         let active = self.active_terminal - usize::from(from < self.active_terminal);
         let tab = &mut self.terminals[active];
         let id = moved.active;
-        if tab.root.split_with(&|p: &Pane| p.id == target, stacked, before, moved.root) {
+        if tab
+            .root
+            .split_with(&|p: &Pane| p.id == target, stacked, before, moved.root)
+        {
             tab.active = id;
             if let Some(pane) = tab.pane() {
                 pane.term.want_focus = true;
@@ -3519,9 +3839,13 @@ impl Ide {
                     );
                     return;
                 }
-                let mut find_action = self.find_request.take().unwrap_or(crate::find::Action::None);
+                let mut find_action = self
+                    .find_request
+                    .take()
+                    .unwrap_or(crate::find::Action::None);
                 if self.find.open {
-                    self.find.refresh(self.active, doc.view.revision(), &doc.text);
+                    self.find
+                        .refresh(self.active, doc.view.revision(), &doc.text);
                     let selection = doc.view.selection();
                     egui::Frame::new()
                         .fill(t.frame)
@@ -3533,7 +3857,8 @@ impl Ide {
                             }
                         });
                 } else if find_action != crate::find::Action::None && !self.find.query.is_empty() {
-                    self.find.refresh(self.active, doc.view.revision(), &doc.text);
+                    self.find
+                        .refresh(self.active, doc.view.revision(), &doc.text);
                 }
                 // A plugin previewing this document (Markdown): layout switch and preview.
                 let preview = doc.path.clone().and_then(|path| {
@@ -3547,43 +3872,53 @@ impl Ide {
                         })
                 });
                 if let Some((plugin, path, layout)) = &preview {
-                  if self.builtins[*plugin].layout_switch(path) {
-                    let width = 3.0 * ui::BUTTON + 6.0;
-                    let pos = pos2(
-                        ui.max_rect().right() - width - 22.0,
-                        ui.cursor().top() + 8.0,
-                    );
-                    egui::Area::new(egui::Id::new("editor_layout"))
-                        .fixed_pos(pos)
-                        .order(egui::Order::Middle)
-                        .show(ctx, |ui| {
-                            egui::Frame::new()
-                                .fill(t.frame)
-                                .stroke(Stroke::new(1.0_f32, t.border))
-                                .corner_radius(7)
-                                .inner_margin(2)
-                                .show(ui, |ui| {
-                                    ui.horizontal(|ui| {
-                                        ui.spacing_mut().item_spacing.x = 0.0;
-                                        for (choice, icon, tooltip) in [
-                                            (EditorLayout::Text, "editorOnly", "Éditeur seul"),
-                                            (
-                                                EditorLayout::Split,
-                                                "editorPreview",
-                                                "Éditeur et aperçu",
-                                            ),
-                                            (EditorLayout::Preview, "previewOnly", "Aperçu seul"),
-                                        ] {
-                                            if ui::icon_toggle(ui, icon, *layout == choice, tooltip)
+                    if self.builtins[*plugin].layout_switch(path) {
+                        let width = 3.0 * ui::BUTTON + 6.0;
+                        let pos = pos2(
+                            ui.max_rect().right() - width - 22.0,
+                            ui.cursor().top() + 8.0,
+                        );
+                        egui::Area::new(egui::Id::new("editor_layout"))
+                            .fixed_pos(pos)
+                            .order(egui::Order::Middle)
+                            .show(ctx, |ui| {
+                                egui::Frame::new()
+                                    .fill(t.frame)
+                                    .stroke(Stroke::new(1.0_f32, t.border))
+                                    .corner_radius(7)
+                                    .inner_margin(2)
+                                    .show(ui, |ui| {
+                                        ui.horizontal(|ui| {
+                                            ui.spacing_mut().item_spacing.x = 0.0;
+                                            for (choice, icon, tooltip) in [
+                                                (EditorLayout::Text, "editorOnly", "Éditeur seul"),
+                                                (
+                                                    EditorLayout::Split,
+                                                    "editorPreview",
+                                                    "Éditeur et aperçu",
+                                                ),
+                                                (
+                                                    EditorLayout::Preview,
+                                                    "previewOnly",
+                                                    "Aperçu seul",
+                                                ),
+                                            ] {
+                                                if ui::icon_toggle(
+                                                    ui,
+                                                    icon,
+                                                    *layout == choice,
+                                                    tooltip,
+                                                )
                                                 .clicked()
-                                            {
-                                                new_layout = Some((*plugin, path.clone(), choice));
+                                                {
+                                                    new_layout =
+                                                        Some((*plugin, path.clone(), choice));
+                                                }
                                             }
-                                        }
+                                        });
                                     });
-                                });
-                        });
-                  }
+                            });
+                    }
                     match layout {
                         EditorLayout::Preview => {
                             let sync = self.scroll_sync.take();
@@ -3642,7 +3977,10 @@ impl Ide {
                             t.text,
                         );
                         let rect = Rect::from_min_size(
-                            pos2(ui.max_rect().right() - galley.size().x - 40.0, ui.max_rect().top() + 14.0),
+                            pos2(
+                                ui.max_rect().right() - galley.size().x - 40.0,
+                                ui.max_rect().top() + 14.0,
+                            ),
                             galley.size() + vec2(24.0, 14.0),
                         );
                         painter.rect(
@@ -3658,14 +3996,17 @@ impl Ide {
                 }
                 let font = FontId::monospace(self.settings.font_size);
                 let annotations = gutter.annotations.as_deref();
-                let assist = self.languages.handles(&doc.language).then(|| crate::editor::Assist {
-                    service: &self.languages,
-                    doc: crate::languages::DocRef {
-                        key: doc_key(&doc.path, self.active),
-                        path: doc.path.clone(),
-                        language: doc.language.clone(),
-                    },
-                });
+                let assist = self
+                    .languages
+                    .handles(&doc.language)
+                    .then(|| crate::editor::Assist {
+                        service: &self.languages,
+                        doc: crate::languages::DocRef {
+                            key: doc_key(&doc.path, self.active),
+                            path: doc.path.clone(),
+                            language: doc.language.clone(),
+                        },
+                    });
                 let options = crate::editor::Options {
                     language: &doc.language,
                     font,
@@ -3674,7 +4015,11 @@ impl Ide {
                     annotations,
                     gutter_commands: &gutter.commands,
                     assist,
-                    search: if self.find.open { self.find.matches() } else { &[] },
+                    search: if self.find.open {
+                        self.find.matches()
+                    } else {
+                        &[]
+                    },
                 };
                 let editor_id = egui::Id::new(("source", doc.path.clone(), self.active));
                 let output = doc.view.show(ui, editor_id, &mut doc.text, &options);
@@ -3692,7 +4037,9 @@ impl Ide {
                     let selection = doc.view.selection();
                     match find_action {
                         Action::Next | Action::Previous => {
-                            if let Some(found) = self.find.neighbor(&selection, find_action == Action::Next) {
+                            if let Some(found) =
+                                self.find.neighbor(&selection, find_action == Action::Next)
+                            {
                                 doc.view.select(found.start, found.end);
                             }
                         }
@@ -3701,11 +4048,20 @@ impl Ide {
                             if self.find.position(&selection).is_some()
                                 && let Some(re) = self.find.regex().cloned()
                             {
-                                let new = crate::search::replace_all(&doc.text[selection.clone()], &re, &self.find.replace, self.find.options);
-                                doc.view.replace_range(&mut doc.text, selection.clone(), &new);
-                                self.find.refresh(self.active, doc.view.revision(), &doc.text);
+                                let new = crate::search::replace_all(
+                                    &doc.text[selection.clone()],
+                                    &re,
+                                    &self.find.replace,
+                                    self.find.options,
+                                );
+                                doc.view
+                                    .replace_range(&mut doc.text, selection.clone(), &new);
+                                self.find
+                                    .refresh(self.active, doc.view.revision(), &doc.text);
                                 let caret = doc.view.selection();
-                                if let Some(next) = self.find.neighbor(&(caret.start..caret.start), true) {
+                                if let Some(next) =
+                                    self.find.neighbor(&(caret.start..caret.start), true)
+                                {
                                     doc.view.select(next.start, next.end);
                                 }
                             } else if let Some(found) = self.find.neighbor(&selection, true) {
@@ -3714,7 +4070,12 @@ impl Ide {
                         }
                         Action::ReplaceAll => {
                             if let Some(re) = self.find.regex().cloned() {
-                                let new = crate::search::replace_all(&doc.text, &re, &self.find.replace, self.find.options);
+                                let new = crate::search::replace_all(
+                                    &doc.text,
+                                    &re,
+                                    &self.find.replace,
+                                    self.find.options,
+                                );
                                 if new != doc.text {
                                     let count = self.find.matches().len();
                                     doc.view.replace_text(&mut doc.text, &new);
@@ -3769,7 +4130,9 @@ impl Ide {
                 .id(egui::Id::new("tabs_more"))
                 .show(|ui| {
                     ui::menu_begin(ui);
-                    if ui::menu_item(ui, Some("closeSmall"), "Fermer l'onglet", None, false).clicked() {
+                    if ui::menu_item(ui, Some("closeSmall"), "Fermer l'onglet", None, false)
+                        .clicked()
+                    {
                         close = Some(self.active);
                         ui.close();
                     }
@@ -3828,9 +4191,11 @@ impl Ide {
                             );
                             let size =
                                 vec2(10.0 + 16.0 + 6.0 + galley.size().x + 6.0 + 16.0 + 8.0, 28.0);
-                            let (rect, response) = ui.allocate_exact_size(size, Sense::click_and_drag());
+                            let (rect, response) =
+                                ui.allocate_exact_size(size, Sense::click_and_drag());
                             tab_rects.push(rect);
-                            if response.dragged() && ui.input(|i| i.pointer.is_decidedly_dragging()) {
+                            if response.dragged() && ui.input(|i| i.pointer.is_decidedly_dragging())
+                            {
                                 self.doc_drag = Some(i);
                             }
                             if active {
@@ -3888,15 +4253,33 @@ impl Ide {
                             let has_path = doc.path.is_some();
                             response.context_menu(|ui| {
                                 ui::menu_begin(ui);
-                                if ui::menu_item(ui, Some("closeSmall"), "Fermer", Some("Ctrl+W"), false).clicked() {
+                                if ui::menu_item(
+                                    ui,
+                                    Some("closeSmall"),
+                                    "Fermer",
+                                    Some("Ctrl+W"),
+                                    false,
+                                )
+                                .clicked()
+                                {
                                     close = Some(i);
                                     ui.close();
                                 }
-                                if ui::menu_item(ui, None, "Fermer les autres", None, false).clicked() {
+                                if ui::menu_item(ui, None, "Fermer les autres", None, false)
+                                    .clicked()
+                                {
                                     action = Some(TabAction::CloseOthers(i));
                                     ui.close();
                                 }
-                                if ui::menu_item(ui, None, "Fermer les onglets à droite", None, false).clicked() {
+                                if ui::menu_item(
+                                    ui,
+                                    None,
+                                    "Fermer les onglets à droite",
+                                    None,
+                                    false,
+                                )
+                                .clicked()
+                                {
                                     action = Some(TabAction::CloseRight(i));
                                     ui.close();
                                 }
@@ -3906,15 +4289,39 @@ impl Ide {
                                 }
                                 if has_path {
                                     ui::menu_separator(ui);
-                                    if ui::menu_item(ui, Some("copy"), "Copier le chemin", None, false).clicked() {
+                                    if ui::menu_item(
+                                        ui,
+                                        Some("copy"),
+                                        "Copier le chemin",
+                                        None,
+                                        false,
+                                    )
+                                    .clicked()
+                                    {
                                         action = Some(TabAction::CopyPath(i));
                                         ui.close();
                                     }
-                                    if ui::menu_item(ui, Some("project"), "Afficher dans le projet", None, false).clicked() {
+                                    if ui::menu_item(
+                                        ui,
+                                        Some("project"),
+                                        "Afficher dans le projet",
+                                        None,
+                                        false,
+                                    )
+                                    .clicked()
+                                    {
                                         action = Some(TabAction::Reveal(i));
                                         ui.close();
                                     }
-                                    if ui::menu_item(ui, Some("locate"), "Afficher dans l'explorateur", None, false).clicked() {
+                                    if ui::menu_item(
+                                        ui,
+                                        Some("locate"),
+                                        "Afficher dans l'explorateur",
+                                        None,
+                                        false,
+                                    )
+                                    .clicked()
+                                    {
                                         action = Some(TabAction::Explorer(i));
                                         ui.close();
                                     }
@@ -4132,24 +4539,37 @@ impl Ide {
                         ui.spacing_mut().item_spacing.x = 2.0;
                         // Memory and processor use of the IDE, in the corner.
                         if let Some(summary) = crate::stats::summary() {
-                            ui::status_text_fixed(ui, &summary, "RAM 9999 Mo · CPU 99,9 %").on_hover_text(format!(
-                                "Mémoire (RAM) et processeur utilisés par Atelier
+                            ui::status_text_fixed(ui, &summary, "RAM 9999 Mo · CPU 99,9 %")
+                                .on_hover_text(format!(
+                                    "Mémoire (RAM) et processeur utilisés par Atelier
 {} · {:.1} % de la capacité totale du processeur",
-                                crate::stats::format_memory(crate::stats::memory_bytes()),
-                                crate::stats::cpu_percent()
-                            ));
+                                    crate::stats::format_memory(crate::stats::memory_bytes()),
+                                    crate::stats::cpu_percent()
+                                ));
                             ui.add_space(8.0);
                             ctx.request_repaint_after(Duration::from_secs(1));
                         }
                         // Background tasks, next to it, as IntelliJ shows them.
                         let running = crate::tasks::running();
                         if let Some(first) = running.first() {
-                            let more = if running.len() > 1 { format!(" (+{})", running.len() - 1) } else { String::new() };
+                            let more = if running.len() > 1 {
+                                format!(" (+{})", running.len() - 1)
+                            } else {
+                                String::new()
+                            };
                             let text = ui
-                                .label(RichText::new(format!("{}{more}…", first.title)).size(12.5).color(t.text_secondary))
+                                .label(
+                                    RichText::new(format!("{}{more}…", first.title))
+                                        .size(12.5)
+                                        .color(t.text_secondary),
+                                )
                                 .on_hover_ui(|ui| {
                                     for task in &running {
-                                        ui.label(format!("{} · {} s", task.title, task.elapsed.as_secs()));
+                                        ui.label(format!(
+                                            "{} · {} s",
+                                            task.title,
+                                            task.elapsed.as_secs()
+                                        ));
                                     }
                                 });
                             let _ = text;
@@ -4162,7 +4582,10 @@ impl Ide {
                             let text = if state.updated == 0 {
                                 "Graphe de contexte en préparation".to_string()
                             } else {
-                                format!("Graphe de contexte : {} fichiers · {} éléments · {} groupes", state.files, state.symbols, state.groups)
+                                format!(
+                                    "Graphe de contexte : {} fichiers · {} éléments · {} groupes",
+                                    state.files, state.symbols, state.groups
+                                )
                             };
                             ui::status_text(ui, "Graphe").on_hover_text(text);
                         }
@@ -4198,18 +4621,28 @@ impl Ide {
                             if errors + warnings > 0 {
                                 let mut parts = Vec::new();
                                 if errors > 0 {
-                                    parts.push(format!("{errors} erreur{}", if errors > 1 { "s" } else { "" }));
+                                    parts.push(format!(
+                                        "{errors} erreur{}",
+                                        if errors > 1 { "s" } else { "" }
+                                    ));
                                 }
                                 if warnings > 0 {
-                                    parts.push(format!("{warnings} avertissement{}", if warnings > 1 { "s" } else { "" }));
+                                    parts.push(format!(
+                                        "{warnings} avertissement{}",
+                                        if warnings > 1 { "s" } else { "" }
+                                    ));
                                 }
                                 ui.add_space(10.0);
                                 let label = ui
                                     .add(
                                         egui::Label::new(
-                                            RichText::new(parts.join(", "))
-                                                .size(12.5)
-                                                .color(if errors > 0 { Color32::from_rgb(0xF0, 0x56, 0x56) } else { Color32::from_rgb(0xE6, 0xB5, 0x4A) }),
+                                            RichText::new(parts.join(", ")).size(12.5).color(
+                                                if errors > 0 {
+                                                    Color32::from_rgb(0xF0, 0x56, 0x56)
+                                                } else {
+                                                    Color32::from_rgb(0xE6, 0xB5, 0x4A)
+                                                },
+                                            ),
                                         )
                                         .sense(Sense::click()),
                                     )
@@ -4383,7 +4816,8 @@ impl Ide {
                     if doc.dirty() && (!matches!(action, Pending::Close(index) if index != i)) {
                         ui.horizontal(|ui| {
                             ui.add(
-                                egui::Image::new(self.file_icon(ui.ctx(), 
+                                egui::Image::new(self.file_icon(
+                                    ui.ctx(),
                                     doc.path.as_deref().unwrap_or(Path::new("")),
                                 ))
                                 .fit_to_exact_size(vec2(16.0, 16.0)),
@@ -4508,12 +4942,24 @@ impl Ide {
     fn recent_hits(&self, query: &str) -> Vec<Hit> {
         self.recent_files
             .iter()
-            .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().to_lowercase().contains(query)))
+            .filter(|p| {
+                p.file_name()
+                    .is_some_and(|n| n.to_string_lossy().to_lowercase().contains(query))
+            })
             .map(|path| Hit {
-                label: path.file_name().unwrap_or_default().to_string_lossy().into_owned(),
+                label: path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned(),
                 hint: path
                     .parent()
-                    .map(|p| p.strip_prefix(&self.root).unwrap_or(p).display().to_string())
+                    .map(|p| {
+                        p.strip_prefix(&self.root)
+                            .unwrap_or(p)
+                            .display()
+                            .to_string()
+                    })
                     .unwrap_or_default(),
                 icon: None,
                 file: Some(path.clone()),
@@ -4525,7 +4971,11 @@ impl Ide {
     /// The window is named after the project and the open file, as IntelliJ names it: that is
     /// what the taskbar and the window switcher show.
     fn update_window_title(&mut self, ctx: &egui::Context) {
-        let project = self.root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let project = self
+            .root
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
         let title = match self.documents.get(self.active) {
             Some(doc) if !project.is_empty() => format!("{project} – {}", doc.title()),
             _ if !project.is_empty() => project,
@@ -4682,18 +5132,30 @@ impl Ide {
                             .show(ui, |ui| {
                                 ui.horizontal(|ui| {
                                     let (title, subtitle) = match self.palette_mode {
-                                        PaletteMode::Everywhere => ("Rechercher partout", "Fichiers, actions, onglets"),
-                                        PaletteMode::Recent => ("Fichiers récents", "Dans l'ordre d'utilisation"),
-                                        PaletteMode::Line => ("Aller à la ligne", "ligne ou ligne:colonne"),
+                                        PaletteMode::Everywhere => {
+                                            ("Rechercher partout", "Fichiers, actions, onglets")
+                                        }
+                                        PaletteMode::Recent => {
+                                            ("Fichiers récents", "Dans l'ordre d'utilisation")
+                                        }
+                                        PaletteMode::Line => {
+                                            ("Aller à la ligne", "ligne ou ligne:colonne")
+                                        }
                                     };
                                     ui.label(RichText::new(title).font(ui::semibold(13.0)));
-                                    ui.label(RichText::new(subtitle).small().color(t.text_secondary));
+                                    ui.label(
+                                        RichText::new(subtitle).small().color(t.text_secondary),
+                                    );
                                 });
                                 ui.add_space(6.0);
                                 let field = ui::search_field(
                                     ui,
                                     &mut self.palette_query,
-                                    if self.palette_mode == PaletteMode::Line { "Numéro de ligne…" } else { "Tapez pour rechercher…" },
+                                    if self.palette_mode == PaletteMode::Line {
+                                        "Numéro de ligne…"
+                                    } else {
+                                        "Tapez pour rechercher…"
+                                    },
                                     width - 28.0,
                                 );
                                 if !field.has_focus() {
@@ -4729,7 +5191,8 @@ impl Ide {
                                     );
                                     match (&hit.file, hit.icon) {
                                         (Some(path), _) => {
-                                            egui::Image::new(self.file_icon(ui.ctx(), path)).paint_at(ui, icon)
+                                            egui::Image::new(self.file_icon(ui.ctx(), path))
+                                                .paint_at(ui, icon)
                                         }
                                         (None, Some(name)) => ui::paint_icon(ui, name, icon),
                                         _ => {}
@@ -4805,7 +5268,8 @@ impl Ide {
 
     fn builtin_enabled(&self, id: &str) -> bool {
         // The IDE's own tool windows cannot be turned off.
-        self.builtins.iter().any(|p| p.id() == id && p.core()) || !self.settings.disabled_builtins.contains(id)
+        self.builtins.iter().any(|p| p.id() == id && p.core())
+            || !self.settings.disabled_builtins.contains(id)
     }
 
     fn set_builtin_enabled(&mut self, id: &str, enabled: bool) {
@@ -5000,6 +5464,18 @@ impl TerminalTab {
     }
 }
 
+/// The memory and processor use of a terminal tab: its shells and what runs in them.
+fn tab_usage(tab: &TerminalTab) -> Option<String> {
+    let mut total: Option<(u64, f32)> = None;
+    for pane in tab.root.leaves() {
+        if let Some((memory, cpu)) = pane.term.pid().and_then(crate::stats::watch) {
+            let sum = total.unwrap_or((0, 0.0));
+            total = Some((sum.0 + memory, sum.1 + cpu));
+        }
+    }
+    total.map(|(memory, cpu)| crate::stats::format_usage(memory, cpu))
+}
+
 /// Where a tab dropped on `rect` goes: (stacked, before, highlighted area). The outer parts
 /// of the pane split it on that side, the middle splits it to the right.
 fn drop_zone(rect: Rect, pointer: egui::Pos2) -> (bool, bool, Rect) {
@@ -5011,11 +5487,19 @@ fn drop_zone(rect: Rect, pointer: egui::Pos2) -> (bool, bool, Rect) {
     if x < 0.3 {
         (false, true, Rect::from_min_size(left, half_w))
     } else if x > 0.7 {
-        (false, false, Rect::from_min_size(pos2(rect.center().x, rect.top()), half_w))
+        (
+            false,
+            false,
+            Rect::from_min_size(pos2(rect.center().x, rect.top()), half_w),
+        )
     } else if y < 0.5 {
         (true, true, Rect::from_min_size(top, half_h))
     } else {
-        (true, false, Rect::from_min_size(pos2(rect.left(), rect.center().y), half_h))
+        (
+            true,
+            false,
+            Rect::from_min_size(pos2(rect.left(), rect.center().y), half_h),
+        )
     }
 }
 
@@ -5081,13 +5565,24 @@ impl Host for Ide {
             };
             for d in self.languages.diagnostics(&reference).iter() {
                 let (line, _) = crate::languages::lsp::to_position(&doc.text, d.range.start);
-                let start = doc.text[..d.range.start.min(doc.text.len())].rfind('\n').map_or(0, |i| i + 1);
-                let end = d.range.end.min(doc.text.len()).max(d.range.start.min(doc.text.len()));
+                let start = doc.text[..d.range.start.min(doc.text.len())]
+                    .rfind('\n')
+                    .map_or(0, |i| i + 1);
+                let end = d
+                    .range
+                    .end
+                    .min(doc.text.len())
+                    .max(d.range.start.min(doc.text.len()));
                 out.push(builtin::Problem {
                     path: path.clone(),
                     line,
-                    column: doc.text[start..d.range.start.min(doc.text.len())].chars().count(),
-                    length: doc.text[d.range.start.min(doc.text.len())..end].chars().count().max(1),
+                    column: doc.text[start..d.range.start.min(doc.text.len())]
+                        .chars()
+                        .count(),
+                    length: doc.text[d.range.start.min(doc.text.len())..end]
+                        .chars()
+                        .count()
+                        .max(1),
                     severity: match d.severity {
                         crate::languages::Severity::Error => 1,
                         crate::languages::Severity::Warning => 2,
@@ -5165,7 +5660,9 @@ impl Ide {
         };
         let pass = ctx.cumulative_pass_nr();
         if pass == 5
-            && let Some(page) = std::env::var("ATELIER_SHOT_PAGE").ok().and_then(|p| p.parse().ok())
+            && let Some(page) = std::env::var("ATELIER_SHOT_PAGE")
+                .ok()
+                .and_then(|p| p.parse().ok())
         {
             self.show_settings = true;
             self.settings_page = page;
@@ -5192,13 +5689,18 @@ impl Ide {
                 self.open_tool(&crate::features::problems::TOOL_WINDOWS[0]);
             }
             if let Ok(query) = std::env::var("ATELIER_SHOT_FIND") {
-                self.find.show(Some(query), std::env::var_os("ATELIER_SHOT_REPLACE").is_some());
+                self.find.show(
+                    Some(query),
+                    std::env::var_os("ATELIER_SHOT_REPLACE").is_some(),
+                );
             }
         }
         // A language server needs a few seconds before it can answer.
         let slow = std::env::var_os("ATELIER_SHOT_CURSOR").is_some();
         if pass == if slow { 150 } else { 8 }
-            && let Some(offset) = std::env::var("ATELIER_SHOT_CURSOR").ok().and_then(|o| o.parse::<usize>().ok())
+            && let Some(offset) = std::env::var("ATELIER_SHOT_CURSOR")
+                .ok()
+                .and_then(|o| o.parse::<usize>().ok())
             && let Some(doc) = self.documents.get_mut(self.active)
         {
             doc.view.select(offset, offset);
@@ -5210,7 +5712,15 @@ impl Ide {
             }
         }
         let late = std::env::var_os("ATELIER_SHOT_DRAG").is_some();
-        if pass == if slow { 300 } else if late { 60 } else { 20 } {
+        if pass
+            == if slow {
+                300
+            } else if late {
+                60
+            } else {
+                20
+            }
+        {
             ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(Default::default()));
         }
         let image = ctx.input(|i| {
@@ -5245,13 +5755,20 @@ impl eframe::App for Ide {
             let (a, b) = (egui::pos2(v[0], v[1]), egui::pos2(v[2], v[3]));
             raw_input.focused = true;
             let pass = ctx.cumulative_pass_nr();
-            let button = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+            let button = |pos, pressed| egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
             match pass {
                 6..=9 => raw_input.events.push(egui::Event::PointerMoved(a)),
                 10 => raw_input.events.push(button(a, true)),
                 11..=14 => {
                     let f = (pass - 10) as f32 / 4.0;
-                    raw_input.events.push(egui::Event::PointerMoved(a + (b - a) * f));
+                    raw_input
+                        .events
+                        .push(egui::Event::PointerMoved(a + (b - a) * f));
                 }
                 15..=22 => raw_input.events.push(egui::Event::PointerMoved(b)),
                 23 => raw_input.events.push(button(b, false)),
@@ -5316,10 +5833,9 @@ impl eframe::App for Ide {
             && self.project_choice.is_none()
             && !self.show_palette
             && !self.show_settings
-            && !self
-                .terminals
-                .get(self.active_terminal)
-                .is_some_and(|tab| tab.root.leaves().iter().any(|p| p.term.focused) && self.show_terminal)
+            && !self.terminals.get(self.active_terminal).is_some_and(|tab| {
+                tab.root.leaves().iter().any(|p| p.term.focused) && self.show_terminal
+            })
         {
             self.shortcuts(ctx);
         }
@@ -5331,7 +5847,13 @@ impl eframe::App for Ide {
             }
             // A shell that exits inside a split goes away, as in IntelliJ.
             while tab.count() > 1 {
-                let Some(id) = tab.root.leaves().iter().find(|p| p.term.exited).map(|p| p.id) else {
+                let Some(id) = tab
+                    .root
+                    .leaves()
+                    .iter()
+                    .find(|p| p.term.exited)
+                    .map(|p| p.id)
+                else {
                     break;
                 };
                 tab.root.remove(&|p: &Pane| p.id == id);
@@ -5434,7 +5956,14 @@ mod tests {
         let base = base.canonicalize().unwrap();
         let ctx = egui::Context::default();
         ui::install(&ctx, ui::theme_by_index(0), 14.0);
-        let mut ide = Ide::blank(base.clone(), Settings { font_size: 14.0, ..Default::default() }, None);
+        let mut ide = Ide::blank(
+            base.clone(),
+            Settings {
+                font_size: 14.0,
+                ..Default::default()
+            },
+            None,
+        );
         ide.show_project = true;
         let mut time = 0.0;
         let mut step = |ide: &mut Ide, events: Vec<Event>, modifiers: Modifiers| {
@@ -5443,9 +5972,24 @@ mod tests {
         };
         step(&mut ide, vec![], Modifiers::NONE);
         step(&mut ide, vec![], Modifiers::NONE);
-        let click = |ide: &mut Ide, name: &str, modifiers: Modifiers, step: &mut dyn FnMut(&mut Ide, Vec<Event>, Modifiers)| {
-            let at = ide.row_rects.iter().rev().find(|(p, _)| p.ends_with(name)).unwrap().1.center();
-            let button = |pressed| Event::PointerButton { pos: at, button: PointerButton::Primary, pressed, modifiers };
+        let click = |ide: &mut Ide,
+                     name: &str,
+                     modifiers: Modifiers,
+                     step: &mut dyn FnMut(&mut Ide, Vec<Event>, Modifiers)| {
+            let at = ide
+                .row_rects
+                .iter()
+                .rev()
+                .find(|(p, _)| p.ends_with(name))
+                .unwrap()
+                .1
+                .center();
+            let button = |pressed| Event::PointerButton {
+                pos: at,
+                button: PointerButton::Primary,
+                pressed,
+                modifiers,
+            };
             step(ide, vec![Event::PointerMoved(at)], modifiers);
             step(ide, vec![button(true)], modifiers);
             step(ide, vec![button(false)], modifiers);
@@ -5454,7 +5998,10 @@ mod tests {
         click(&mut ide, "a.txt", Modifiers::NONE, &mut step);
         click(&mut ide, "c.txt", Modifiers::CTRL, &mut step);
         click(&mut ide, "d.txt", Modifiers::CTRL, &mut step);
-        let want: BTreeSet<_> = ["a.txt", "c.txt", "d.txt"].iter().map(|n| base.join(n)).collect();
+        let want: BTreeSet<_> = ["a.txt", "c.txt", "d.txt"]
+            .iter()
+            .map(|n| base.join(n))
+            .collect();
         assert_eq!(ide.tree_multi, want);
         // Ctrl on a selected row takes it out of the selection.
         click(&mut ide, "c.txt", Modifiers::CTRL, &mut step);
@@ -5463,15 +6010,41 @@ mod tests {
         click(&mut ide, "b.txt", Modifiers::NONE, &mut step);
         assert!(ide.tree_multi.is_empty());
         click(&mut ide, "d.txt", Modifiers::SHIFT, &mut step);
-        let want: BTreeSet<_> = ["b.txt", "c.txt", "d.txt"].iter().map(|n| base.join(n)).collect();
+        let want: BTreeSet<_> = ["b.txt", "c.txt", "d.txt"]
+            .iter()
+            .map(|n| base.join(n))
+            .collect();
         assert_eq!(ide.tree_multi, want);
         assert_eq!(ide.tree_selection().len(), 3);
         // Several documents are not opened by these clicks.
-        assert!(ide.documents.iter().all(|d| d.path.as_deref() != Some(&base.join("c.txt"))));
+        assert!(
+            ide.documents
+                .iter()
+                .all(|d| d.path.as_deref() != Some(&base.join("c.txt")))
+        );
         // Dragging one of them onto the folder moves them all.
-        let from = ide.row_rects.iter().rev().find(|(p, _)| p.ends_with("c.txt")).unwrap().1.center();
-        let to = ide.row_rects.iter().rev().find(|(p, _)| p.ends_with("dest")).unwrap().1.center();
-        let button = |pos, pressed| Event::PointerButton { pos, button: PointerButton::Primary, pressed, modifiers: Modifiers::NONE };
+        let from = ide
+            .row_rects
+            .iter()
+            .rev()
+            .find(|(p, _)| p.ends_with("c.txt"))
+            .unwrap()
+            .1
+            .center();
+        let to = ide
+            .row_rects
+            .iter()
+            .rev()
+            .find(|(p, _)| p.ends_with("dest"))
+            .unwrap()
+            .1
+            .center();
+        let button = |pos, pressed| Event::PointerButton {
+            pos,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        };
         step(&mut ide, vec![Event::PointerMoved(from)], Modifiers::NONE);
         step(&mut ide, vec![button(from, true)], Modifiers::NONE);
         for i in 1..=6 {
@@ -5497,7 +6070,14 @@ mod tests {
         let base = base.canonicalize().unwrap();
         let ctx = egui::Context::default();
         ui::install(&ctx, ui::theme_by_index(0), 14.0);
-        let mut ide = Ide::blank(base.clone(), Settings { font_size: 14.0, ..Default::default() }, None);
+        let mut ide = Ide::blank(
+            base.clone(),
+            Settings {
+                font_size: 14.0,
+                ..Default::default()
+            },
+            None,
+        );
         ide.show_project = true;
         ide.expanded.insert(base.join("sub"));
         let mut time = 0.0;
@@ -5508,7 +6088,10 @@ mod tests {
         step(&mut ide);
         step(&mut ide);
         let names = |ide: &Ide, dir: &Path| -> Vec<String> {
-            ide.tree[dir].iter().map(|(p, _)| p.file_name().unwrap().to_string_lossy().into_owned()).collect()
+            ide.tree[dir]
+                .iter()
+                .map(|(p, _)| p.file_name().unwrap().to_string_lossy().into_owned())
+                .collect()
         };
         assert_eq!(names(&ide, &base), ["sub", "a.txt"]);
         std::thread::sleep(Duration::from_millis(30));
@@ -5535,7 +6118,14 @@ mod tests {
         let base = base.canonicalize().unwrap();
         let ctx = egui::Context::default();
         ui::install(&ctx, ui::theme_by_index(0), 14.0);
-        let mut ide = Ide::blank(base.clone(), Settings { font_size: 14.0, ..Default::default() }, None);
+        let mut ide = Ide::blank(
+            base.clone(),
+            Settings {
+                font_size: 14.0,
+                ..Default::default()
+            },
+            None,
+        );
         ide.show_project = true;
         let mut time = 0.0;
         let mut step = |ide: &mut Ide, events: Vec<Event>| {
@@ -5544,7 +6134,14 @@ mod tests {
         };
         step(&mut ide, vec![]);
         step(&mut ide, vec![]);
-        let at = ide.row_rects.iter().rev().find(|(p, _)| p.ends_with("dest")).unwrap().1.center();
+        let at = ide
+            .row_rects
+            .iter()
+            .rev()
+            .find(|(p, _)| p.ends_with("dest"))
+            .unwrap()
+            .1
+            .center();
         let button = |pressed| Event::PointerButton {
             pos: at,
             button: PointerButton::Primary,
@@ -5564,7 +6161,12 @@ mod tests {
             modifiers: Default::default(),
         };
         step(&mut ide, vec![key(egui::Key::ArrowDown)]);
-        assert_eq!(ide.tree_selected, Some(base.join("a.txt")), "focus: {:?}", ide.focus);
+        assert_eq!(
+            ide.tree_selected,
+            Some(base.join("a.txt")),
+            "focus: {:?}",
+            ide.focus
+        );
         step(&mut ide, vec![key(egui::Key::ArrowDown)]);
         assert_eq!(ide.tree_selected, Some(base.join("b.txt")));
         step(&mut ide, vec![key(egui::Key::ArrowUp)]);
@@ -5582,7 +6184,14 @@ mod tests {
         let base = base.canonicalize().unwrap();
         let ctx = egui::Context::default();
         ui::install(&ctx, ui::theme_by_index(0), 14.0);
-        let mut ide = Ide::blank(base.clone(), Settings { font_size: 14.0, ..Default::default() }, None);
+        let mut ide = Ide::blank(
+            base.clone(),
+            Settings {
+                font_size: 14.0,
+                ..Default::default()
+            },
+            None,
+        );
         ide.show_project = true;
         let mut time = 0.0;
         let mut step = |ide: &mut Ide, events: Vec<Event>| {
@@ -5592,7 +6201,13 @@ mod tests {
         step(&mut ide, vec![]);
         step(&mut ide, vec![]);
         let center = |ide: &Ide, name: &str| {
-            ide.row_rects.iter().rev().find(|(p, _)| p.file_name().is_some_and(|n| n == name)).unwrap().1.center()
+            ide.row_rects
+                .iter()
+                .rev()
+                .find(|(p, _)| p.file_name().is_some_and(|n| n == name))
+                .unwrap()
+                .1
+                .center()
         };
         let (from, to) = (center(&ide, "a.txt"), center(&ide, "dest"));
         let button = |pos, pressed| Event::PointerButton {
@@ -5608,7 +6223,11 @@ mod tests {
             step(&mut ide, vec![Event::PointerMoved(at)]);
         }
         assert!(ide.tree_drag.is_some(), "the drag started");
-        assert_eq!(ide.tree_drop.as_deref(), Some(base.join("dest").as_path()), "the folder is the target");
+        assert_eq!(
+            ide.tree_drop.as_deref(),
+            Some(base.join("dest").as_path()),
+            "the folder is the target"
+        );
         step(&mut ide, vec![button(to, false)]);
         step(&mut ide, vec![]);
         assert!(base.join("dest/a.txt").exists(), "{}", ide.status);
@@ -5686,7 +6305,8 @@ mod tests {
         ide.documents[2].text = "brouillon".into();
         ide.active = 1;
         ide.show_terminal = true;
-        let path = std::env::temp_dir().join(format!("atelier-session-{}.json", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("atelier-session-{}.json", std::process::id()));
         ide.save_session(&path).unwrap();
 
         let mut restored = super::tests::ide();
@@ -5791,7 +6411,7 @@ mod tests {
             "src/main.rs",
         ] {
             ide.open_file(ide.root.join("examples/demo").join(file));
-        ide.wait_loaded();
+            ide.wait_loaded();
         }
         assert_eq!(ide.documents.len(), 7);
         ide.show_terminal = false;
@@ -5824,7 +6444,11 @@ mod tests {
         let ctx = egui::Context::default();
         ide.apply_theme(&ctx);
         let tools = ide.tool_windows();
-        assert_eq!(tools.len(), 6, "Commit, Git, Kubernetes, Search, Problems and AI sessions tool windows");
+        assert_eq!(
+            tools.len(),
+            6,
+            "Commit, Git, Kubernetes, Search, Problems and AI sessions tool windows"
+        );
         for tool in tools {
             ide.open_tool(tool);
         }
@@ -5863,29 +6487,66 @@ mod perf_probe {
     #[test]
     #[ignore]
     fn probe_big_file() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).canonicalize().unwrap();
-        let mut ide = Ide::blank(root, Settings { font_size: 14.0, ..Default::default() }, None);
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .canonicalize()
+            .unwrap();
+        let mut ide = Ide::blank(
+            root,
+            Settings {
+                font_size: 14.0,
+                ..Default::default()
+            },
+            None,
+        );
         let ctx = egui::Context::default();
         ide.apply_theme(&ctx);
-        let lines: usize = std::env::var("LINES").ok().and_then(|v| v.parse().ok()).unwrap_or(40_000);
-        let text: String = (0..lines).map(|i| format!("    let value_{i} = compute(\"chaine {i}\", {i}); // commentaire\n")).collect();
-        let path = std::env::temp_dir().join(std::env::var("NAME").unwrap_or("atelier-big.rs".into()));
+        let lines: usize = std::env::var("LINES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(40_000);
+        let text: String = (0..lines)
+            .map(|i| format!("    let value_{i} = compute(\"chaine {i}\", {i}); // commentaire\n"))
+            .collect();
+        let path =
+            std::env::temp_dir().join(std::env::var("NAME").unwrap_or("atelier-big.rs".into()));
         fs::write(&path, &text).unwrap();
         println!("taille {} Ko, {} lignes", text.len() / 1024, lines);
         ide.open_file(path);
         ide.wait_loaded();
         for i in 0..4 {
             let t0 = Instant::now();
-            let output = ctx.run(egui::RawInput { screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, vec2(1440.0, 920.0))), ..Default::default() }, |ctx| {
-                let t = Instant::now(); ide.status_bar(ctx); let a = t.elapsed();
-                let t = Instant::now(); ide.left_panel(ctx); let b = t.elapsed();
-                let t = Instant::now(); ide.editor(ctx); let c = t.elapsed();
-                println!("  frame {i}: status {a:?} tree {b:?} editor {c:?}");
-            });
+            let output = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, vec2(1440.0, 920.0))),
+                    ..Default::default()
+                },
+                |ctx| {
+                    let t = Instant::now();
+                    ide.status_bar(ctx);
+                    let a = t.elapsed();
+                    let t = Instant::now();
+                    ide.left_panel(ctx);
+                    let b = t.elapsed();
+                    let t = Instant::now();
+                    ide.editor(ctx);
+                    let c = t.elapsed();
+                    println!("  frame {i}: status {a:?} tree {b:?} editor {c:?}");
+                },
+            );
             let t = Instant::now();
             let prims = ctx.tessellate(output.shapes, output.pixels_per_point);
-            let verts: usize = prims.iter().map(|p| match &p.primitive { egui::epaint::Primitive::Mesh(m) => m.vertices.len(), _ => 0 }).sum();
-            println!("  frame {i}: total run {:?}, tessellate {:?}, vertices {verts}", t0.elapsed() - t.elapsed(), t.elapsed());
+            let verts: usize = prims
+                .iter()
+                .map(|p| match &p.primitive {
+                    egui::epaint::Primitive::Mesh(m) => m.vertices.len(),
+                    _ => 0,
+                })
+                .sum();
+            println!(
+                "  frame {i}: total run {:?}, tessellate {:?}, vertices {verts}",
+                t0.elapsed() - t.elapsed(),
+                t.elapsed()
+            );
         }
     }
 }
