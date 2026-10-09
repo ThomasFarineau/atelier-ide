@@ -150,6 +150,28 @@ pub fn specs() -> Vec<Value> {
             },
         }),
         json!({
+            "name": "git_rework_plan",
+            "description": "First step of reworking commit messages. Lists the commits of a range (oldest first) with subject, body and the files each one changes, the repository's commit conventions, and automatic findings (subject against the conventions, type or scope contradicting the files, files named in the message that the commit does not change, co-author lines). Findings are hints: judge each commit against its diff.",
+            "inputSchema": {"type": "object", "properties": {"range": {"type": "string", "description": "“last 10 commits”, “10”, “since <commit>” or “<commit>..HEAD”. It must end at HEAD."}}, "required": ["range"]},
+        }),
+        json!({
+            "name": "git_show",
+            "description": "One commit with its stat and patch, to judge its message against what it really changes.",
+            "inputSchema": {"type": "object", "properties": {"rev": {"type": "string"}, "maxChars": {"type": "integer", "minimum": 1000, "maximum": 100000}}, "required": ["rev"]},
+        }),
+        json!({
+            "name": "git_rework_apply",
+            "description": "Rewrites the messages of the chosen commits and nothing else (files, authors and dates stay). Refuses merges, uncommitted changes, messages that break the conventions, and commits already on a remote unless allowPushed is set, which you do only when the user agreed. The previous head is kept under refs/atelier/backup/. Co-authored-by lines and AI attributions are always removed. Never pushes.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "commits": {"type": "array", "items": {"type": "object", "properties": {"hash": {"type": "string"}, "message": {"type": "string", "description": "The new message: subject, then optionally a blank line and a body."}}, "required": ["hash", "message"]}},
+                    "allowPushed": {"type": "boolean", "description": "Rewrite commits that are already on a remote (needs a force push afterwards). Only with the user's agreement."},
+                },
+                "required": ["commits"],
+            },
+        }),
+        json!({
             "name": "search_in_project",
             "description": "Cherche du texte dans les fichiers du projet (comme « Rechercher dans les fichiers » de l'IDE, sans dossiers ignorés ni binaires).",
             "inputSchema": {
@@ -173,7 +195,9 @@ fn pretty(value: Value) -> Result<String, String> {
 }
 
 fn text<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
-    args.get(key).and_then(Value::as_str).filter(|s| !s.is_empty())
+    args.get(key)
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
 }
 
 fn number(args: &Value, key: &str) -> Option<usize> {
@@ -183,12 +207,20 @@ fn number(args: &Value, key: &str) -> Option<usize> {
 /// A path of the arguments, absolute: relative ones are from the project.
 fn resolve(root: &Path, path: &str) -> PathBuf {
     let path = Path::new(path);
-    if path.is_absolute() { path.to_path_buf() } else { root.join(path) }
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        root.join(path)
+    }
 }
 
 fn same_file(a: &Path, b: &Path) -> bool {
     let (a, b) = (crate::project::simplify(a), crate::project::simplify(b));
-    a == b || a.canonicalize().ok().zip(b.canonicalize().ok()).is_some_and(|(a, b)| a == b)
+    a == b
+        || a.canonicalize()
+            .ok()
+            .zip(b.canonicalize().ok())
+            .is_some_and(|(a, b)| a == b)
 }
 
 /// Runs a tool that needs the editor.
@@ -235,14 +267,20 @@ pub fn run(host: &mut dyn Host, name: &str, args: &Value) -> Result<String, Stri
             let line = number(args, "line").unwrap_or(1).max(1) - 1;
             let column = number(args, "column").unwrap_or(1).max(1) - 1;
             host.open_at(path.clone(), line, column, 0);
-            Ok(format!("Ouvert : {}:{}", crate::project::simplify(&path).display(), line + 1))
+            Ok(format!(
+                "Ouvert : {}:{}",
+                crate::project::simplify(&path).display(),
+                line + 1
+            ))
         }
         "get_problems" => {
             let only = text(args, "path").map(|p| resolve(&root, p));
             let severity = match text(args, "severity") {
                 Some("error") => Some(1),
                 Some("warning") => Some(2),
-                Some(other) => return Err(format!("« severity » vaut error ou warning, pas {other}")),
+                Some(other) => {
+                    return Err(format!("« severity » vaut error ou warning, pas {other}"));
+                }
                 None => None,
             };
             let problems: Vec<Value> = host
@@ -269,7 +307,10 @@ pub fn run(host: &mut dyn Host, name: &str, args: &Value) -> Result<String, Stri
 
 /// The tools of the context graph, run off the interface thread. None for another tool.
 pub fn graph(name: &str, args: &Value) -> Option<Result<String, String>> {
-    if !matches!(name, "graph_overview" | "graph_query" | "graph_node" | "graph_path") {
+    if !matches!(
+        name,
+        "graph_overview" | "graph_query" | "graph_node" | "graph_path"
+    ) {
         return None;
     }
     let Some(graph) = crate::graph::current() else {
@@ -288,13 +329,20 @@ pub fn graph(name: &str, args: &Value) -> Option<Result<String, String>> {
                 while !report.is_char_boundary(cut) {
                     cut -= 1;
                 }
-                let kept = report[..cut].rsplit_once('\n').map_or(&report[..cut], |(head, _)| head);
-                Ok(format!("{kept}\n\n… summary cut: raise “budget” or use graph_query."))
+                let kept = report[..cut]
+                    .rsplit_once('\n')
+                    .map_or(&report[..cut], |(head, _)| head);
+                Ok(format!(
+                    "{kept}\n\n… summary cut: raise “budget” or use graph_query."
+                ))
             }
         }
-        "graph_query" => argument("question").map(|q| crate::graph::query::query(&graph, q, budget)),
+        "graph_query" => {
+            argument("question").map(|q| crate::graph::query::query(&graph, q, budget))
+        }
         "graph_node" => argument("name").map(|n| crate::graph::query::node(&graph, n, budget)),
-        _ => argument("from").and_then(|from| argument("to").map(|to| crate::graph::query::path(&graph, from, to))),
+        _ => argument("from")
+            .and_then(|from| argument("to").map(|to| crate::graph::query::path(&graph, from, to))),
     })
 }
 
@@ -302,18 +350,39 @@ pub fn graph(name: &str, args: &Value) -> Option<Result<String, String>> {
 pub fn search(root: &Path, args: &Value) -> Result<String, String> {
     let query = text(args, "query").ok_or("« query » est obligatoire")?;
     let flag = |key: &str| args.get(key).and_then(Value::as_bool).unwrap_or(false);
-    let options = crate::search::Options { case: flag("caseSensitive"), word: flag("wholeWord"), regex: flag("regex") };
-    let re = crate::search::build(query, options).map_err(|e| format!("Expression invalide : {e}"))?;
-    let limit = number(args, "maxResults").unwrap_or(DEFAULT_RESULTS).clamp(1, MAX_RESULTS);
+    let options = crate::search::Options {
+        case: flag("caseSensitive"),
+        word: flag("wholeWord"),
+        regex: flag("regex"),
+    };
+    let re =
+        crate::search::build(query, options).map_err(|e| format!("Expression invalide : {e}"))?;
+    let limit = number(args, "maxResults")
+        .unwrap_or(DEFAULT_RESULTS)
+        .clamp(1, MAX_RESULTS);
     let mut files = Vec::new();
-    let looked = crate::search::search_project(root, &re, text(args, "fileMask").unwrap_or(""), &AtomicBool::new(false), limit, |found| {
-        let relative = found.path.strip_prefix(root).unwrap_or(&found.path).to_path_buf();
-        files.push(json!({
+    let looked = crate::search::search_project(
+        root,
+        &re,
+        text(args, "fileMask").unwrap_or(""),
+        &AtomicBool::new(false),
+        limit,
+        |found| {
+            let relative = found
+                .path
+                .strip_prefix(root)
+                .unwrap_or(&found.path)
+                .to_path_buf();
+            files.push(json!({
             "path": relative.to_string_lossy().replace('\\', "/"),
             "matches": found.hits.iter().map(|h| json!({"line": h.line + 1, "column": h.column + 1, "text": h.text})).collect::<Vec<_>>(),
         }));
-    });
-    let total: usize = files.iter().map(|f| f["matches"].as_array().map_or(0, Vec::len)).sum();
+        },
+    );
+    let total: usize = files
+        .iter()
+        .map(|f| f["matches"].as_array().map_or(0, Vec::len))
+        .sum();
     pretty(json!({
         "matches": total,
         "truncated": total >= limit,
@@ -360,13 +429,27 @@ mod tests {
                 message: message.into(),
                 source: "syntaxe".into(),
             };
-            vec![problem("a.js", 1, "Syntaxe inattendue"), problem("b.js", 2, "Variable inutilisée")]
+            vec![
+                problem("a.js", 1, "Syntaxe inattendue"),
+                problem("b.js", 2, "Variable inutilisée"),
+            ]
         }
         fn open_documents(&self) -> Vec<OpenDocument> {
-            vec![OpenDocument { path: Some(self.root.join("a.js")), title: "a.js".into(), dirty: true, active: true }]
+            vec![OpenDocument {
+                path: Some(self.root.join("a.js")),
+                title: "a.js".into(),
+                dirty: true,
+                active: true,
+            }]
         }
         fn editor_state(&self) -> Option<EditorSnapshot> {
-            Some(EditorSnapshot { path: Some(self.root.join("a.js")), language: "js".into(), line: 5, column: 3, selection: Some("let x".into()) })
+            Some(EditorSnapshot {
+                path: Some(self.root.join("a.js")),
+                language: "js".into(),
+                line: 5,
+                column: 3,
+                selection: Some("let x".into()),
+            })
         }
     }
 
@@ -374,7 +457,8 @@ mod tests {
         // One folder per test: they run side by side and each removes its own at the end.
         static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let root = std::env::temp_dir().join(format!("atelier-mcp-tools-{}-{n}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("atelier-mcp-tools-{}-{n}", std::process::id()));
         std::fs::create_dir_all(root.join("src")).unwrap();
         std::fs::write(root.join("a.js"), "let x = 1;\n").unwrap();
         Fake { root, opened: None }
@@ -387,15 +471,30 @@ mod tests {
     #[test]
     fn every_tool_has_a_schema_and_the_editor_tools_answer() {
         for spec in specs() {
-            assert!(spec["name"].is_string() && spec["description"].is_string() && spec["inputSchema"]["type"] == "object", "{spec}");
+            assert!(
+                spec["name"].is_string()
+                    && spec["description"].is_string()
+                    && spec["inputSchema"]["type"] == "object",
+                "{spec}"
+            );
         }
         let mut host = fake();
         let info = json_of(run(&mut host, "get_project_info", &json!({})));
-        assert_eq!((info["errors"].as_u64(), info["warnings"].as_u64(), info["openFiles"].as_u64()), (Some(1), Some(1), Some(1)));
+        assert_eq!(
+            (
+                info["errors"].as_u64(),
+                info["warnings"].as_u64(),
+                info["openFiles"].as_u64()
+            ),
+            (Some(1), Some(1), Some(1))
+        );
         let files = json_of(run(&mut host, "get_open_files", &json!({})));
         assert_eq!(files[0]["unsavedChanges"], true);
         let editor = json_of(run(&mut host, "get_active_editor", &json!({})));
-        assert_eq!((editor["line"].as_u64(), editor["selectedText"].as_str()), (Some(5), Some("let x")));
+        assert_eq!(
+            (editor["line"].as_u64(), editor["selectedText"].as_str()),
+            (Some(5), Some("let x"))
+        );
         let _ = std::fs::remove_dir_all(&host.root);
     }
 
@@ -404,8 +503,18 @@ mod tests {
         let mut host = fake();
         let all = json_of(run(&mut host, "get_problems", &json!({})));
         assert_eq!(all["count"], 2);
-        assert_eq!((all["problems"][0]["line"].as_u64(), all["problems"][0]["column"].as_u64()), (Some(5), Some(3)));
-        let errors = json_of(run(&mut host, "get_problems", &json!({"severity": "error"})));
+        assert_eq!(
+            (
+                all["problems"][0]["line"].as_u64(),
+                all["problems"][0]["column"].as_u64()
+            ),
+            (Some(5), Some(3))
+        );
+        let errors = json_of(run(
+            &mut host,
+            "get_problems",
+            &json!({"severity": "error"}),
+        ));
         assert_eq!(errors["count"], 1);
         let one_file = json_of(run(&mut host, "get_problems", &json!({"path": "b.js"})));
         assert_eq!(one_file["problems"][0]["severity"], "warning");
@@ -416,8 +525,17 @@ mod tests {
     #[test]
     fn a_file_opens_at_its_line_and_a_missing_one_is_refused() {
         let mut host = fake();
-        run(&mut host, "open_file", &json!({"path": "a.js", "line": 12, "column": 4})).unwrap();
-        assert_eq!(host.opened, Some((host.root.join("a.js"), 11, 3)), "0-based inside the IDE");
+        run(
+            &mut host,
+            "open_file",
+            &json!({"path": "a.js", "line": 12, "column": 4}),
+        )
+        .unwrap();
+        assert_eq!(
+            host.opened,
+            Some((host.root.join("a.js"), 11, 3)),
+            "0-based inside the IDE"
+        );
         assert!(run(&mut host, "open_file", &json!({"path": "nope.js"})).is_err());
         assert!(run(&mut host, "open_file", &json!({})).is_err());
         assert!(run(&mut host, "inconnu", &json!({})).is_err());
@@ -427,15 +545,28 @@ mod tests {
     #[test]
     fn the_search_reports_files_lines_and_columns_from_one() {
         let host = fake();
-        std::fs::write(host.root.join("src").join("lib.rs"), "fn main() {}\n// TODO: later\n").unwrap();
+        std::fs::write(
+            host.root.join("src").join("lib.rs"),
+            "fn main() {}\n// TODO: later\n",
+        )
+        .unwrap();
         std::fs::write(host.root.join("a.js"), "// todo here\n").unwrap();
         let found = json_of(search(&host.root, &json!({"query": "todo"})));
         assert_eq!(found["matches"], 2);
-        let only_rust = json_of(search(&host.root, &json!({"query": "TODO", "caseSensitive": true, "fileMask": "*.rs"})));
+        let only_rust = json_of(search(
+            &host.root,
+            &json!({"query": "TODO", "caseSensitive": true, "fileMask": "*.rs"}),
+        ));
         assert_eq!(only_rust["matches"], 1);
         let hit = &only_rust["files"][0];
-        assert_eq!((hit["path"].as_str(), hit["matches"][0]["line"].as_u64()), (Some("src/lib.rs"), Some(2)));
-        assert!(search(&host.root, &json!({"query": "("  , "regex": true})).is_err(), "an invalid expression is reported");
+        assert_eq!(
+            (hit["path"].as_str(), hit["matches"][0]["line"].as_u64()),
+            (Some("src/lib.rs"), Some(2))
+        );
+        assert!(
+            search(&host.root, &json!({"query": "("  , "regex": true})).is_err(),
+            "an invalid expression is reported"
+        );
         assert!(search(&host.root, &json!({})).is_err());
         let _ = std::fs::remove_dir_all(&host.root);
     }

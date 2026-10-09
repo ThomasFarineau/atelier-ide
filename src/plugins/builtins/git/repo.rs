@@ -322,6 +322,23 @@ impl Repo {
         Self::logged(&self.dir, &full, Some(input), &self.console)
     }
 
+    /// Runs a command with environment variables of its own (an author, a date) and an input,
+    /// not shown in the console: for plumbing such as `commit-tree`.
+    pub fn run_with_env(
+        &self,
+        args: &[&str],
+        env: &[(&str, &str)],
+        input: Option<Vec<u8>>,
+    ) -> Result<String> {
+        let mut cmd = command(&self.dir, env);
+        cmd.args(args);
+        let output = execute(cmd, input)?;
+        if !output.ok {
+            return Err(failure(&output));
+        }
+        Ok(output.stdout)
+    }
+
     /// Runs a query, not shown in the console.
     pub fn read(&self, args: &[&str]) -> Result<String> {
         // Background refreshes must not take locks the user's own git commands need.
@@ -367,7 +384,14 @@ impl Repo {
     /// Ignored files and folders (a folder that is ignored as a whole counts once).
     pub fn ignored(&self) -> Vec<PathBuf> {
         let out = self
-            .read(&["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"])
+            .read(&[
+                "ls-files",
+                "-z",
+                "--others",
+                "--ignored",
+                "--exclude-standard",
+                "--directory",
+            ])
             .unwrap_or_default();
         out.split('\0')
             .filter(|p| !p.is_empty())
@@ -755,23 +779,41 @@ pub mod tests {
         let Some(distro) = wsl_distro_with_git() else {
             return;
         };
-        let path = crate::wsl::to_windows(&distro, &format!("/tmp/atelier-git-wsl-{}", std::process::id()));
+        let path = crate::wsl::to_windows(
+            &distro,
+            &format!("/tmp/atelier-git-wsl-{}", std::process::id()),
+        );
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(&path).unwrap();
         let console = Console::default();
         Repo::init(&path, &console).unwrap();
         let repo = Repo::open(&path, console).unwrap().unwrap();
-        for (key, value) in [("user.name", "Atelier Test"), ("user.email", "atelier@example.com")] {
+        for (key, value) in [
+            ("user.name", "Atelier Test"),
+            ("user.email", "atelier@example.com"),
+        ] {
             repo.run(&["config", key, value]).unwrap();
         }
-        std::fs::write(repo.abs("a.txt"), "one
-").unwrap();
+        std::fs::write(
+            repo.abs("a.txt"),
+            "one
+",
+        )
+        .unwrap();
         let (_, changes) = repo.status().unwrap();
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].path, "a.txt");
         repo.run(&["add", "-A"]).unwrap();
         repo.run(&["commit", "-m", "init"]).unwrap();
-        assert_eq!(repo.log(&LogQuery { limit: 10, ..Default::default() }).unwrap().len(), 1);
+        assert_eq!(
+            repo.log(&LogQuery {
+                limit: 10,
+                ..Default::default()
+            })
+            .unwrap()
+            .len(),
+            1
+        );
         assert_eq!(repo.rel(&path.join("a.txt")).as_deref(), Some("a.txt"));
         assert!(
             crate::wsl::parse(&repo.root).is_some_and(|w| w.distro == distro),

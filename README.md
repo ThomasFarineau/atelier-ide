@@ -275,3 +275,18 @@ derniers commits : Conventional Commits, gitmoji ou texte libre, français ou an
 majuscule, point final, longueur, présence d'un corps. Chaque message est vérifié avant tout commit : si un seul ne les
 respecte pas, rien n'est commité. **Jamais de co-auteur** : les lignes `Co-authored-by` et les attributions à une IA
 sont retirées du message, qui qu'en soit l'auteur. Rien n'est poussé ni modifié après coup (pas d'amend).
+
+### Refaire des commits (`rework-commit`)
+
+La commande **`rework-commit`** (`/rework-commit last 10 commits`, aussi « since abc123 » ou `abc123..HEAD`) passe en
+revue les derniers commits et corrige les messages qui ne collent pas : le **titre** suit-il les conventions du dépôt,
+dit-il ce que fait vraiment le diff, et la **description** correspond-elle aux changements, sans rien affirmer de faux ?
+
+`git_rework_plan` liste les commits (sujet, corps, fichiers modifiés) avec des constats automatiques : titre hors
+conventions, type qui contredit les fichiers (`docs:` sur du code), portée absente de tous les chemins modifiés, fichiers
+nommés dans le message mais non modifiés par le commit, co-auteur, gros changement sans description. L'IA lit les
+diffs (`git_show`) et juge ; `git_rework_apply` ne réécrit que les messages choisis. Les arbres, les auteurs et les dates
+sont repris tels quels : aucun fichier ne bouge et aucun conflit n'est possible. Garde-fous : pas de merge dans la
+chaîne, arbre propre, chaque message vérifié avant de toucher à quoi que ce soit, **commits déjà poussés refusés** sauf
+accord explicite de l'utilisateur (`allowPushed`), et l'ancienne tête reste sous `refs/atelier/backup/<date>`
+(`git reset --hard <ref>` pour tout remettre). Jamais de co-auteur, jamais de push.
