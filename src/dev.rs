@@ -25,9 +25,9 @@ use std::{
 
 pub const FLAG: &str = "--dev";
 /// Set on the child: it listens on stdin for reload requests.
-const CHILD_ENV: &str = "FORGE_DEV_CHILD";
+pub const CHILD_ENV: &str = "ATELIER_DEV_CHILD";
 /// Set on the child: where to save the session before a reload and restore it at startup.
-pub const SESSION_ENV: &str = "FORGE_DEV_SESSION";
+pub const SESSION_ENV: &str = "ATELIER_DEV_SESSION";
 const RELOAD: &str = "reload";
 
 fn crate_dir() -> PathBuf {
@@ -95,7 +95,7 @@ fn build(dir: &Path) -> Result<PathBuf> {
         .status()
         .context("Impossible de lancer cargo")?;
     anyhow::ensure!(status.success(), "la compilation a échoué");
-    let name = format!("forge-ide{}", std::env::consts::EXE_SUFFIX);
+    let name = format!("atelier-ide{}", std::env::consts::EXE_SUFFIX);
     Ok(hot_dir().join("debug").join(name))
 }
 
@@ -185,7 +185,7 @@ pub fn supervise() -> Result<()> {
         };
         generation += 1;
         let copy = run_dir.join(format!(
-            "forge-ide-{generation}{}",
+            "atelier-ide-{generation}{}",
             std::env::consts::EXE_SUFFIX
         ));
         if let Err(e) = fs::copy(&built, &copy) {

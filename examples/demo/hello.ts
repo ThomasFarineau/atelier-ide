@@ -4,7 +4,7 @@ interface Project {
 }
 
 const project: Project = {
-  name: "Forge IDE",
+  name: "Atelier IDE",
   languages: ["HTML", "CSS", "JavaScript", "TypeScript", "Java", "Python", "Rust"],
 };
 
