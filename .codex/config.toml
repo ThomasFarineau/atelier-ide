@@ -1,0 +1,3 @@
+[mcp_servers.atelier]
+url = "http://127.0.0.1:61692/mcp"
+bearer_token_env_var = "ATELIER_MCP_TOKEN"
