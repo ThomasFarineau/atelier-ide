@@ -20,7 +20,11 @@ pub struct Options {
 
 /// The expression a query stands for. An error message when a regular expression is invalid.
 pub fn build(query: &str, options: Options) -> Result<Regex, String> {
-    let mut pattern = if options.regex { query.to_string() } else { regex::escape(query) };
+    let mut pattern = if options.regex {
+        query.to_string()
+    } else {
+        regex::escape(query)
+    };
     if options.word {
         pattern = format!(r"\b(?:{pattern})\b");
     }
@@ -31,7 +35,12 @@ pub fn build(query: &str, options: Options) -> Result<Regex, String> {
         .build()
         .map_err(|e| {
             let message = e.to_string();
-            message.lines().last().unwrap_or("expression invalide").trim().to_string()
+            message
+                .lines()
+                .last()
+                .unwrap_or("expression invalide")
+                .trim()
+                .to_string()
         })
 }
 
@@ -49,7 +58,8 @@ pub fn replace_all(text: &str, re: &Regex, replacement: &str, options: Options) 
     if options.regex {
         re.replace_all(text, replacement).into_owned()
     } else {
-        re.replace_all(text, regex::NoExpand(replacement)).into_owned()
+        re.replace_all(text, regex::NoExpand(replacement))
+            .into_owned()
     }
 }
 
@@ -72,15 +82,23 @@ pub fn glob_match(pattern: &str, name: &str) -> bool {
 /// A comma-separated list of patterns (`*.rs, src/*`); empty matches everything. A pattern
 /// with a slash is matched against the path from the project, the others against the file name.
 pub fn mask_matches(mask: &str, relative: &Path) -> bool {
-    let patterns: Vec<&str> = mask.split(',').map(str::trim).filter(|p| !p.is_empty()).collect();
+    let patterns: Vec<&str> = mask
+        .split(',')
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .collect();
     if patterns.is_empty() {
         return true;
     }
-    let name = relative.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let name = relative
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let path = relative.to_string_lossy().replace('\\', "/");
     patterns.iter().any(|p| {
         if p.contains('/') {
-            glob_match(p.trim_start_matches("./"), &path) || glob_match(&format!("{}*", p.trim_end_matches('*')), &path)
+            glob_match(p.trim_start_matches("./"), &path)
+                || glob_match(&format!("{}*", p.trim_end_matches('*')), &path)
         } else {
             glob_match(p, &name)
         }
@@ -112,7 +130,9 @@ const MAX_FILE: u64 = 2 * 1024 * 1024;
 pub fn hits_in(text: &str, re: &Regex, limit: usize) -> Vec<LineHit> {
     let mut hits = Vec::new();
     // Line starts, to find the line of a byte offset.
-    let starts: Vec<usize> = std::iter::once(0).chain(text.match_indices('\n').map(|(i, _)| i + 1)).collect();
+    let starts: Vec<usize> = std::iter::once(0)
+        .chain(text.match_indices('\n').map(|(i, _)| i + 1))
+        .collect();
     for range in find_all(text, re, limit) {
         let line = starts.partition_point(|&s| s <= range.start) - 1;
         let start = starts[line];
@@ -125,7 +145,9 @@ pub fn hits_in(text: &str, re: &Regex, limit: usize) -> Vec<LineHit> {
             line,
             column: text[start..range.start].chars().count(),
             length: text[range.start..match_end].chars().count().max(1),
-            shown_column: text[start + indent..range.start.max(start + indent)].chars().count(),
+            shown_column: text[start + indent..range.start.max(start + indent)]
+                .chars()
+                .count(),
             text: shown.chars().take(300).collect(),
         });
     }
@@ -148,7 +170,9 @@ pub fn search_project(
         if cancel.load(Ordering::Relaxed) {
             break;
         }
-        let Ok(children) = crate::project::searchable_children(&dir) else { continue };
+        let Ok(children) = crate::project::searchable_children(&dir) else {
+            continue;
+        };
         for child in children {
             if cancel.load(Ordering::Relaxed) || found >= limit {
                 return looked;
@@ -163,16 +187,22 @@ pub fn search_project(
             if !mask_matches(mask, relative) {
                 continue;
             }
-            let Ok(meta) = std::fs::metadata(&child) else { continue };
+            let Ok(meta) = std::fs::metadata(&child) else {
+                continue;
+            };
             if meta.len() > MAX_FILE {
                 continue;
             }
-            let Ok(bytes) = std::fs::read(&child) else { continue };
+            let Ok(bytes) = std::fs::read(&child) else {
+                continue;
+            };
             // Binary files: a zero byte early on.
             if bytes.iter().take(8000).any(|b| *b == 0) {
                 continue;
             }
-            let Ok(text) = String::from_utf8(bytes) else { continue };
+            let Ok(text) = String::from_utf8(bytes) else {
+                continue;
+            };
             looked += 1;
             let hits = hits_in(&text, re, limit - found);
             if !hits.is_empty() {
@@ -186,13 +216,23 @@ pub fn search_project(
 
 /// Replaces in every file of the project that has matches. Returns the files changed and
 /// the replacements made.
-pub fn replace_in_project(root: &Path, re: &Regex, replacement: &str, options: Options, mask: &str) -> (usize, usize) {
+pub fn replace_in_project(
+    root: &Path,
+    re: &Regex,
+    replacement: &str,
+    options: Options,
+    mask: &str,
+) -> (usize, usize) {
     let cancel = AtomicBool::new(false);
     let mut paths: Vec<PathBuf> = Vec::new();
-    search_project(root, re, mask, &cancel, usize::MAX / 2, |hits| paths.push(hits.path));
+    search_project(root, re, mask, &cancel, usize::MAX / 2, |hits| {
+        paths.push(hits.path)
+    });
     let (mut files, mut total) = (0, 0);
     for path in paths {
-        let Ok(text) = std::fs::read_to_string(&path) else { continue };
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
         let count = find_all(&text, re, usize::MAX).len();
         let replaced = replace_all(&text, re, replacement, options);
         if replaced != text && std::fs::write(&path, replaced).is_ok() {
@@ -211,13 +251,73 @@ mod tests {
     fn options_decide_what_matches() {
         let text = "Cat cat concat CAT";
         let count = |query: &str, o: Options| find_all(text, &build(query, o).unwrap(), 100).len();
-        assert_eq!(count("cat", Options::default()), 4, "case does not matter by default");
-        assert_eq!(count("cat", Options { case: true, ..Default::default() }), 2);
-        assert_eq!(count("cat", Options { word: true, ..Default::default() }), 3);
-        assert_eq!(count("c.t", Options::default()), 0, "plain text: the dot is a dot");
-        assert_eq!(count("c.t", Options { regex: true, ..Default::default() }), 4);
-        assert!(build("(", Options { regex: true, ..Default::default() }).is_err());
-        assert_eq!(find_all("aaa", &build("a*", Options { regex: true, ..Default::default() }).unwrap(), 10).len(), 1, "empty matches are skipped");
+        assert_eq!(
+            count("cat", Options::default()),
+            4,
+            "case does not matter by default"
+        );
+        assert_eq!(
+            count(
+                "cat",
+                Options {
+                    case: true,
+                    ..Default::default()
+                }
+            ),
+            2
+        );
+        assert_eq!(
+            count(
+                "cat",
+                Options {
+                    word: true,
+                    ..Default::default()
+                }
+            ),
+            3
+        );
+        assert_eq!(
+            count("c.t", Options::default()),
+            0,
+            "plain text: the dot is a dot"
+        );
+        assert_eq!(
+            count(
+                "c.t",
+                Options {
+                    regex: true,
+                    ..Default::default()
+                }
+            ),
+            4
+        );
+        assert!(
+            build(
+                "(",
+                Options {
+                    regex: true,
+                    ..Default::default()
+                }
+            )
+            .is_err()
+        );
+        assert_eq!(
+            find_all(
+                "aaa",
+                &build(
+                    "a*",
+                    Options {
+                        regex: true,
+                        ..Default::default()
+                    }
+                )
+                .unwrap(),
+                10
+            )
+            .len(),
+            1,
+            "empty matches are skipped"
+        );
     }
 
     #[test]
@@ -225,7 +325,10 @@ mod tests {
         let plain = Options::default();
         let re = build("a.b", plain).unwrap();
         assert_eq!(replace_all("a.b axb", &re, "$1", plain), "$1 axb");
-        let rx = Options { regex: true, ..Default::default() };
+        let rx = Options {
+            regex: true,
+            ..Default::default()
+        };
         let re = build(r"(\w+)@(\w+)", rx).unwrap();
         assert_eq!(replace_all("me@host", &re, "$2:$1", rx), "host:me");
     }
@@ -245,7 +348,14 @@ mod tests {
     #[test]
     fn hits_carry_their_line_and_column() {
         let text = "fn one() {}\n    let total = 1;\r\nlet total2 = total;\n";
-        let re = build("total", Options { word: true, ..Default::default() }).unwrap();
+        let re = build(
+            "total",
+            Options {
+                word: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         let hits = hits_in(text, &re, 10);
         assert_eq!(hits.len(), 2);
         assert_eq!((hits[0].line, hits[0].column, hits[0].length), (1, 8, 5));
@@ -260,15 +370,26 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("src")).unwrap();
         std::fs::create_dir_all(root.join("node_modules").join("dep")).unwrap();
-        std::fs::write(root.join("src").join("a.js"), "const needle = 1;\nneedle();\n").unwrap();
+        std::fs::write(
+            root.join("src").join("a.js"),
+            "const needle = 1;\nneedle();\n",
+        )
+        .unwrap();
         std::fs::write(root.join("src").join("b.txt"), "a needle here\n").unwrap();
         std::fs::write(root.join("src").join("c.bin"), b"needle\0binary").unwrap();
-        std::fs::write(root.join("node_modules").join("dep").join("x.js"), "needle\n").unwrap();
+        std::fs::write(
+            root.join("node_modules").join("dep").join("x.js"),
+            "needle\n",
+        )
+        .unwrap();
         let re = build("needle", Options::default()).unwrap();
         let cancel = AtomicBool::new(false);
         let mut found: Vec<(String, usize)> = Vec::new();
         let looked = search_project(&root, &re, "", &cancel, 100, |h| {
-            found.push((h.path.file_name().unwrap().to_string_lossy().into_owned(), h.hits.len()));
+            found.push((
+                h.path.file_name().unwrap().to_string_lossy().into_owned(),
+                h.hits.len(),
+            ));
         });
         found.sort();
         assert_eq!(found, [("a.js".to_string(), 2), ("b.txt".to_string(), 1)]);
@@ -279,8 +400,15 @@ mod tests {
         // Replacing touches the same files.
         let (files, total) = replace_in_project(&root, &re, "pin", Options::default(), "*.js");
         assert_eq!((files, total), (1, 2));
-        assert_eq!(std::fs::read_to_string(root.join("src").join("a.js")).unwrap(), "const pin = 1;\npin();\n");
-        assert!(std::fs::read_to_string(root.join("src").join("b.txt")).unwrap().contains("needle"));
+        assert_eq!(
+            std::fs::read_to_string(root.join("src").join("a.js")).unwrap(),
+            "const pin = 1;\npin();\n"
+        );
+        assert!(
+            std::fs::read_to_string(root.join("src").join("b.txt"))
+                .unwrap()
+                .contains("needle")
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 }

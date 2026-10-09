@@ -36,7 +36,13 @@ struct Entry {
     files: [Option<PathBuf>; 3],
 }
 
-fn collect(dir: &Path, base: &Path, prefix: &str, recursive: bool, out: &mut BTreeMap<String, Entry>) {
+fn collect(
+    dir: &Path,
+    base: &Path,
+    prefix: &str,
+    recursive: bool,
+    out: &mut BTreeMap<String, Entry>,
+) {
     println!("cargo:rerun-if-changed={}", dir.display());
     let Ok(read) = fs::read_dir(dir) else { return };
     let mut paths: Vec<_> = read.flatten().map(|e| e.path()).collect();
@@ -48,11 +54,16 @@ fn collect(dir: &Path, base: &Path, prefix: &str, recursive: bool, out: &mut BTr
             }
             continue;
         }
-        let Some(ext) = path.extension().and_then(|e| e.to_str()) else { continue };
+        let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+            continue;
+        };
         if !matches!(ext, "svg" | "png") {
             continue;
         }
-        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or_default();
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default();
         let (name, variant) = match stem.rsplit_once('.') {
             Some((name, "light")) => (name, 1),
             Some((name, "dark")) => (name, 2),
@@ -95,7 +106,13 @@ fn main() {
     let mut icons = BTreeMap::new();
     let files = root.join("assets/icons");
     collect(&files, &files, "file/", false, &mut icons);
-    collect(&files.join("extensions"), &files, "file/", false, &mut icons);
+    collect(
+        &files.join("extensions"),
+        &files,
+        "file/",
+        false,
+        &mut icons,
+    );
     let languages = root.join("src/languages");
     collect(&languages, &languages, "languages/", true, &mut icons);
     let ui = root.join("assets/icons/ui");
@@ -135,9 +152,15 @@ fn main() {
     table.push_str("];\n\npub static EXTENSIONS: &[(&str, &str, &str)] = &[\n");
     let mut extensions: BTreeMap<(String, String), String> = BTreeMap::new();
     for key in icons.keys() {
-        let Some((dir, stem)) = key.split_once("/extensions/") else { continue };
+        let Some((dir, stem)) = key.split_once("/extensions/") else {
+            continue;
+        };
         // Languages and the assets share the owner `file`: they are not plugins.
-        let dir = if dir == "file" || dir.starts_with("languages/") { "file" } else { dir };
+        let dir = if dir == "file" || dir.starts_with("languages/") {
+            "file"
+        } else {
+            dir
+        };
         for ext in stem.split('+') {
             let ext = ext.to_ascii_lowercase();
             if let Some(other) = extensions.insert((dir.to_string(), ext.clone()), key.clone()) {

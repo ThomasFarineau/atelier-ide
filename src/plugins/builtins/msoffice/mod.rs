@@ -102,16 +102,23 @@ struct Node {
 
 impl Node {
     fn attr(&self, key: &str) -> Option<&str> {
-        self.attrs.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+        self.attrs
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
     }
     fn child(&self, name: &str) -> Option<&Node> {
         self.children.iter().find(|c| c.name == name)
     }
     /// First descendant with this name, depth first.
     fn find(&self, name: &str) -> Option<&Node> {
-        self.children
-            .iter()
-            .find_map(|c| if c.name == name { Some(c) } else { c.find(name) })
+        self.children.iter().find_map(|c| {
+            if c.name == name {
+                Some(c)
+            } else {
+                c.find(name)
+            }
+        })
     }
     fn val(&self, child: &str) -> Option<&str> {
         self.child(child).and_then(|c| c.attr("val"))
@@ -133,8 +140,10 @@ fn parse_xml(bytes: &[u8]) -> Result<Node> {
             ..Node::default()
         };
         for attr in e.attributes().flatten() {
-            node.attrs
-                .push((local(attr.key.as_ref()), attr.unescape_value()?.into_owned()));
+            node.attrs.push((
+                local(attr.key.as_ref()),
+                attr.unescape_value()?.into_owned(),
+            ));
         }
         Ok(node)
     };
@@ -157,7 +166,11 @@ fn parse_xml(bytes: &[u8]) -> Result<Node> {
                 let node = stack.pop().expect("node");
                 stack.last_mut().expect("root").children.push(node);
             }
-            Event::Text(t) => stack.last_mut().expect("root").text.push_str(&t.unescape()?),
+            Event::Text(t) => stack
+                .last_mut()
+                .expect("root")
+                .text
+                .push_str(&t.unescape()?),
             Event::CData(c) => stack
                 .last_mut()
                 .expect("root")
@@ -281,7 +294,11 @@ fn hex_color(text: &str) -> Option<Color32> {
         return None;
     }
     let value = u32::from_str_radix(text, 16).ok()?;
-    Some(Color32::from_rgb((value >> 16) as u8, (value >> 8) as u8, value as u8))
+    Some(Color32::from_rgb(
+        (value >> 16) as u8,
+        (value >> 8) as u8,
+        value as u8,
+    ))
 }
 
 fn highlight_color(name: &str) -> Option<Color32> {
@@ -398,7 +415,10 @@ impl Ctx {
             };
             let mut levels = Vec::new();
             for lvl in abs.children.iter().filter(|c| c.name == "lvl") {
-                let index: usize = lvl.attr("ilvl").and_then(|i| i.parse().ok()).unwrap_or(levels.len());
+                let index: usize = lvl
+                    .attr("ilvl")
+                    .and_then(|i| i.parse().ok())
+                    .unwrap_or(levels.len());
                 if levels.len() <= index {
                     levels.resize_with(index + 1, Level::default);
                 }
@@ -432,7 +452,11 @@ impl Ctx {
         if counters.len() <= level {
             counters.resize(level + 1, 0);
         }
-        counters[level] = if counters[level] == 0 { start } else { counters[level] + 1 };
+        counters[level] = if counters[level] == 0 {
+            start
+        } else {
+            counters[level] + 1
+        };
         counters.truncate(level + 1);
         let counters = counters.clone();
         let levels = self
@@ -465,18 +489,18 @@ fn format_of(rpr: Option<&Node>) -> Format {
             .val("color")
             .filter(|c| *c != "auto")
             .and_then(hex_color),
-        size: rpr.val("sz").and_then(|s| s.parse::<f32>().ok()).map(|s| s / 2.0),
+        size: rpr
+            .val("sz")
+            .and_then(|s| s.parse::<f32>().ok())
+            .map(|s| s / 2.0),
         sup: rpr.val("vertAlign") == Some("superscript"),
         sub: rpr.val("vertAlign") == Some("subscript"),
-        highlight: rpr
-            .val("highlight")
-            .and_then(highlight_color)
-            .or_else(|| {
-                rpr.child("shd")
-                    .and_then(|s| s.attr("fill"))
-                    .filter(|f| *f != "auto")
-                    .and_then(hex_color)
-            }),
+        highlight: rpr.val("highlight").and_then(highlight_color).or_else(|| {
+            rpr.child("shd")
+                .and_then(|s| s.attr("fill"))
+                .filter(|f| *f != "auto")
+                .and_then(hex_color)
+        }),
     }
 }
 
@@ -572,7 +596,9 @@ fn paragraph(p: &Node, ctx: &mut Ctx) -> Para {
         .and_then(|id| ctx.styles.get(id));
     let mut kind = style.and_then(|s| s.kind).unwrap_or(Kind::Body);
     if kind == Kind::Body
-        && let Some(level) = ppr.and_then(|p| p.val("outlineLvl")).and_then(|l| l.parse::<u8>().ok())
+        && let Some(level) = ppr
+            .and_then(|p| p.val("outlineLvl"))
+            .and_then(|l| l.parse::<u8>().ok())
         && level < 9
     {
         kind = Kind::Heading(level + 1);
@@ -583,7 +609,9 @@ fn paragraph(p: &Node, ctx: &mut Ctx) -> Para {
             n.val("ilvl").and_then(|l| l.parse().ok()).unwrap_or(0usize),
         )
     });
-    let num = own_num.or_else(|| style.and_then(|s| s.num.clone())).filter(|(id, _)| id != "0");
+    let num = own_num
+        .or_else(|| style.and_then(|s| s.num.clone()))
+        .filter(|(id, _)| id != "0");
     let marker = num.as_ref().map(|(id, level)| ctx.marker(id, *level));
     let mut indent = ppr
         .and_then(|p| p.child("ind"))
@@ -616,7 +644,12 @@ fn table(tbl: &Node, ctx: &mut Ctx) -> Table {
             g.children
                 .iter()
                 .filter(|c| c.name == "gridCol")
-                .map(|c| c.attr("w").and_then(|w| w.parse::<f32>().ok()).unwrap_or(1.0).max(1.0))
+                .map(|c| {
+                    c.attr("w")
+                        .and_then(|w| w.parse::<f32>().ok())
+                        .unwrap_or(1.0)
+                        .max(1.0)
+                })
                 .collect()
         })
         .unwrap_or_default();
@@ -637,12 +670,12 @@ fn table(tbl: &Node, ctx: &mut Ctx) -> Table {
                 .and_then(|p| p.child("shd"))
                 .and_then(|s| s.attr("fill"))
                 .and_then(hex_color);
-            let blocks = if merged { Vec::new() } else { blocks_of(tc, ctx) };
-            cells.push(Cell {
-                span,
-                fill,
-                blocks,
-            });
+            let blocks = if merged {
+                Vec::new()
+            } else {
+                blocks_of(tc, ctx)
+            };
+            cells.push(Cell { span, fill, blocks });
         }
         rows.push(cells);
     }
@@ -688,7 +721,10 @@ fn count_words(blocks: &[Block]) -> usize {
         .sum::<usize>()
 }
 
-fn read_part<R: Read + std::io::Seek>(zip: &mut zip::ZipArchive<R>, name: &str) -> Result<Option<Vec<u8>>> {
+fn read_part<R: Read + std::io::Seek>(
+    zip: &mut zip::ZipArchive<R>,
+    name: &str,
+) -> Result<Option<Vec<u8>>> {
     let file = match zip.by_name(name) {
         Ok(f) => f,
         Err(zip::result::ZipError::FileNotFound) => return Ok(None),
@@ -712,13 +748,19 @@ fn load_doc(path: &Path) -> Result<Doc> {
         .and_then(|e| e.to_str())
         .is_some_and(|e| e.eq_ignore_ascii_case("doc"))
     {
-        bail!("Le format binaire .doc n'est pas pris en charge : enregistrez le document au format .docx");
+        bail!(
+            "Le format binaire .doc n'est pas pris en charge : enregistrez le document au format .docx"
+        );
     }
     let file = fs::File::open(path)?;
-    let mut zip = zip::ZipArchive::new(std::io::BufReader::new(file))
-        .map_err(|_| anyhow!("Ce fichier n'est pas un document Word valide (ou il est protégé par un mot de passe)"))?;
-    let document = read_part(&mut zip, "word/document.xml")?
-        .ok_or_else(|| anyhow!("Ce fichier n'est pas un document Word : word/document.xml est absent"))?;
+    let mut zip = zip::ZipArchive::new(std::io::BufReader::new(file)).map_err(|_| {
+        anyhow!(
+            "Ce fichier n'est pas un document Word valide (ou il est protégé par un mot de passe)"
+        )
+    })?;
+    let document = read_part(&mut zip, "word/document.xml")?.ok_or_else(|| {
+        anyhow!("Ce fichier n'est pas un document Word : word/document.xml est absent")
+    })?;
     let mut ctx = Ctx::default();
     if let Some(bytes) = read_part(&mut zip, "word/_rels/document.xml.rels")? {
         let rels = parse_xml(&bytes).context("relations du document")?;
@@ -739,11 +781,14 @@ fn load_doc(path: &Path) -> Result<Doc> {
     if let Some(root) = read_part(&mut zip, "word/styles.xml")?.and_then(|b| parse_xml(&b).ok()) {
         ctx.read_styles(&root);
     }
-    if let Some(root) = read_part(&mut zip, "word/numbering.xml")?.and_then(|b| parse_xml(&b).ok()) {
+    if let Some(root) = read_part(&mut zip, "word/numbering.xml")?.and_then(|b| parse_xml(&b).ok())
+    {
         ctx.read_numbering(&root);
     }
     let root = parse_xml(&document).context("word/document.xml")?;
-    let body = root.child("body").ok_or_else(|| anyhow!("Document sans corps"))?;
+    let body = root
+        .child("body")
+        .ok_or_else(|| anyhow!("Document sans corps"))?;
     let blocks = blocks_of(body, &mut ctx);
 
     let mut images = HashMap::new();
@@ -806,14 +851,30 @@ fn text_format(env: &Env, kind: Kind, format: &Format, link: bool) -> TextFormat
     }
     let size = env.px(points);
     let bold = format.bold || kind != Kind::Body;
-    let color = if link { LINK } else { format.color.unwrap_or(INK) };
+    let color = if link {
+        LINK
+    } else {
+        format.color.unwrap_or(INK)
+    };
     TextFormat {
-        font_id: if bold { ui::semibold(size) } else { FontId::proportional(size) },
+        font_id: if bold {
+            ui::semibold(size)
+        } else {
+            FontId::proportional(size)
+        },
         color,
         background: format.highlight.unwrap_or(Color32::TRANSPARENT),
         italics: format.italic,
-        underline: if format.underline || link { Stroke::new(1.0_f32, color) } else { Stroke::NONE },
-        strikethrough: if format.strike { Stroke::new(1.0_f32, color) } else { Stroke::NONE },
+        underline: if format.underline || link {
+            Stroke::new(1.0_f32, color)
+        } else {
+            Stroke::NONE
+        },
+        strikethrough: if format.strike {
+            Stroke::new(1.0_f32, color)
+        } else {
+            Stroke::NONE
+        },
         valign: if format.sup {
             Align::TOP
         } else if format.sub {
@@ -834,8 +895,14 @@ fn decode_image(ctx: &egui::Context, rel: &str, data: &[u8]) -> Option<(TextureH
         image
     };
     let rgba = image.to_rgba8();
-    let color = ColorImage::from_rgba_unmultiplied([rgba.width() as usize, rgba.height() as usize], rgba.as_raw());
-    Some((ctx.load_texture(format!("docx:{rel}"), color, TextureOptions::LINEAR), original))
+    let color = ColorImage::from_rgba_unmultiplied(
+        [rgba.width() as usize, rgba.height() as usize],
+        rgba.as_raw(),
+    );
+    Some((
+        ctx.load_texture(format!("docx:{rel}"), color, TextureOptions::LINEAR),
+        original,
+    ))
 }
 
 fn draw_image(ui: &mut egui::Ui, env: &mut Env, rel: &str, size: Option<[f32; 2]>) {
@@ -854,7 +921,9 @@ fn draw_image(ui: &mut egui::Ui, env: &mut Env, rel: &str, size: Option<[f32; 2]
     if size.x <= 0.0 || size.y <= 0.0 {
         size = vec2(natural[0], natural[1]) * env.scale;
     }
-    let fit = (ui.available_width() / size.x).min(1400.0 * env.scale / size.y).min(1.0);
+    let fit = (ui.available_width() / size.x)
+        .min(1400.0 * env.scale / size.y)
+        .min(1.0);
     ui.add(egui::Image::new((texture.id(), size * fit)));
 }
 
@@ -876,7 +945,11 @@ fn draw_para(ui: &mut egui::Ui, p: &Para, env: &mut Env) {
             let mut job = LayoutJob::default();
             for inline in &p.inlines {
                 if let Inline::Text { text, format, .. } = inline {
-                    job.append(&text.replace('\t', "    "), 0.0, text_format(env, p.kind, format, false));
+                    job.append(
+                        &text.replace('\t', "    "),
+                        0.0,
+                        text_format(env, p.kind, format, false),
+                    );
                 }
             }
             ui.with_layout(Layout::top_down(p.align), |ui| {
@@ -936,11 +1009,20 @@ fn draw_para(ui: &mut egui::Ui, p: &Para, env: &mut Env) {
             ui.spacing_mut().item_spacing.x = 0.0;
             let indent = env.px(p.indent);
             let marker_width = env.px(16.0);
-            ui.add_space((indent - if p.marker.is_some() { marker_width } else { 0.0 }).max(0.0));
+            ui.add_space(
+                (indent
+                    - if p.marker.is_some() {
+                        marker_width
+                    } else {
+                        0.0
+                    })
+                .max(0.0),
+            );
             if let Some(marker) = &p.marker {
                 let format = Format::default();
                 let tf = text_format(env, p.kind, &format, false);
-                let (rect, _) = ui.allocate_exact_size(vec2(marker_width, env.px(14.0)), egui::Sense::hover());
+                let (rect, _) =
+                    ui.allocate_exact_size(vec2(marker_width, env.px(14.0)), egui::Sense::hover());
                 ui.painter().text(
                     rect.right_top() - vec2(env.px(3.0), 0.0),
                     egui::Align2::RIGHT_TOP,
@@ -979,7 +1061,10 @@ fn draw_table(ui: &mut egui::Ui, t: &Table, env: &mut Env) {
     }
     let total = ui.available_width();
     let mut relative: Vec<f32> = t.widths.clone();
-    relative.resize(columns, relative.iter().sum::<f32>() / relative.len().max(1) as f32);
+    relative.resize(
+        columns,
+        relative.iter().sum::<f32>() / relative.len().max(1) as f32,
+    );
     if relative.iter().any(|w| *w <= 0.0) {
         relative = vec![1.0; columns];
     }
@@ -997,24 +1082,33 @@ fn draw_table(ui: &mut egui::Ui, t: &Table, env: &mut Env) {
                 let width: f32 = widths[column.min(columns)..end].iter().sum();
                 column = end;
                 let fill_slot = ui.painter().add(Shape::Noop);
-                let response = ui.allocate_ui_with_layout(vec2(width, 0.0), Layout::top_down(Align::Min), |ui| {
-                    ui.spacing_mut().item_spacing.y = 0.0;
-                    egui::Frame::new().inner_margin(pad).show(ui, |ui| {
-                        ui.set_width((width - 2.0 * pad).max(8.0));
-                        draw_blocks(ui, &cell.blocks, env);
-                    });
-                });
+                let response = ui.allocate_ui_with_layout(
+                    vec2(width, 0.0),
+                    Layout::top_down(Align::Min),
+                    |ui| {
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        egui::Frame::new().inner_margin(pad).show(ui, |ui| {
+                            ui.set_width((width - 2.0 * pad).max(8.0));
+                            draw_blocks(ui, &cell.blocks, env);
+                        });
+                    },
+                );
                 cells.push((response.response.rect, fill_slot, cell.fill));
             }
         });
         let height = cells.iter().map(|(r, _, _)| r.height()).fold(0.0, f32::max);
         for (rect, slot, fill) in cells {
-            let rect = egui::Rect::from_min_size(egui::pos2(rect.left(), top), vec2(rect.width(), height));
+            let rect =
+                egui::Rect::from_min_size(egui::pos2(rect.left(), top), vec2(rect.width(), height));
             if let Some(fill) = fill {
                 ui.painter().set(slot, Shape::rect_filled(rect, 0.0, fill));
             }
-            ui.painter()
-                .rect_stroke(rect, 0.0, Stroke::new(1.0_f32, PAPER_BORDER), StrokeKind::Inside);
+            ui.painter().rect_stroke(
+                rect,
+                0.0,
+                Stroke::new(1.0_f32, PAPER_BORDER),
+                StrokeKind::Inside,
+            );
         }
     }
     ui.add_space(env.px(6.0));
@@ -1076,7 +1170,10 @@ impl Default for MsOfficeViewerPlugin {
 impl MsOfficeViewerPlugin {
     /// Asks where to save, then writes the PDF. The outcome is kept in `message` and returned.
     fn export(&mut self, path: &Path) -> Option<String> {
-        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("document");
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("document");
         let mut dialog = rfd::FileDialog::new()
             .set_file_name(format!("{stem}.pdf"))
             .add_filter("Document PDF", &["pdf"]);
@@ -1141,7 +1238,13 @@ impl BuiltinPlugin for MsOfficeViewerPlugin {
         false
     }
 
-    fn preview(&mut self, ui: &mut egui::Ui, path: &Path, _text: &mut String, _scroll: Option<f32>) {
+    fn preview(
+        &mut self,
+        ui: &mut egui::Ui,
+        path: &Path,
+        _text: &mut String,
+        _scroll: Option<f32>,
+    ) {
         let t = ui::theme(ui.ctx());
         let modified = fs::metadata(path).and_then(|m| m.modified()).ok();
         if self.loaded.get(path).is_none_or(|l| l.modified != modified) {
@@ -1207,7 +1310,10 @@ impl BuiltinPlugin for MsOfficeViewerPlugin {
                     *zoom = (*zoom + 0.1).min(2.5);
                 }
                 if ui
-                    .add(egui::Label::new(RichText::new(format!("{:.0} %", *zoom * 100.0)).small()).sense(egui::Sense::click()))
+                    .add(
+                        egui::Label::new(RichText::new(format!("{:.0} %", *zoom * 100.0)).small())
+                            .sense(egui::Sense::click()),
+                    )
                     .on_hover_text("Taille réelle")
                     .clicked()
                 {
@@ -1226,7 +1332,11 @@ impl BuiltinPlugin for MsOfficeViewerPlugin {
         if let Some((_, failed, text)) = self.message.as_ref().filter(|(p, _, _)| p == path) {
             ui.horizontal(|ui| {
                 ui.add_space(10.0);
-                ui.label(RichText::new(text).small().color(if *failed { t.error } else { t.text_secondary }));
+                ui.label(RichText::new(text).small().color(if *failed {
+                    t.error
+                } else {
+                    t.text_secondary
+                }));
             });
         }
         ui.add_space(4.0);
@@ -1282,7 +1392,9 @@ impl BuiltinPlugin for MsOfficeViewerPlugin {
                                             let before = ui.cursor().top();
                                             match block {
                                                 Block::Para(p) => draw_para(ui, p, &mut env),
-                                                Block::Table(table) => draw_table(ui, table, &mut env),
+                                                Block::Table(table) => {
+                                                    draw_table(ui, table, &mut env)
+                                                }
                                             }
                                             let height = ui.cursor().top() - before;
                                             heights[i] = height;
@@ -1356,7 +1468,8 @@ mod tests {
     }
 
     fn sample(name: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!("atelier-docx-{}-{name}.docx", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("atelier-docx-{}-{name}.docx", std::process::id()));
         let mut zip = zip::ZipWriter::new(fs::File::create(&path).unwrap());
         let options = zip::write::SimpleFileOptions::default();
         for (name, data) in [
@@ -1379,21 +1492,31 @@ mod tests {
         let doc = load_doc(&path).unwrap();
         let _ = fs::remove_file(&path);
         assert_eq!(doc.blocks.len(), 7);
-        let Block::Para(title) = &doc.blocks[0] else { panic!("title") };
+        let Block::Para(title) = &doc.blocks[0] else {
+            panic!("title")
+        };
         assert_eq!(title.kind, Kind::Heading(1));
-        let Inline::Text { text, .. } = &title.inlines[0] else { panic!("text") };
+        let Inline::Text { text, .. } = &title.inlines[0] else {
+            panic!("text")
+        };
         assert_eq!(text, "Rapport & bilan");
 
-        let Block::Para(p) = &doc.blocks[1] else { panic!("paragraph") };
+        let Block::Para(p) = &doc.blocks[1] else {
+            panic!("paragraph")
+        };
         assert_eq!(p.align, Align::Center);
         // The two bold red runs are merged, the tab and the link keep their own.
-        let Inline::Text { text, format, link } = &p.inlines[0] else { panic!("text") };
+        let Inline::Text { text, format, link } = &p.inlines[0] else {
+            panic!("text")
+        };
         assert_eq!(text, "Gras rouge");
         assert!(format.bold);
         assert_eq!(format.color, Some(Color32::from_rgb(255, 0, 0)));
         assert_eq!(format.size, Some(14.0));
         assert!(link.is_none());
-        let Some(Inline::Text { link, .. }) = p.inlines.last() else { panic!("link") };
+        let Some(Inline::Text { link, .. }) = p.inlines.last() else {
+            panic!("link")
+        };
         assert_eq!(link.as_deref(), Some("https://example.org"));
 
         let markers: Vec<_> = (2..5)
@@ -1404,14 +1527,23 @@ mod tests {
             .collect();
         assert_eq!(markers, ["1.", "2.", "•"]);
 
-        let Block::Table(table) = &doc.blocks[5] else { panic!("table") };
+        let Block::Table(table) = &doc.blocks[5] else {
+            panic!("table")
+        };
         assert_eq!(table.rows.len(), 2);
-        assert_eq!(table.rows[0][0].fill, Some(Color32::from_rgb(0xDD, 0xDD, 0xDD)));
+        assert_eq!(
+            table.rows[0][0].fill,
+            Some(Color32::from_rgb(0xDD, 0xDD, 0xDD))
+        );
         assert_eq!(table.rows[1][0].span, 2);
         assert_eq!(table.widths, [2000.0, 4000.0]);
 
-        let Block::Para(image) = &doc.blocks[6] else { panic!("image") };
-        let Inline::Image { rel, size } = &image.inlines[0] else { panic!("image") };
+        let Block::Para(image) = &doc.blocks[6] else {
+            panic!("image")
+        };
+        let Inline::Image { rel, size } = &image.inlines[0] else {
+            panic!("image")
+        };
         assert_eq!(rel, "rId9");
         assert_eq!(*size, Some([100.0, 50.0]));
         assert!(doc.images.contains_key("rId9"));
@@ -1424,8 +1556,16 @@ mod tests {
         ctx.abstracts.insert(
             "0".into(),
             vec![
-                Level { format: "decimal".into(), text: "%1.".into(), start: 1 },
-                Level { format: "lowerLetter".into(), text: "%2)".into(), start: 1 },
+                Level {
+                    format: "decimal".into(),
+                    text: "%1.".into(),
+                    start: 1,
+                },
+                Level {
+                    format: "lowerLetter".into(),
+                    text: "%2)".into(),
+                    start: 1,
+                },
             ],
         );
         ctx.nums.insert("7".into(), "0".into());
@@ -1477,7 +1617,11 @@ mod tests {
         let _ = fs::remove_file(&path);
         let loaded = &plugin.loaded[&path];
         assert!(loaded.doc.is_ok());
-        assert!(loaded.heights.iter().all(|h| *h > 0.0), "{:?}", loaded.heights);
+        assert!(
+            loaded.heights.iter().all(|h| *h > 0.0),
+            "{:?}",
+            loaded.heights
+        );
         assert!(loaded.textures["rId9"].is_some());
     }
 }

@@ -45,10 +45,20 @@ enum Row<'a> {
 fn visible(problems: &[Problem], errors: bool, warnings: bool) -> Vec<Problem> {
     let mut shown: Vec<Problem> = problems
         .iter()
-        .filter(|p| (p.severity == 1 && errors) || (p.severity == 2 && warnings) || (p.severity == 3 && warnings))
+        .filter(|p| {
+            (p.severity == 1 && errors)
+                || (p.severity == 2 && warnings)
+                || (p.severity == 3 && warnings)
+        })
         .cloned()
         .collect();
-    shown.sort_by(|a, b| a.path.cmp(&b.path).then(a.severity.cmp(&b.severity)).then(a.line.cmp(&b.line)).then(a.column.cmp(&b.column)));
+    shown.sort_by(|a, b| {
+        a.path
+            .cmp(&b.path)
+            .then(a.severity.cmp(&b.severity))
+            .then(a.line.cmp(&b.line))
+            .then(a.column.cmp(&b.column))
+    });
     shown
 }
 
@@ -87,19 +97,45 @@ impl BuiltinPlugin for ProblemsPlugin {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             for (label, on, n, color) in [
-                ("Erreurs", &mut self.errors, errors, Color32::from_rgb(0xF0, 0x56, 0x56)),
-                ("Avertissements", &mut self.warnings, warnings, Color32::from_rgb(0xE6, 0xB5, 0x4A)),
+                (
+                    "Erreurs",
+                    &mut self.errors,
+                    errors,
+                    Color32::from_rgb(0xF0, 0x56, 0x56),
+                ),
+                (
+                    "Avertissements",
+                    &mut self.warnings,
+                    warnings,
+                    Color32::from_rgb(0xE6, 0xB5, 0x4A),
+                ),
             ] {
                 let text = format!("{label} {n}");
-                let galley = ui.painter().layout_no_wrap(text, FontId::proportional(12.5), if *on { t.text } else { t.text_secondary });
-                let (rect, response) = ui.allocate_exact_size(egui::vec2(galley.size().x + 28.0, 24.0), egui::Sense::click());
+                let galley = ui.painter().layout_no_wrap(
+                    text,
+                    FontId::proportional(12.5),
+                    if *on { t.text } else { t.text_secondary },
+                );
+                let (rect, response) = ui.allocate_exact_size(
+                    egui::vec2(galley.size().x + 28.0, 24.0),
+                    egui::Sense::click(),
+                );
                 if *on {
                     ui.painter().rect_filled(rect, 5.0, t.hover);
                 } else if response.hovered() {
-                    ui.painter().rect_filled(rect, 5.0, t.hover.gamma_multiply(0.6));
+                    ui.painter()
+                        .rect_filled(rect, 5.0, t.hover.gamma_multiply(0.6));
                 }
-                ui.painter().circle_filled(egui::pos2(rect.left() + 12.0, rect.center().y), 4.0, color);
-                ui.painter().galley(egui::pos2(rect.left() + 22.0, rect.center().y - galley.size().y / 2.0), galley, t.text);
+                ui.painter().circle_filled(
+                    egui::pos2(rect.left() + 12.0, rect.center().y),
+                    4.0,
+                    color,
+                );
+                ui.painter().galley(
+                    egui::pos2(rect.left() + 22.0, rect.center().y - galley.size().y / 2.0),
+                    galley,
+                    t.text,
+                );
                 if response.clicked() {
                     *on = !*on;
                 }
@@ -120,7 +156,10 @@ impl BuiltinPlugin for ProblemsPlugin {
         let mut index = 0;
         while index < shown.len() {
             let path = &shown[index].path;
-            let end = shown[index..].iter().position(|p| &p.path != path).map_or(shown.len(), |n| index + n);
+            let end = shown[index..]
+                .iter()
+                .position(|p| &p.path != path)
+                .map_or(shown.len(), |n| index + n);
             rows.push(Row::File(path, end - index));
             if !self.collapsed.contains(path) {
                 rows.extend(shown[index..end].iter().map(Row::Item));
@@ -130,40 +169,103 @@ impl BuiltinPlugin for ProblemsPlugin {
         let root = host.root().to_path_buf();
         let mut open: Option<Problem> = None;
         let mut toggle: Option<PathBuf> = None;
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(ui, ROW_HEIGHT, rows.len(), |ui, range| {
-            ui.spacing_mut().item_spacing.y = 0.0;
-            for row in &rows[range] {
-                match row {
-                    Row::File(path, n) => {
-                        let (rect, response) = ui::row(ui, false);
-                        let collapsed = self.collapsed.contains(*path);
-                        ui::paint_chevron(ui, egui::pos2(rect.left() + 12.0, rect.center().y), !collapsed);
-                        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                        let end = ui::paint_text(ui, rect, rect.left() + 26.0, &name, t.text, ui::semibold(12.5));
-                        let folder = path.strip_prefix(&root).ok().and_then(|p| p.parent()).map(|p| p.display().to_string()).unwrap_or_default();
-                        let end = ui::paint_text(ui, rect, end + 8.0, &folder, t.text_secondary, FontId::proportional(12.0));
-                        ui::paint_text(ui, rect, end + 8.0, &n.to_string(), t.text_secondary, FontId::proportional(12.0));
-                        if response.clicked() {
-                            toggle = Some((*path).clone());
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .show_rows(ui, ROW_HEIGHT, rows.len(), |ui, range| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for row in &rows[range] {
+                    match row {
+                        Row::File(path, n) => {
+                            let (rect, response) = ui::row(ui, false);
+                            let collapsed = self.collapsed.contains(*path);
+                            ui::paint_chevron(
+                                ui,
+                                egui::pos2(rect.left() + 12.0, rect.center().y),
+                                !collapsed,
+                            );
+                            let name = path
+                                .file_name()
+                                .map(|n| n.to_string_lossy().into_owned())
+                                .unwrap_or_default();
+                            let end = ui::paint_text(
+                                ui,
+                                rect,
+                                rect.left() + 26.0,
+                                &name,
+                                t.text,
+                                ui::semibold(12.5),
+                            );
+                            let folder = path
+                                .strip_prefix(&root)
+                                .ok()
+                                .and_then(|p| p.parent())
+                                .map(|p| p.display().to_string())
+                                .unwrap_or_default();
+                            let end = ui::paint_text(
+                                ui,
+                                rect,
+                                end + 8.0,
+                                &folder,
+                                t.text_secondary,
+                                FontId::proportional(12.0),
+                            );
+                            ui::paint_text(
+                                ui,
+                                rect,
+                                end + 8.0,
+                                &n.to_string(),
+                                t.text_secondary,
+                                FontId::proportional(12.0),
+                            );
+                            if response.clicked() {
+                                toggle = Some((*path).clone());
+                            }
                         }
-                    }
-                    Row::Item(problem) => {
-                        let selected = self.selected.as_ref() == Some(&(problem.path.clone(), problem.line, problem.column));
-                        let (rect, response) = ui::row(ui, selected);
-                        let color = if problem.severity == 1 { Color32::from_rgb(0xF0, 0x56, 0x56) } else { Color32::from_rgb(0xE6, 0xB5, 0x4A) };
-                        ui.painter().circle_filled(egui::pos2(rect.left() + 38.0, rect.center().y), 4.0, color);
-                        let end = ui::paint_text(ui, rect, rect.left() + 50.0, &problem.message.lines().next().unwrap_or(""), t.text, FontId::proportional(12.5));
-                        let place = format!("{}:{}", problem.line + 1, problem.column + 1);
-                        let source = if problem.source.is_empty() { place } else { format!("{} · {place}", problem.source) };
-                        ui::paint_text(ui, rect, end + 10.0, &source, t.text_secondary, FontId::proportional(12.0));
-                        if response.clicked() {
-                            self.selected = Some((problem.path.clone(), problem.line, problem.column));
-                            open = Some((*problem).clone());
+                        Row::Item(problem) => {
+                            let selected = self.selected.as_ref()
+                                == Some(&(problem.path.clone(), problem.line, problem.column));
+                            let (rect, response) = ui::row(ui, selected);
+                            let color = if problem.severity == 1 {
+                                Color32::from_rgb(0xF0, 0x56, 0x56)
+                            } else {
+                                Color32::from_rgb(0xE6, 0xB5, 0x4A)
+                            };
+                            ui.painter().circle_filled(
+                                egui::pos2(rect.left() + 38.0, rect.center().y),
+                                4.0,
+                                color,
+                            );
+                            let end = ui::paint_text(
+                                ui,
+                                rect,
+                                rect.left() + 50.0,
+                                &problem.message.lines().next().unwrap_or(""),
+                                t.text,
+                                FontId::proportional(12.5),
+                            );
+                            let place = format!("{}:{}", problem.line + 1, problem.column + 1);
+                            let source = if problem.source.is_empty() {
+                                place
+                            } else {
+                                format!("{} · {place}", problem.source)
+                            };
+                            ui::paint_text(
+                                ui,
+                                rect,
+                                end + 10.0,
+                                &source,
+                                t.text_secondary,
+                                FontId::proportional(12.0),
+                            );
+                            if response.clicked() {
+                                self.selected =
+                                    Some((problem.path.clone(), problem.line, problem.column));
+                                open = Some((*problem).clone());
+                            }
                         }
                     }
                 }
-            }
-        });
+            });
         if let Some(path) = toggle
             && !self.collapsed.remove(&path)
         {
@@ -193,10 +295,28 @@ mod tests {
 
     #[test]
     fn problems_are_filtered_and_ordered_by_file_severity_and_line() {
-        let all = vec![problem("b.js", 3, 2), problem("a.js", 9, 2), problem("a.js", 5, 1), problem("a.js", 1, 2), problem("c.js", 0, 4)];
+        let all = vec![
+            problem("b.js", 3, 2),
+            problem("a.js", 9, 2),
+            problem("a.js", 5, 1),
+            problem("a.js", 1, 2),
+            problem("c.js", 0, 4),
+        ];
         let shown = visible(&all, true, true);
-        let order: Vec<(String, usize)> = shown.iter().map(|p| (p.path.display().to_string(), p.line)).collect();
-        assert_eq!(order, [("a.js".to_string(), 5), ("a.js".to_string(), 1), ("a.js".to_string(), 9), ("b.js".to_string(), 3)], "errors first, hints left out");
+        let order: Vec<(String, usize)> = shown
+            .iter()
+            .map(|p| (p.path.display().to_string(), p.line))
+            .collect();
+        assert_eq!(
+            order,
+            [
+                ("a.js".to_string(), 5),
+                ("a.js".to_string(), 1),
+                ("a.js".to_string(), 9),
+                ("b.js".to_string(), 3)
+            ],
+            "errors first, hints left out"
+        );
         assert_eq!(visible(&all, true, false).len(), 1);
         assert_eq!(visible(&all, false, true).len(), 3);
     }

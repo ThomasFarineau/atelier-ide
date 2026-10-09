@@ -66,7 +66,9 @@ impl Diagram {
     /// Draws the diagram scaled down to fit `max` (never up, unless `fill`), within the
     /// texture limit.
     pub fn image(&self, source: &str, max: egui::Vec2, fill: bool) -> egui::Image<'static> {
-        let max = max.max(egui::vec2(50.0, 50.0)).min(egui::vec2(2048.0, 2048.0));
+        let max = max
+            .max(egui::vec2(50.0, 50.0))
+            .min(egui::vec2(2048.0, 2048.0));
         let mut scale = (max.x / self.size.x).min(max.y / self.size.y);
         if !fill {
             scale = scale.min(1.0);
@@ -101,9 +103,19 @@ fn rasterize(svg: &str) -> Result<(Vec<u8>, egui::Vec2), String> {
     let natural = tree.size();
     let long = natural.width().max(natural.height()).max(1.0);
     let scale = (MAX_TEXTURE / long).min(MAX_UPSCALE);
-    let (width, height) = ((natural.width() * scale).ceil().max(1.0) as u32, (natural.height() * scale).ceil().max(1.0) as u32);
+    let (width, height) = (
+        (natural.width() * scale).ceil().max(1.0) as u32,
+        (natural.height() * scale).ceil().max(1.0) as u32,
+    );
     let mut pixmap = tiny_skia::Pixmap::new(width, height).ok_or("Image trop grande")?;
-    resvg::render(&tree, tiny_skia::Transform::from_scale(width as f32 / natural.width(), height as f32 / natural.height()), &mut pixmap.as_mut());
+    resvg::render(
+        &tree,
+        tiny_skia::Transform::from_scale(
+            width as f32 / natural.width(),
+            height as f32 / natural.height(),
+        ),
+        &mut pixmap.as_mut(),
+    );
     let png = pixmap.encode_png().map_err(|e| e.to_string())?;
     Ok((png, egui::vec2(natural.width(), natural.height())))
 }
@@ -111,10 +123,15 @@ fn rasterize(svg: &str) -> Result<(Vec<u8>, egui::Vec2), String> {
 /// Draws a diagram now, on this thread. The interface goes through [`render_async`].
 pub fn render_blocking(source: &str) -> Rendered {
     if source.len() > MAX_SOURCE {
-        return Err(format!("Diagramme trop volumineux ({} Ko, au plus {} Ko)", source.len() / 1000, MAX_SOURCE / 1000));
+        return Err(format!(
+            "Diagramme trop volumineux ({} Ko, au plus {} Ko)",
+            source.len() / 1000,
+            MAX_SOURCE / 1000
+        ));
     }
     catch_unwind(AssertUnwindSafe(|| {
-        let svg = mermaid_rs_renderer::render_with_options(source, RenderOptions::modern()).map_err(|e| e.to_string())?;
+        let svg = mermaid_rs_renderer::render_with_options(source, RenderOptions::modern())
+            .map_err(|e| e.to_string())?;
         let (png, size) = rasterize(&svg)?;
         Ok(Diagram {
             size: view_box_size(&svg).unwrap_or(size),
@@ -143,7 +160,10 @@ pub fn render_async(source: &str, ctx: &egui::Context) -> Option<Rendered> {
     match jobs.get(&key) {
         Some(Slot::Done(result)) => return Some(result.clone()),
         Some(Slot::Drawing(since)) if since.elapsed() > GIVE_UP => {
-            return Some(Err(format!("Délai dépassé ({} s) : diagramme trop complexe", GIVE_UP.as_secs())));
+            return Some(Err(format!(
+                "Délai dépassé ({} s) : diagramme trop complexe",
+                GIVE_UP.as_secs()
+            )));
         }
         Some(Slot::Drawing(_)) => return None,
         None => {}
@@ -156,15 +176,30 @@ pub fn render_async(source: &str, ctx: &egui::Context) -> Option<Rendered> {
     let (source, ctx) = (source.to_string(), ctx.clone());
     // Announced before the thread starts, so that it is listed from the first frame on.
     let task = crate::tasks::start("Génération du diagramme Mermaid");
-    let spawned = std::thread::Builder::new().name("mermaid".into()).stack_size(WORKER_STACK).spawn(move || {
-        let _task = task;
-        let result = render_blocking(&source);
-        JOBS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(key, Slot::Done(result));
-        ctx.request_repaint();
-    });
+    let spawned = std::thread::Builder::new()
+        .name("mermaid".into())
+        .stack_size(WORKER_STACK)
+        .spawn(move || {
+            let _task = task;
+            let result = render_blocking(&source);
+            JOBS.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get_or_insert_with(HashMap::new)
+                .insert(key, Slot::Done(result));
+            ctx.request_repaint();
+        });
     if spawned.is_err() {
-        jobs.insert(key, Slot::Done(Err("Impossible de démarrer le calcul du diagramme".into())));
-        return jobs.get(&key).and_then(|slot| if let Slot::Done(r) = slot { Some(r.clone()) } else { None });
+        jobs.insert(
+            key,
+            Slot::Done(Err("Impossible de démarrer le calcul du diagramme".into())),
+        );
+        return jobs.get(&key).and_then(|slot| {
+            if let Slot::Done(r) = slot {
+                Some(r.clone())
+            } else {
+                None
+            }
+        });
     }
     None
 }
@@ -182,7 +217,10 @@ fn drawing(ui: &mut egui::Ui) {
 fn export_refusal(size: egui::Vec2) -> Option<String> {
     let pixels = size.x as f64 * size.y as f64;
     (pixels > MAX_EXPORT_PIXELS).then(|| {
-        format!("image de {:.0} × {:.0} px trop grande pour un PNG, exportez en SVG", size.x, size.y)
+        format!(
+            "image de {:.0} × {:.0} px trop grande pour un PNG, exportez en SVG",
+            size.x, size.y
+        )
     })
 }
 
@@ -193,7 +231,12 @@ pub fn export_png(diagram: &Diagram, path: &Path) -> Result<(), String> {
     }
     let svg = String::from_utf8_lossy(&diagram.svg);
     catch_unwind(AssertUnwindSafe(|| {
-        mermaid_rs_renderer::write_output_png(&svg, path, &RenderConfig::default(), &Theme::modern())
+        mermaid_rs_renderer::write_output_png(
+            &svg,
+            path,
+            &RenderConfig::default(),
+            &Theme::modern(),
+        )
     }))
     .map_err(|_| "Export impossible".to_string())?
     .map_err(|e| e.to_string())
@@ -213,15 +256,22 @@ fn export_in_background(
     ctx: egui::Context,
 ) {
     let task = crate::tasks::start(title);
-    let spawned = std::thread::Builder::new().name("mermaid-export".into()).stack_size(WORKER_STACK).spawn(move || {
-        let _task = task;
-        let result = if png { export_png(&diagram, &target) } else { export_svg(&diagram, &target) };
-        *message.lock().unwrap_or_else(|e| e.into_inner()) = Some(match result {
-            Ok(()) => (false, format!("Exporté : {}", target.display())),
-            Err(e) => (true, format!("Export impossible : {e}")),
+    let spawned = std::thread::Builder::new()
+        .name("mermaid-export".into())
+        .stack_size(WORKER_STACK)
+        .spawn(move || {
+            let _task = task;
+            let result = if png {
+                export_png(&diagram, &target)
+            } else {
+                export_svg(&diagram, &target)
+            };
+            *message.lock().unwrap_or_else(|e| e.into_inner()) = Some(match result {
+                Ok(()) => (false, format!("Exporté : {}", target.display())),
+                Err(e) => (true, format!("Export impossible : {e}")),
+            });
+            ctx.request_repaint();
         });
-        ctx.request_repaint();
-    });
     let _ = spawned;
 }
 
@@ -331,7 +381,6 @@ impl BuiltinPlugin for MermaidPlugin {
         Some("mermaid")
     }
 
-
     fn commands(&self) -> Vec<Command> {
         [
             ("mermaid.text", "Mermaid : éditeur seul"),
@@ -376,30 +425,56 @@ impl BuiltinPlugin for MermaidPlugin {
             ui.add_space(8.0);
             let ready = rendered.as_ref().and_then(|r| r.as_ref().ok()).cloned();
             for (label, title, png, filter, extension) in [
-                ("Exporter PNG", "Export du diagramme en PNG", true, "Image PNG", "png"),
-                ("Exporter SVG", "Export du diagramme en SVG", false, "Image SVG", "svg"),
+                (
+                    "Exporter PNG",
+                    "Export du diagramme en PNG",
+                    true,
+                    "Image PNG",
+                    "png",
+                ),
+                (
+                    "Exporter SVG",
+                    "Export du diagramme en SVG",
+                    false,
+                    "Image SVG",
+                    "svg",
+                ),
             ] {
-                if ui.add_enabled(ready.is_some(), egui::Button::new(label)).clicked()
+                if ui
+                    .add_enabled(ready.is_some(), egui::Button::new(label))
+                    .clicked()
                     && let Some(diagram) = ready.clone()
                     && let Some(target) = rfd::FileDialog::new()
                         .set_file_name(stem(path, extension))
                         .add_filter(filter, &[extension])
                         .save_file()
                 {
-                    export_in_background(title, diagram, target, png, self.message.clone(), ui.ctx().clone());
+                    export_in_background(
+                        title,
+                        diagram,
+                        target,
+                        png,
+                        self.message.clone(),
+                        ui.ctx().clone(),
+                    );
                 }
             }
             ui.separator();
             if ui.button("−").clicked() {
                 *zoom = (*zoom / 1.25).max(0.25);
             }
-            if ui.button(format!("{:.0} %", *zoom * 100.0)).on_hover_text("Ajuster à la fenêtre").clicked() {
+            if ui
+                .button(format!("{:.0} %", *zoom * 100.0))
+                .on_hover_text("Ajuster à la fenêtre")
+                .clicked()
+            {
                 *zoom = 1.0;
             }
             if ui.button("+").clicked() {
                 *zoom = (*zoom * 1.25).min(4.0);
             }
-            if let Some((error, message)) = &*self.message.lock().unwrap_or_else(|e| e.into_inner()) {
+            if let Some((error, message)) = &*self.message.lock().unwrap_or_else(|e| e.into_inner())
+            {
                 ui.add_space(8.0);
                 ui.colored_label(if *error { t.error } else { t.text_secondary }, message);
             }
@@ -408,14 +483,18 @@ impl BuiltinPlugin for MermaidPlugin {
 
         let diagram = match rendered {
             None => {
-                egui::Frame::new().inner_margin(Margin::same(18)).show(ui, drawing);
+                egui::Frame::new()
+                    .inner_margin(Margin::same(18))
+                    .show(ui, drawing);
                 return;
             }
             Some(Ok(diagram)) => diagram,
             Some(Err(error)) => {
-                egui::Frame::new().inner_margin(Margin::same(18)).show(ui, |ui| {
-                    ui.colored_label(t.error, format!("Diagramme invalide : {error}"));
-                });
+                egui::Frame::new()
+                    .inner_margin(Margin::same(18))
+                    .show(ui, |ui| {
+                        ui.colored_label(t.error, format!("Diagramme invalide : {error}"));
+                    });
                 return;
             }
         };
@@ -432,16 +511,21 @@ impl BuiltinPlugin for MermaidPlugin {
             .id_salt(("mermaid_preview", path))
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                egui::Frame::new().inner_margin(Margin::same(18)).show(ui, |ui| {
-                    ui.add(diagram.image(text, max, true));
-                });
+                egui::Frame::new()
+                    .inner_margin(Margin::same(18))
+                    .show(ui, |ui| {
+                        ui.add(diagram.image(text, max, true));
+                    });
             });
     }
 }
 
 /// Suggested name of an export: the document name with the extension of the image.
 fn stem(path: &Path, extension: &str) -> String {
-    let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("diagramme");
+    let name = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("diagramme");
     format!("{name}.{extension}")
 }
 
@@ -449,7 +533,8 @@ fn stem(path: &Path, extension: &str) -> String {
 mod tests {
     use super::*;
 
-    const FLOW: &str = "flowchart LR\n  A[Début] --> B{Choix}\n  B -->|oui| C[Fin]\n  B -->|non| A\n";
+    const FLOW: &str =
+        "flowchart LR\n  A[Début] --> B{Choix}\n  B -->|oui| C[Fin]\n  B -->|non| A\n";
 
     #[test]
     fn mmd_files_get_a_split_layout_by_default() {
@@ -465,15 +550,27 @@ mod tests {
     fn diagrams_render_to_svg_and_export_to_png() {
         let diagram = render_blocking(FLOW).unwrap();
         assert!(String::from_utf8_lossy(&diagram.svg).contains("<svg"));
-        assert!(diagram.size.x > 50.0 && diagram.size.x < 2000.0, "{:?}", diagram.size);
+        assert!(
+            diagram.size.x > 50.0 && diagram.size.x < 2000.0,
+            "{:?}",
+            diagram.size
+        );
         let dir = std::env::temp_dir().join(format!("atelier-mmd-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         export_png(&diagram, &dir.join("a.png")).unwrap();
         export_svg(&diagram, &dir.join("a.svg")).unwrap();
-        assert_eq!(&diagram.png[1..4], b"PNG", "the picture shown is rasterized once, off the interface");
+        assert_eq!(
+            &diagram.png[1..4],
+            b"PNG",
+            "the picture shown is rasterized once, off the interface"
+        );
         let png = std::fs::read(dir.join("a.png")).unwrap();
         assert_eq!(&png[1..4], b"PNG");
-        assert!(std::fs::read_to_string(dir.join("a.svg")).unwrap().contains("<svg"));
+        assert!(
+            std::fs::read_to_string(dir.join("a.svg"))
+                .unwrap()
+                .contains("<svg")
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -523,7 +620,9 @@ mod tests {
         let mut text = FLOW.to_string();
         frames_until_drawn(&mut plugin, &ctx, &mut text);
         let _ = ctx.run(Default::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| plugin.preview(ui, Path::new("a.mmd"), &mut text, None));
+            egui::CentralPanel::default().show(ctx, |ui| {
+                plugin.preview(ui, Path::new("a.mmd"), &mut text, None)
+            });
         });
         assert_eq!(plugin.uris.len(), 1);
     }
@@ -533,9 +632,15 @@ mod tests {
         let ctx = egui::Context::default();
         let source = "flowchart LR\n  X1 --> X2\n  X2 --> X3\n";
         // The first call only starts the work.
-        assert!(render_async(source, &ctx).is_none(), "nothing blocks the interface");
         assert!(
-            crate::tasks::running().iter().any(|t| t.title.contains("Mermaid")) || render_async(source, &ctx).is_some(),
+            render_async(source, &ctx).is_none(),
+            "nothing blocks the interface"
+        );
+        assert!(
+            crate::tasks::running()
+                .iter()
+                .any(|t| t.title.contains("Mermaid"))
+                || render_async(source, &ctx).is_some(),
             "listed as a task while it is drawn"
         );
         let mut drawn = None;

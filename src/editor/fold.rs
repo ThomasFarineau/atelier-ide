@@ -30,7 +30,9 @@ fn rank(open: u8) -> u8 {
 }
 
 fn line_of(lines: &[usize], pos: usize) -> usize {
-    lines.partition_point(|&start| start <= pos).saturating_sub(1)
+    lines
+        .partition_point(|&start| start <= pos)
+        .saturating_sub(1)
 }
 
 /// The regions of `text`, sorted by first line, one per line (the braces win over the
@@ -39,7 +41,23 @@ pub fn regions(text: &str, lines: &[usize], language: &str) -> Vec<Region> {
     if text.len() > LIMIT {
         return Vec::new();
     }
-    let c_like = matches!(language, "rs" | "js" | "jsx" | "ts" | "tsx" | "java" | "c" | "cpp" | "h" | "cs" | "go" | "php" | "css" | "kt" | "swift");
+    let c_like = matches!(
+        language,
+        "rs" | "js"
+            | "jsx"
+            | "ts"
+            | "tsx"
+            | "java"
+            | "c"
+            | "cpp"
+            | "h"
+            | "cs"
+            | "go"
+            | "php"
+            | "css"
+            | "kt"
+            | "swift"
+    );
     let line_comment: Option<&str> = match language {
         _ if c_like => Some("//"),
         "py" | "sh" | "yaml" | "yml" | "toml" | "rb" => Some("#"),
@@ -62,10 +80,21 @@ pub fn regions(text: &str, lines: &[usize], language: &str) -> Vec<Region> {
         }
         match b {
             b'/' if c_like && bytes.get(i + 1) == Some(&b'*') => {
-                let end = text[i + 2..].find("*/").map_or(text.len(), |e| i + 2 + e + 2);
+                let end = text[i + 2..]
+                    .find("*/")
+                    .map_or(text.len(), |e| i + 2 + e + 2);
                 let (first, last) = (line_of(lines, i), line_of(lines, end.saturating_sub(1)));
                 if last > first && end >= i + 4 {
-                    found.push((4, Region { open: i, first, last, head_end: i + 2, tail_start: end - 2 }));
+                    found.push((
+                        4,
+                        Region {
+                            open: i,
+                            first,
+                            last,
+                            head_end: i + 2,
+                            tail_start: end - 2,
+                        },
+                    ));
                 }
                 i = end;
                 continue;
@@ -83,8 +112,12 @@ pub fn regions(text: &str, lines: &[usize], language: &str) -> Vec<Region> {
                         let rest = &text[i + 1..];
                         let mut chars = rest.chars();
                         let literal = match chars.next() {
-                            Some('\\') => rest.find('\'').filter(|&e| e > 0 && e <= 12).map(|e| e + 2),
-                            Some(c) if c != '\'' => (chars.next() == Some('\'')).then(|| c.len_utf8() + 2),
+                            Some('\\') => {
+                                rest.find('\'').filter(|&e| e > 0 && e <= 12).map(|e| e + 2)
+                            }
+                            Some(c) if c != '\'' => {
+                                (chars.next() == Some('\'')).then(|| c.len_utf8() + 2)
+                            }
                             _ => None,
                         };
                         i += literal.unwrap_or(1);
@@ -119,7 +152,16 @@ pub fn regions(text: &str, lines: &[usize], language: &str) -> Vec<Region> {
                     stack.truncate(at);
                     let (first, last) = (line_of(lines, start), line_of(lines, i));
                     if last > first {
-                        found.push((rank(open), Region { open: start, first, last, head_end: start + 1, tail_start: i }));
+                        found.push((
+                            rank(open),
+                            Region {
+                                open: start,
+                                first,
+                                last,
+                                head_end: start + 1,
+                                tail_start: i,
+                            },
+                        ));
                     }
                 }
             }
@@ -129,7 +171,12 @@ pub fn regions(text: &str, lines: &[usize], language: &str) -> Vec<Region> {
     }
     imports(text, lines, &mut found);
     // One region per first line: the strongest, then the one that closes last.
-    found.sort_by(|a, b| a.1.first.cmp(&b.1.first).then(a.0.cmp(&b.0)).then(b.1.last.cmp(&a.1.last)));
+    found.sort_by(|a, b| {
+        a.1.first
+            .cmp(&b.1.first)
+            .then(a.0.cmp(&b.0))
+            .then(b.1.last.cmp(&a.1.last))
+    });
     found.dedup_by_key(|(_, r)| r.first);
     found.into_iter().map(|(_, r)| r).collect()
 }
@@ -159,8 +206,21 @@ fn imports(text: &str, lines: &[usize], out: &mut Vec<(u8, Region)>) {
         }
         if end > line {
             let last_end = lines.get(end + 1).map_or(text.len(), |&n| n - 1);
-            let last_end = if text[..last_end].ends_with('\r') { last_end - 1 } else { last_end };
-            out.push((5, Region { open: lines[line], first: line, last: end, head_end: lines[line] + keyword.len(), tail_start: last_end }));
+            let last_end = if text[..last_end].ends_with('\r') {
+                last_end - 1
+            } else {
+                last_end
+            };
+            out.push((
+                5,
+                Region {
+                    open: lines[line],
+                    first: line,
+                    last: end,
+                    head_end: lines[line] + keyword.len(),
+                    tail_start: last_end,
+                },
+            ));
         }
         line = end + 1;
     }
@@ -189,11 +249,16 @@ mod tests {
     use super::*;
 
     fn lines_of(text: &str) -> Vec<usize> {
-        std::iter::once(0).chain(text.match_indices('\n').map(|(i, _)| i + 1)).collect()
+        std::iter::once(0)
+            .chain(text.match_indices('\n').map(|(i, _)| i + 1))
+            .collect()
     }
 
     fn spans(text: &str, language: &str) -> Vec<(usize, usize)> {
-        regions(text, &lines_of(text), language).iter().map(|r| (r.first, r.last)).collect()
+        regions(text, &lines_of(text), language)
+            .iter()
+            .map(|r| (r.first, r.last))
+            .collect()
     }
 
     #[test]
@@ -207,7 +272,11 @@ mod tests {
         let text = "const a = \"{\";\n// }\nfoo({\n  b: 1,\n});\n";
         assert_eq!(spans(text, "js"), [(2, 4)]);
         let regions = regions(text, &lines_of(text), "js");
-        assert_eq!(&text[regions[0].head_end - 1..regions[0].head_end], "{", "the brace wins over the parenthesis");
+        assert_eq!(
+            &text[regions[0].head_end - 1..regions[0].head_end],
+            "{",
+            "the brace wins over the parenthesis"
+        );
     }
 
     #[test]
@@ -218,7 +287,8 @@ mod tests {
 
     #[test]
     fn block_comments_and_import_runs_fold() {
-        let text = "import a from 'a';\nimport b from 'b';\nimport c from 'c';\n/*\n * doc\n */\nlet x;\n";
+        let text =
+            "import a from 'a';\nimport b from 'b';\nimport c from 'c';\n/*\n * doc\n */\nlet x;\n";
         assert_eq!(spans(text, "js"), [(0, 2), (3, 5)]);
     }
 

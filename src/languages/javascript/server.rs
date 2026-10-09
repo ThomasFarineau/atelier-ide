@@ -46,14 +46,21 @@ pub fn managed_dir() -> PathBuf {
 
 fn executable_names(name: &str) -> Vec<String> {
     if cfg!(windows) {
-        vec![format!("{name}.cmd"), format!("{name}.exe"), format!("{name}.bat")]
+        vec![
+            format!("{name}.cmd"),
+            format!("{name}.exe"),
+            format!("{name}.bat"),
+        ]
     } else {
         vec![name.to_string()]
     }
 }
 
 fn find_in(dir: &Path, name: &str) -> Option<PathBuf> {
-    executable_names(name).into_iter().map(|n| dir.join(n)).find(|p| p.is_file())
+    executable_names(name)
+        .into_iter()
+        .map(|n| dir.join(n))
+        .find(|p| p.is_file())
 }
 
 /// `typescript-language-server`: the project's own, then the IDE's, then the one on the PATH.
@@ -62,7 +69,8 @@ pub fn find_server(project: &Path) -> Option<PathBuf> {
     find_in(&project.join("node_modules").join(".bin"), NAME)
         .or_else(|| find_in(&managed_dir().join("node_modules").join(".bin"), NAME))
         .or_else(|| {
-            std::env::var_os("PATH").and_then(|paths| std::env::split_paths(&paths).find_map(|dir| find_in(&dir, NAME)))
+            std::env::var_os("PATH")
+                .and_then(|paths| std::env::split_paths(&paths).find_map(|dir| find_in(&dir, NAME)))
         })
 }
 
@@ -70,7 +78,12 @@ pub fn find_server(project: &Path) -> Option<PathBuf> {
 pub fn find_tsserver(project: &Path) -> Option<PathBuf> {
     [project.to_path_buf(), managed_dir()]
         .into_iter()
-        .map(|dir| dir.join("node_modules").join("typescript").join("lib").join("tsserver.js"))
+        .map(|dir| {
+            dir.join("node_modules")
+                .join("typescript")
+                .join("lib")
+                .join("tsserver.js")
+        })
         .find(|p| p.is_file())
 }
 
@@ -90,7 +103,10 @@ pub fn launch(project: &Path) -> Option<Launch> {
 
 fn npm() -> Command {
     let mut command = Command::new(if cfg!(windows) { "npm.cmd" } else { "npm" });
-    command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -145,9 +161,13 @@ pub fn install() {
             match result {
                 Ok(()) => {
                     c.restart_requested = true;
-                    c.messages.push(("Serveur de langage JavaScript installé".into(), false));
+                    c.messages
+                        .push(("Serveur de langage JavaScript installé".into(), false));
                 }
-                Err(e) => c.messages.push((format!("Installation du serveur de langage impossible : {e}"), true)),
+                Err(e) => c.messages.push((
+                    format!("Installation du serveur de langage impossible : {e}"),
+                    true,
+                )),
             }
         });
     });
@@ -182,7 +202,12 @@ mod tests {
         std::fs::write(tsserver.join("tsserver.js"), "").unwrap();
         let launch = launch(&dir).unwrap();
         assert_eq!(launch.args, ["--stdio"]);
-        assert!(launch.options["tsserver"]["path"].as_str().unwrap().ends_with("tsserver.js"));
+        assert!(
+            launch.options["tsserver"]["path"]
+                .as_str()
+                .unwrap()
+                .ends_with("tsserver.js")
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

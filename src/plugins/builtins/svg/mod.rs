@@ -39,7 +39,6 @@ impl BuiltinPlugin for SvgPlugin {
         Some("svg")
     }
 
-
     fn commands(&self) -> Vec<Command> {
         [
             ("svg.text", "SVG : éditeur seul"),
@@ -88,11 +87,16 @@ impl BuiltinPlugin for SvgPlugin {
         let size = (ui.available_size() - egui::vec2(36.0, 36.0))
             .max(egui::vec2(100.0, 100.0))
             .min(egui::vec2(2000.0, 2000.0));
-        egui::Frame::new().inner_margin(Margin::same(18)).show(ui, |ui| {
-            ui.centered_and_justified(|ui| {
-                ui.add(egui::Image::from_bytes(uri, text.clone().into_bytes()).fit_to_exact_size(size));
+        egui::Frame::new()
+            .inner_margin(Margin::same(18))
+            .show(ui, |ui| {
+                ui.centered_and_justified(|ui| {
+                    ui.add(
+                        egui::Image::from_bytes(uri, text.clone().into_bytes())
+                            .fit_to_exact_size(size),
+                    );
+                });
             });
-        });
     }
 }
 

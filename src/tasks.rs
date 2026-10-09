@@ -36,7 +36,11 @@ pub struct Task(u64);
 /// Announces a task. Keep the returned value for as long as it runs.
 pub fn start(title: impl Into<String>) -> Task {
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
-    tasks().push(Entry { id, title: title.into(), started: Instant::now() });
+    tasks().push(Entry {
+        id,
+        title: title.into(),
+        started: Instant::now(),
+    });
     Task(id)
 }
 
@@ -50,7 +54,10 @@ impl Drop for Task {
 pub fn running() -> Vec<Info> {
     tasks()
         .iter()
-        .map(|e| Info { title: e.title.clone(), elapsed: e.started.elapsed() })
+        .map(|e| Info {
+            title: e.title.clone(),
+            elapsed: e.started.elapsed(),
+        })
         .collect()
 }
 
@@ -73,6 +80,9 @@ mod tests {
             panic!("boom");
         })
         .join();
-        assert!(running().iter().all(|i| i.title != marker2), "the guard went with the thread");
+        assert!(
+            running().iter().all(|i| i.title != marker2),
+            "the guard went with the thread"
+        );
     }
 }

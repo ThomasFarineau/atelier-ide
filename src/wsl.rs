@@ -66,10 +66,28 @@ mod tests {
             distro: "Ubuntu".into(),
             linux: "/home/thomas/workspace".into(),
         };
-        assert_eq!(linux(r"\\?\UNC\wsl.localhost\Ubuntu\home\thomas\workspace"), Some(home.clone()));
-        assert_eq!(linux(r"\\wsl.localhost\Ubuntu\home\thomas\workspace\"), Some(home.clone()));
-        assert_eq!(linux(r"\\wsl$\Debian\srv"), Some(WslPath { distro: "Debian".into(), linux: "/srv".into() }));
-        assert_eq!(linux(r"\\wsl.localhost\Ubuntu"), Some(WslPath { distro: "Ubuntu".into(), linux: "/".into() }));
+        assert_eq!(
+            linux(r"\\?\UNC\wsl.localhost\Ubuntu\home\thomas\workspace"),
+            Some(home.clone())
+        );
+        assert_eq!(
+            linux(r"\\wsl.localhost\Ubuntu\home\thomas\workspace\"),
+            Some(home.clone())
+        );
+        assert_eq!(
+            linux(r"\\wsl$\Debian\srv"),
+            Some(WslPath {
+                distro: "Debian".into(),
+                linux: "/srv".into()
+            })
+        );
+        assert_eq!(
+            linux(r"\\wsl.localhost\Ubuntu"),
+            Some(WslPath {
+                distro: "Ubuntu".into(),
+                linux: "/".into()
+            })
+        );
         assert_eq!(linux(r"\\server\share\x"), None);
         assert_eq!(linux(r"C:\Users\thomas"), None);
         assert_eq!(

@@ -38,8 +38,16 @@ use std::{
 
 const REPO: &str = "ThomasFarineau/atelier-ide";
 const APP_DIR: &str = "app";
-const EXE: &str = if cfg!(windows) { "atelier-ide.exe" } else { "atelier-ide" };
-const BOOTSTRAP: &str = if cfg!(windows) { "atelier.exe" } else { "atelier" };
+const EXE: &str = if cfg!(windows) {
+    "atelier-ide.exe"
+} else {
+    "atelier-ide"
+};
+const BOOTSTRAP: &str = if cfg!(windows) {
+    "atelier.exe"
+} else {
+    "atelier"
+};
 /// The check must never hold the start of the IDE for long.
 const CHECK_TIMEOUT: Duration = Duration::from_secs(4);
 /// With a path to open, the check for an update waits at least this long since the last one.
@@ -58,7 +66,10 @@ fn main() {
             Err(e) => format!("Impossible d'installer la commande : {e}"),
         };
         eprintln!("{message}");
-        rfd::MessageDialog::new().set_title("Atelier").set_description(message).show();
+        rfd::MessageDialog::new()
+            .set_title("Atelier")
+            .set_description(message)
+            .show();
         return;
     }
     let mut log = String::new();
@@ -74,7 +85,9 @@ fn main() {
     let _ = fs::write(dir.join("bootstrap.log"), &log);
     let app = dir.join(APP_DIR).join(EXE);
     if !app.exists() {
-        fail(&format!("Atelier IDE n'est pas installé et n'a pas pu être téléchargé.\n\n{log}"));
+        fail(&format!(
+            "Atelier IDE n'est pas installé et n'a pas pu être téléchargé.\n\n{log}"
+        ));
     }
     if let Err(e) = Command::new(&app).args(args).spawn() {
         fail(&format!("Impossible de lancer {} : {e}", app.display()));
@@ -91,13 +104,24 @@ fn install_dir() -> PathBuf {
 
 fn fail(message: &str) -> ! {
     eprintln!("{message}");
-    rfd::MessageDialog::new().set_level(rfd::MessageLevel::Error).set_title("Atelier IDE").set_description(message).show();
+    rfd::MessageDialog::new()
+        .set_level(rfd::MessageLevel::Error)
+        .set_title("Atelier IDE")
+        .set_description(message)
+        .show();
     std::process::exit(1);
 }
 
 /// Numbers of a release tag: `v1.2.3` is [1, 2, 3]; a suffix such as `-beta` is ignored.
 fn version(tag: &str) -> Vec<u64> {
-    tag.trim().trim_start_matches(['v', 'V']).split('-').next().unwrap_or("").split('.').map(|n| n.parse().unwrap_or(0)).collect()
+    tag.trim()
+        .trim_start_matches(['v', 'V'])
+        .split('-')
+        .next()
+        .unwrap_or("")
+        .split('.')
+        .map(|n| n.parse().unwrap_or(0))
+        .collect()
 }
 
 /// Whether release `candidate` is newer than `installed`.
@@ -126,23 +150,35 @@ fn checksum_of(sums: &str, name: &str) -> Option<String> {
 }
 
 fn agent(timeout: Duration) -> ureq::Agent {
-    ureq::Agent::config_builder().timeout_global(Some(timeout)).build().into()
+    ureq::Agent::config_builder()
+        .timeout_global(Some(timeout))
+        .build()
+        .into()
 }
 
 /// A GET with the headers GitHub wants, and the token when there is one.
 fn get(agent: &ureq::Agent, url: &str, accept: &str) -> Result<Vec<u8>> {
-    let mut request = agent.get(url).header("User-Agent", "atelier-bootstrap").header("Accept", accept);
+    let mut request = agent
+        .get(url)
+        .header("User-Agent", "atelier-bootstrap")
+        .header("Accept", accept);
     if let Ok(token) = env::var("ATELIER_GITHUB_TOKEN") {
         request = request.header("Authorization", &format!("Bearer {token}"));
     }
     let mut response = request.call()?;
-    Ok(response.body_mut().with_config().limit(MAX_ARCHIVE).read_to_vec()?)
+    Ok(response
+        .body_mut()
+        .with_config()
+        .limit(MAX_ARCHIVE)
+        .read_to_vec()?)
 }
 
 /// Checks for a newer release and installs it. What happened, for the log.
 fn update(dir: &Path) -> Result<String> {
     cleanup(dir);
-    let installed = fs::read_to_string(dir.join(APP_DIR).join("VERSION")).ok().map(|v| v.trim().to_string());
+    let installed = fs::read_to_string(dir.join(APP_DIR).join("VERSION"))
+        .ok()
+        .map(|v| v.trim().to_string());
     let present = dir.join(APP_DIR).join(EXE).exists();
     let repo = env::var("ATELIER_REPO").unwrap_or_else(|_| REPO.to_string());
     let release: Value = serde_json::from_slice(&get(
@@ -150,23 +186,34 @@ fn update(dir: &Path) -> Result<String> {
         &format!("https://api.github.com/repos/{repo}/releases/latest"),
         "application/vnd.github+json",
     )?)?;
-    let tag = release["tag_name"].as_str().ok_or("réponse de GitHub sans version")?.to_string();
+    let tag = release["tag_name"]
+        .as_str()
+        .ok_or("réponse de GitHub sans version")?
+        .to_string();
     if present && installed.as_deref().is_some_and(|v| !newer(&tag, v)) {
         return Ok(format!("à jour ({tag})"));
     }
     let name = archive_name(env::consts::OS, env::consts::ARCH);
-    let assets = release["assets"].as_array().ok_or("release sans fichiers")?;
+    let assets = release["assets"]
+        .as_array()
+        .ok_or("release sans fichiers")?;
     let find = |wanted: &str| assets.iter().find(|a| a["name"] == wanted);
     let asset = find(&name).ok_or_else(|| format!("la release {tag} n'a pas de {name}"))?;
-    let sums = find("SHA256SUMS").ok_or_else(|| format!("la release {tag} n'a pas de SHA256SUMS"))?;
+    let sums =
+        find("SHA256SUMS").ok_or_else(|| format!("la release {tag} n'a pas de SHA256SUMS"))?;
     // A private repository serves its files through the API address, a public one directly.
     let address = |asset: &Value| -> String {
-        let key = if env::var_os("ATELIER_GITHUB_TOKEN").is_some() { "url" } else { "browser_download_url" };
+        let key = if env::var_os("ATELIER_GITHUB_TOKEN").is_some() {
+            "url"
+        } else {
+            "browser_download_url"
+        };
         asset[key].as_str().unwrap_or_default().to_string()
     };
     let slow = agent(DOWNLOAD_TIMEOUT);
     let sums = String::from_utf8(get(&slow, &address(sums), "application/octet-stream")?)?;
-    let expected = checksum_of(&sums, &name).ok_or_else(|| format!("{name} absent de SHA256SUMS"))?;
+    let expected =
+        checksum_of(&sums, &name).ok_or_else(|| format!("{name} absent de SHA256SUMS"))?;
     let archive = get(&slow, &address(asset), "application/octet-stream")?;
     let actual = hex(&Sha256::digest(&archive));
     if actual != expected {
@@ -184,12 +231,17 @@ fn update(dir: &Path) -> Result<String> {
 }
 
 fn now() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }
 
 /// Whether the last look for an update is old enough to make another one.
 fn check_is_due(dir: &Path) -> bool {
-    let last: u64 = fs::read_to_string(dir.join("last_check")).ok().and_then(|t| t.trim().parse().ok()).unwrap_or(0);
+    let last: u64 = fs::read_to_string(dir.join("last_check"))
+        .ok()
+        .and_then(|t| t.trim().parse().ok())
+        .unwrap_or(0);
     now().saturating_sub(last) >= CHECK_EVERY.as_secs()
 }
 
@@ -209,16 +261,23 @@ fn install_cli(dir: &Path) -> Result<String> {
              if (($p -split ';') -notcontains '{folder}') {{ \
              [Environment]::SetEnvironmentVariable('Path',($p.TrimEnd(';')+';{folder}'),'User') }}"
         );
-        let status = Command::new("powershell").args(["-NoProfile", "-NonInteractive", "-Command", &script]).status()?;
+        let status = Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .status()?;
         if !status.success() {
             return Err("PowerShell n'a pas pu modifier le PATH".into());
         }
-        Ok(format!("La commande « atelier » est disponible dans les nouveaux terminaux ({}).", dir.display()))
+        Ok(format!(
+            "La commande « atelier » est disponible dans les nouveaux terminaux ({}).",
+            dir.display()
+        ))
     }
     #[cfg(not(windows))]
     {
         let _ = dir;
-        let home = env::var_os("HOME").map(PathBuf::from).ok_or("HOME inconnu")?;
+        let home = env::var_os("HOME")
+            .map(PathBuf::from)
+            .ok_or("HOME inconnu")?;
         let bin = home.join(".local").join("bin");
         fs::create_dir_all(&bin)?;
         let link = bin.join("atelier");
@@ -228,7 +287,11 @@ fn install_cli(dir: &Path) -> Result<String> {
         Ok(if on_path {
             format!("La commande « atelier » est installée : {}", link.display())
         } else {
-            format!("Installée : {}. Ajoutez {} au PATH pour l'utiliser.", link.display(), bin.display())
+            format!(
+                "Installée : {}. Ajoutez {} au PATH pour l'utiliser.",
+                link.display(),
+                bin.display()
+            )
         })
     }
 }
@@ -250,7 +313,11 @@ fn install(dir: &Path, name: &str, archive: &[u8], tag: &str) -> Result<()> {
     let _ = fs::remove_dir_all(&staging);
     fs::create_dir_all(&staging)?;
     let unpacked = unpack(name, archive, &staging).and_then(|()| {
-        if staging.join(EXE).exists() { Ok(()) } else { Err(format!("{name} ne contient pas {EXE}").into()) }
+        if staging.join(EXE).exists() {
+            Ok(())
+        } else {
+            Err(format!("{name} ne contient pas {EXE}").into())
+        }
     });
     if let Err(e) = unpacked {
         let _ = fs::remove_dir_all(&staging);
@@ -288,7 +355,9 @@ fn unpack(name: &str, archive: &[u8], into: &Path) -> Result<()> {
         for index in 0..zip.len() {
             let mut entry = zip.by_index(index)?;
             // Names that climb out of the folder are skipped.
-            let Some(relative) = entry.enclosed_name() else { continue };
+            let Some(relative) = entry.enclosed_name() else {
+                continue;
+            };
             let target = into.join(relative);
             if entry.is_dir() {
                 fs::create_dir_all(&target)?;
@@ -347,7 +416,8 @@ mod tests {
     fn zipped(files: &[(&str, &[u8])]) -> Vec<u8> {
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         for (name, data) in files {
-            zip.start_file(*name, zip::write::SimpleFileOptions::default()).unwrap();
+            zip.start_file(*name, zip::write::SimpleFileOptions::default())
+                .unwrap();
             zip.write_all(data).unwrap();
         }
         zip.finish().unwrap().into_inner()
@@ -365,20 +435,41 @@ mod tests {
 
     #[test]
     fn archives_and_checksums_are_found_by_name() {
-        assert_eq!(archive_name("windows", "x86_64"), "atelier-ide-windows-x86_64.zip");
-        assert_eq!(archive_name("macos", "aarch64"), "atelier-ide-macos-aarch64.tar.gz");
+        assert_eq!(
+            archive_name("windows", "x86_64"),
+            "atelier-ide-windows-x86_64.zip"
+        );
+        assert_eq!(
+            archive_name("macos", "aarch64"),
+            "atelier-ide-macos-aarch64.tar.gz"
+        );
         let sums = "AABB  atelier-ide-linux-x86_64.tar.gz\nccdd *atelier-ide-windows-x86_64.zip\n";
-        assert_eq!(checksum_of(sums, "atelier-ide-linux-x86_64.tar.gz").as_deref(), Some("aabb"));
-        assert_eq!(checksum_of(sums, "atelier-ide-windows-x86_64.zip").as_deref(), Some("ccdd"));
+        assert_eq!(
+            checksum_of(sums, "atelier-ide-linux-x86_64.tar.gz").as_deref(),
+            Some("aabb")
+        );
+        assert_eq!(
+            checksum_of(sums, "atelier-ide-windows-x86_64.zip").as_deref(),
+            Some("ccdd")
+        );
         assert_eq!(checksum_of(sums, "other.zip"), None);
-        assert_eq!(hex(&Sha256::digest(b"abc")), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        assert_eq!(
+            hex(&Sha256::digest(b"abc")),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
 
     #[test]
     fn an_update_replaces_the_app_whole_and_a_broken_one_changes_nothing() {
         for (name, archive) in [
-            ("atelier-ide-linux-x86_64.tar.gz", tar_gz(&[(EXE, b"new ide"), ("extra.txt", b"x")])),
-            ("atelier-ide-windows-x86_64.zip", zipped(&[(EXE, b"new ide"), ("extra.txt", b"x")])),
+            (
+                "atelier-ide-linux-x86_64.tar.gz",
+                tar_gz(&[(EXE, b"new ide"), ("extra.txt", b"x")]),
+            ),
+            (
+                "atelier-ide-windows-x86_64.zip",
+                zipped(&[(EXE, b"new ide"), ("extra.txt", b"x")]),
+            ),
         ] {
             let dir = scratch("install");
             fs::create_dir_all(dir.join(APP_DIR)).unwrap();
@@ -386,15 +477,34 @@ mod tests {
             fs::write(dir.join(APP_DIR).join("stale.txt"), "gone").unwrap();
             fs::write(dir.join(APP_DIR).join("VERSION"), "v0.0.1").unwrap();
             install(&dir, name, &archive, "v0.0.2").unwrap();
-            assert_eq!(fs::read_to_string(dir.join(APP_DIR).join(EXE)).unwrap(), "new ide");
-            assert_eq!(fs::read_to_string(dir.join(APP_DIR).join("VERSION")).unwrap(), "v0.0.2");
-            assert!(!dir.join(APP_DIR).join("stale.txt").exists(), "the old files go with the old version");
+            assert_eq!(
+                fs::read_to_string(dir.join(APP_DIR).join(EXE)).unwrap(),
+                "new ide"
+            );
+            assert_eq!(
+                fs::read_to_string(dir.join(APP_DIR).join("VERSION")).unwrap(),
+                "v0.0.2"
+            );
+            assert!(
+                !dir.join(APP_DIR).join("stale.txt").exists(),
+                "the old files go with the old version"
+            );
             assert!(!dir.join("app.new").exists() && !dir.join("app.old").exists());
             // An archive without the IDE is refused and the installation stays.
-            let broken = if name.ends_with(".zip") { zipped(&[("readme.txt", b"?")]) } else { tar_gz(&[("readme.txt", b"?")]) };
+            let broken = if name.ends_with(".zip") {
+                zipped(&[("readme.txt", b"?")])
+            } else {
+                tar_gz(&[("readme.txt", b"?")])
+            };
             assert!(install(&dir, name, &broken, "v0.0.3").is_err());
-            assert_eq!(fs::read_to_string(dir.join(APP_DIR).join("VERSION")).unwrap(), "v0.0.2");
-            assert_eq!(fs::read_to_string(dir.join(APP_DIR).join(EXE)).unwrap(), "new ide");
+            assert_eq!(
+                fs::read_to_string(dir.join(APP_DIR).join("VERSION")).unwrap(),
+                "v0.0.2"
+            );
+            assert_eq!(
+                fs::read_to_string(dir.join(APP_DIR).join(EXE)).unwrap(),
+                "new ide"
+            );
             let _ = fs::remove_dir_all(&dir);
         }
     }
@@ -402,8 +512,17 @@ mod tests {
     #[test]
     fn a_first_install_needs_no_previous_app() {
         let dir = scratch("first");
-        install(&dir, "atelier-ide-linux-x86_64.tar.gz", &tar_gz(&[(EXE, b"ide")]), "v1.0.0").unwrap();
-        assert_eq!(fs::read_to_string(dir.join(APP_DIR).join(EXE)).unwrap(), "ide");
+        install(
+            &dir,
+            "atelier-ide-linux-x86_64.tar.gz",
+            &tar_gz(&[(EXE, b"ide")]),
+            "v1.0.0",
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(dir.join(APP_DIR).join(EXE)).unwrap(),
+            "ide"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 }

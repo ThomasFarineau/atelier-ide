@@ -3,8 +3,9 @@
 //! stored with the file; nothing is recalculated.
 
 use super::{
-    INK, MAX_FILE, Node, hex_color, local, lum, parse_xml, read_part,
+    INK, MAX_FILE, Node, hex_color, local, lum, parse_xml,
     pdf::{Font, Pdf, fit, text_width},
+    read_part,
 };
 use crate::ui;
 use anyhow::{Context as _, Result, anyhow, bail};
@@ -132,7 +133,14 @@ fn pieces_of(section: &str) -> Vec<Piece> {
             '[' => {
                 let inner: String = chars.by_ref().take_while(|c| *c != ']').collect();
                 if let Some(currency) = inner.strip_prefix('$') {
-                    out.extend(currency.split('-').next().unwrap_or("").chars().map(Piece::Lit));
+                    out.extend(
+                        currency
+                            .split('-')
+                            .next()
+                            .unwrap_or("")
+                            .chars()
+                            .map(Piece::Lit),
+                    );
                 } else if inner.starts_with(['h', 'm', 's', 'H', 'M', 'S']) {
                     out.extend(inner.chars().take(1).map(Piece::Code));
                 }
@@ -158,7 +166,9 @@ fn parse_section(text: &str) -> Section {
     if code == "@" {
         return Section::Text;
     }
-    if code.contains("general") || code.contains('e') && code.contains(['+', '-']) && code.contains('0') {
+    if code.contains("general")
+        || code.contains('e') && code.contains(['+', '-']) && code.contains('0')
+    {
         return Section::General;
     }
     if code.contains(['y', 'd', 'h', 's']) || (code.contains('m') && !code.contains(['0', '#'])) {
@@ -232,13 +242,26 @@ fn general(v: f64) -> String {
 }
 
 const MONTHS: [&str; 12] = [
-    "janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre",
+    "janvier",
+    "février",
+    "mars",
+    "avril",
+    "mai",
+    "juin",
+    "juillet",
+    "août",
+    "septembre",
+    "octobre",
+    "novembre",
     "décembre",
 ];
 const MONTHS_SHORT: [&str; 12] = [
-    "janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc.",
+    "janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.",
+    "déc.",
 ];
-const DAYS: [&str; 7] = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
+const DAYS: [&str; 7] = [
+    "dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi",
+];
 const DAYS_SHORT: [&str; 7] = ["dim.", "lun.", "mar.", "mer.", "jeu.", "ven.", "sam."];
 
 /// Year, month, day of a day count since 1970-01-01.
@@ -262,7 +285,11 @@ fn format_date(pieces: &[Piece], serial: f64) -> String {
         seconds = 0;
     }
     // Excel counts a 29 February 1900 that never existed.
-    let epoch_days = if day >= 61 { day - 25_569 } else { day - 25_568 };
+    let epoch_days = if day >= 61 {
+        day - 25_569
+    } else {
+        day - 25_568
+    };
     let (year, month, date) = civil(epoch_days);
     let weekday = (epoch_days + 4).rem_euclid(7) as usize;
     let (hour, minute, second) = (seconds / 3600, seconds / 60 % 60, seconds % 60);
@@ -317,7 +344,8 @@ fn format_date(pieces: &[Piece], serial: f64) -> String {
                     }
                 }
                 let mut n = 1;
-                while matches!(pieces.get(i + n), Some(Piece::Code(c)) if c.to_ascii_lowercase() == lower) {
+                while matches!(pieces.get(i + n), Some(Piece::Code(c)) if c.to_ascii_lowercase() == lower)
+                {
                     n += 1;
                 }
                 let next_letter = letters.iter().find(|(at, _)| *at >= i + n).map(|(_, c)| *c);
@@ -337,12 +365,26 @@ fn format_date(pieces: &[Piece], serial: f64) -> String {
                     },
                     'h' => {
                         let h = if twelve { (hour + 11) % 12 + 1 } else { hour };
-                        out += &if n >= 2 { format!("{h:02}") } else { h.to_string() };
+                        out += &if n >= 2 {
+                            format!("{h:02}")
+                        } else {
+                            h.to_string()
+                        };
                     }
-                    's' => out += &if n >= 2 { format!("{second:02}") } else { second.to_string() },
+                    's' => {
+                        out += &if n >= 2 {
+                            format!("{second:02}")
+                        } else {
+                            second.to_string()
+                        }
+                    }
                     'm' => {
                         if previous == Some('h') || next_letter == Some('s') {
-                            out += &if n >= 2 { format!("{minute:02}") } else { minute.to_string() };
+                            out += &if n >= 2 {
+                                format!("{minute:02}")
+                            } else {
+                                minute.to_string()
+                            };
                         } else {
                             match n {
                                 1 => out += &month.to_string(),
@@ -385,12 +427,17 @@ fn format_section(section: &Section, v: f64, signed: bool) -> String {
             if *thousands {
                 int = group_thousands(&int);
             }
-            let sign = if signed && v < 0.0 && text.chars().any(|c| c.is_ascii_digit() && c != '0') {
+            let sign = if signed && v < 0.0 && text.chars().any(|c| c.is_ascii_digit() && c != '0')
+            {
                 "-"
             } else {
                 ""
             };
-            let frac = if frac.is_empty() { String::new() } else { format!(",{frac}") };
+            let frac = if frac.is_empty() {
+                String::new()
+            } else {
+                format!(",{frac}")
+            };
             format!("{sign}{prefix}{int}{frac}{suffix}")
         }
     }
@@ -453,9 +500,9 @@ fn cell_ref(text: &str) -> Option<(u32, u32)> {
     if col.is_empty() || col.len() > 3 {
         return None;
     }
-    let col = col
-        .bytes()
-        .fold(0u32, |acc, b| acc * 26 + u32::from(b.to_ascii_uppercase() - b'A' + 1));
+    let col = col.bytes().fold(0u32, |acc, b| {
+        acc * 26 + u32::from(b.to_ascii_uppercase() - b'A' + 1)
+    });
     let row: u32 = row.parse().ok()?;
     Some((row.checked_sub(1)?, col - 1))
 }
@@ -479,7 +526,10 @@ fn attrs(e: &BytesStart) -> Vec<(String, String)> {
 }
 
 fn get<'a>(attrs: &'a [(String, String)], key: &str) -> Option<&'a str> {
-    attrs.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+    attrs
+        .iter()
+        .find(|(k, _)| k == key)
+        .map(|(_, v)| v.as_str())
 }
 
 fn argb(text: &str) -> Option<Color32> {
@@ -498,10 +548,13 @@ fn theme_colors(root: &Node) -> Vec<Color32> {
             .and_then(hex_color)
     };
     // The order Excel numbers theme colors in.
-    ["lt1", "dk1", "lt2", "dk2", "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink", "folHlink"]
-        .iter()
-        .map(|n| color(n).unwrap_or(Color32::BLACK))
-        .collect()
+    [
+        "lt1", "dk1", "lt2", "dk2", "accent1", "accent2", "accent3", "accent4", "accent5",
+        "accent6", "hlink", "folHlink",
+    ]
+    .iter()
+    .map(|n| color(n).unwrap_or(Color32::BLACK))
+    .collect()
 }
 
 fn excel_color(node: &Node, theme: &[Color32]) -> Option<Color32> {
@@ -510,7 +563,10 @@ fn excel_color(node: &Node, theme: &[Color32]) -> Option<Color32> {
     }
     if let Some(index) = node.attr("theme").and_then(|t| t.parse::<usize>().ok()) {
         let base = *theme.get(index)?;
-        let tint: f32 = node.attr("tint").and_then(|t| t.parse().ok()).unwrap_or(0.0);
+        let tint: f32 = node
+            .attr("tint")
+            .and_then(|t| t.parse().ok())
+            .unwrap_or(0.0);
         return Some(if tint < 0.0 {
             lum(base, 1.0 + tint, 0.0)
         } else if tint > 0.0 {
@@ -534,7 +590,10 @@ fn read_styles(root: &Node, theme: &[Color32]) -> Vec<CellStyle> {
     let mut codes: HashMap<u32, String> = HashMap::new();
     if let Some(formats) = root.child("numFmts") {
         for f in formats.children.iter().filter(|c| c.name == "numFmt") {
-            if let (Some(id), Some(code)) = (f.attr("numFmtId").and_then(|i| i.parse().ok()), f.attr("formatCode")) {
+            if let (Some(id), Some(code)) = (
+                f.attr("numFmtId").and_then(|i| i.parse().ok()),
+                f.attr("formatCode"),
+            ) {
                 codes.insert(id, code.to_string());
             }
         }
@@ -546,8 +605,13 @@ fn read_styles(root: &Node, theme: &[Color32]) -> Vec<CellStyle> {
                 .iter()
                 .filter(|c| c.name == "font")
                 .map(|font| {
-                    let on = |name: &str| font.child(name).is_some_and(|n| n.attr("val") != Some("0"));
-                    (on("b"), on("i"), font.child("color").and_then(|c| excel_color(c, theme)))
+                    let on =
+                        |name: &str| font.child(name).is_some_and(|n| n.attr("val") != Some("0"));
+                    (
+                        on("b"),
+                        on("i"),
+                        font.child("color").and_then(|c| excel_color(c, theme)),
+                    )
                 })
                 .collect()
         })
@@ -575,10 +639,21 @@ fn read_styles(root: &Node, theme: &[Color32]) -> Vec<CellStyle> {
                 .iter()
                 .filter(|c| c.name == "xf")
                 .map(|xf| {
-                    let index = |key: &str| xf.attr(key).and_then(|v| v.parse::<usize>().ok()).unwrap_or(0);
-                    let id: u32 = xf.attr("numFmtId").and_then(|v| v.parse().ok()).unwrap_or(0);
-                    let code = codes.get(&id).map(String::as_str).or_else(|| builtin_code(id));
-                    let (bold, italic, color) = fonts.get(index("fontId")).copied().unwrap_or_default();
+                    let index = |key: &str| {
+                        xf.attr(key)
+                            .and_then(|v| v.parse::<usize>().ok())
+                            .unwrap_or(0)
+                    };
+                    let id: u32 = xf
+                        .attr("numFmtId")
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(0);
+                    let code = codes
+                        .get(&id)
+                        .map(String::as_str)
+                        .or_else(|| builtin_code(id));
+                    let (bold, italic, color) =
+                        fonts.get(index("fontId")).copied().unwrap_or_default();
                     CellStyle {
                         bold,
                         italic,
@@ -632,7 +707,12 @@ fn read_shared_strings(bytes: &[u8]) -> Result<Vec<String>> {
     Ok(strings)
 }
 
-fn parse_sheet(name: String, bytes: &[u8], strings: &[String], styles: &[CellStyle]) -> Result<Sheet> {
+fn parse_sheet(
+    name: String,
+    bytes: &[u8],
+    strings: &[String],
+    styles: &[CellStyle],
+) -> Result<Sheet> {
     let mut sheet = Sheet {
         name,
         ..Sheet::default()
@@ -675,7 +755,11 @@ fn parse_sheet(name: String, bytes: &[u8], strings: &[String], styles: &[CellSty
             }
             "b" => {
                 align = Align::Center;
-                if value.trim() == "1" { "VRAI".into() } else { "FAUX".into() }
+                if value.trim() == "1" {
+                    "VRAI".into()
+                } else {
+                    "FAUX".into()
+                }
             }
             _ => match value.trim().parse::<f64>() {
                 Ok(v) => {
@@ -802,13 +886,19 @@ pub fn load(path: &Path) -> Result<Workbook> {
         .and_then(|e| e.to_str())
         .is_some_and(|e| e.eq_ignore_ascii_case("xls"))
     {
-        bail!("Le format binaire .xls n'est pas pris en charge : enregistrez le classeur au format .xlsx");
+        bail!(
+            "Le format binaire .xls n'est pas pris en charge : enregistrez le classeur au format .xlsx"
+        );
     }
     let file = fs::File::open(path)?;
-    let mut zip = zip::ZipArchive::new(std::io::BufReader::new(file))
-        .map_err(|_| anyhow!("Ce fichier n'est pas un classeur Excel valide (ou il est protégé par un mot de passe)"))?;
-    let workbook = read_part(&mut zip, "xl/workbook.xml")?
-        .ok_or_else(|| anyhow!("Ce fichier n'est pas un classeur Excel : xl/workbook.xml est absent"))?;
+    let mut zip = zip::ZipArchive::new(std::io::BufReader::new(file)).map_err(|_| {
+        anyhow!(
+            "Ce fichier n'est pas un classeur Excel valide (ou il est protégé par un mot de passe)"
+        )
+    })?;
+    let workbook = read_part(&mut zip, "xl/workbook.xml")?.ok_or_else(|| {
+        anyhow!("Ce fichier n'est pas un classeur Excel : xl/workbook.xml est absent")
+    })?;
     let workbook = parse_xml(&workbook).context("xl/workbook.xml")?;
     let mut targets: HashMap<String, String> = HashMap::new();
     if let Some(bytes) = read_part(&mut zip, "xl/_rels/workbook.xml.rels")? {
@@ -836,7 +926,10 @@ pub fn load(path: &Path) -> Result<Workbook> {
         None => Vec::new(),
     };
     let mut sheets = Vec::new();
-    let listed = workbook.child("sheets").map(|s| s.children.as_slice()).unwrap_or_default();
+    let listed = workbook
+        .child("sheets")
+        .map(|s| s.children.as_slice())
+        .unwrap_or_default();
     for entry in listed.iter().filter(|c| c.name == "sheet") {
         if matches!(entry.attr("state"), Some("hidden" | "veryHidden")) {
             continue;
@@ -848,7 +941,10 @@ pub fn load(path: &Path) -> Result<Workbook> {
         let Some(bytes) = read_part(&mut zip, target)? else {
             continue;
         };
-        sheets.push(parse_sheet(name.clone(), &bytes, &strings, &styles).with_context(|| format!("feuille « {name} »"))?);
+        sheets.push(
+            parse_sheet(name.clone(), &bytes, &strings, &styles)
+                .with_context(|| format!("feuille « {name} »"))?,
+        );
     }
     if sheets.is_empty() {
         bail!("Ce classeur ne contient aucune feuille visible");
@@ -891,7 +987,10 @@ pub fn show(ui: &mut egui::Ui, wb: &Workbook, state: &mut SheetView, path: &Path
             ui.horizontal(|ui| {
                 ui.add_space(10.0);
                 for (i, sheet) in wb.sheets.iter().enumerate() {
-                    if ui.selectable_label(i == state.active, &sheet.name).clicked() {
+                    if ui
+                        .selectable_label(i == state.active, &sheet.name)
+                        .clicked()
+                    {
                         state.active = i;
                     }
                 }
@@ -905,57 +1004,88 @@ pub fn show(ui: &mut egui::Ui, wb: &Workbook, state: &mut SheetView, path: &Path
         return;
     }
     if sheet.truncated {
-        ui.label(RichText::new("Feuille tronquée : trop de cellules pour tout afficher").small().color(t.error));
+        ui.label(
+            RichText::new("Feuille tronquée : trop de cellules pour tout afficher")
+                .small()
+                .color(t.error),
+        );
     }
-    let columns: Vec<u32> = (0..sheet.cols).filter(|c| sheet.widths[*c as usize] > 0.0).collect();
+    let columns: Vec<u32> = (0..sheet.cols)
+        .filter(|c| sheet.widths[*c as usize] > 0.0)
+        .collect();
     let row_h = 20.0 * zoom;
     let size = 13.0 * zoom;
     ui.push_id(("xlsx_grid", path, state.active), |ui| {
-        egui::ScrollArea::horizontal().auto_shrink([false, false]).show(ui, |ui| {
-            ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-            let mut table = TableBuilder::new(ui)
-                .resizable(true)
-                .vscroll(true)
-                .auto_shrink([false, false])
-                .column(Column::exact(48.0 * zoom));
-            for c in &columns {
-                table = table.column(Column::initial(sheet.widths[*c as usize] * zoom).at_least(24.0).clip(true));
-            }
-            table
-                .header(row_h, |mut header| {
-                    header.col(|ui| paint_cell(ui, HEADER_FILL, RichText::new(""), Align::Min));
-                    for c in &columns {
-                        header.col(|ui| {
-                            let text = RichText::new(column_name(*c)).font(ui::semibold(size)).color(INK);
-                            paint_cell(ui, HEADER_FILL, text, Align::Center);
-                        });
-                    }
-                })
-                .body(|body| {
-                    body.rows(row_h, sheet.rows as usize, |mut row| {
-                        let r = row.index() as u32;
-                        row.col(|ui| {
-                            let text = RichText::new((r + 1).to_string()).size(size * 0.9).color(INK);
-                            paint_cell(ui, HEADER_FILL, text, Align::Center);
-                        });
+        egui::ScrollArea::horizontal()
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+                let mut table = TableBuilder::new(ui)
+                    .resizable(true)
+                    .vscroll(true)
+                    .auto_shrink([false, false])
+                    .column(Column::exact(48.0 * zoom));
+                for c in &columns {
+                    table = table.column(
+                        Column::initial(sheet.widths[*c as usize] * zoom)
+                            .at_least(24.0)
+                            .clip(true),
+                    );
+                }
+                table
+                    .header(row_h, |mut header| {
+                        header.col(|ui| paint_cell(ui, HEADER_FILL, RichText::new(""), Align::Min));
                         for c in &columns {
-                            row.col(|ui| match sheet.cells.get(&(r, *c)) {
-                                Some(cell) => {
-                                    let style = wb.style(cell);
-                                    let mut text = RichText::new(cell.text.lines().next().unwrap_or(""))
-                                        .font(if style.bold { ui::semibold(size) } else { FontId::proportional(size) })
-                                        .color(style.color.unwrap_or(INK));
-                                    if style.italic {
-                                        text = text.italics();
-                                    }
-                                    paint_cell(ui, style.fill.unwrap_or(Color32::WHITE), text, cell.align);
-                                }
-                                None => paint_cell(ui, Color32::WHITE, RichText::new(""), Align::Min),
+                            header.col(|ui| {
+                                let text = RichText::new(column_name(*c))
+                                    .font(ui::semibold(size))
+                                    .color(INK);
+                                paint_cell(ui, HEADER_FILL, text, Align::Center);
                             });
                         }
+                    })
+                    .body(|body| {
+                        body.rows(row_h, sheet.rows as usize, |mut row| {
+                            let r = row.index() as u32;
+                            row.col(|ui| {
+                                let text = RichText::new((r + 1).to_string())
+                                    .size(size * 0.9)
+                                    .color(INK);
+                                paint_cell(ui, HEADER_FILL, text, Align::Center);
+                            });
+                            for c in &columns {
+                                row.col(|ui| match sheet.cells.get(&(r, *c)) {
+                                    Some(cell) => {
+                                        let style = wb.style(cell);
+                                        let mut text =
+                                            RichText::new(cell.text.lines().next().unwrap_or(""))
+                                                .font(if style.bold {
+                                                    ui::semibold(size)
+                                                } else {
+                                                    FontId::proportional(size)
+                                                })
+                                                .color(style.color.unwrap_or(INK));
+                                        if style.italic {
+                                            text = text.italics();
+                                        }
+                                        paint_cell(
+                                            ui,
+                                            style.fill.unwrap_or(Color32::WHITE),
+                                            text,
+                                            cell.align,
+                                        );
+                                    }
+                                    None => paint_cell(
+                                        ui,
+                                        Color32::WHITE,
+                                        RichText::new(""),
+                                        Align::Min,
+                                    ),
+                                });
+                            }
+                        });
                     });
-                });
-        });
+            });
     });
 }
 
@@ -972,12 +1102,19 @@ pub fn export_pdf(wb: &Workbook, target: &Path) -> Result<()> {
     let mut pdf = Pdf::default();
     let usable_w = PAGE_W - 2.0 * MARGIN;
     let title_h = 18.0;
-    let rows_per_page = (((PAGE_H - 2.0 * MARGIN - title_h) / ROW_H) as usize).saturating_sub(1).max(1);
+    let rows_per_page = (((PAGE_H - 2.0 * MARGIN - title_h) / ROW_H) as usize)
+        .saturating_sub(1)
+        .max(1);
     let number_w = 28.0;
     'sheets: for sheet in &wb.sheets {
         let columns: Vec<(u32, f32)> = (0..sheet.cols)
             .filter(|c| sheet.widths[*c as usize] > 0.0)
-            .map(|c| (c, (sheet.widths[c as usize] * 0.75).clamp(16.0, usable_w - number_w)))
+            .map(|c| {
+                (
+                    c,
+                    (sheet.widths[c as usize] * 0.75).clamp(16.0, usable_w - number_w),
+                )
+            })
             .collect();
         // Columns that fit side by side on one page.
         let mut bands: Vec<Vec<(u32, f32)>> = Vec::new();
@@ -1006,7 +1143,14 @@ pub fn export_pdf(wb: &Workbook, target: &Path) -> Result<()> {
                 } else {
                     sheet.name.clone()
                 };
-                pdf.text(MARGIN, MARGIN + 10.0, Font::Bold, 11.0, INK, &fit(Font::Bold, 11.0, &label, usable_w));
+                pdf.text(
+                    MARGIN,
+                    MARGIN + 10.0,
+                    Font::Bold,
+                    11.0,
+                    INK,
+                    &fit(Font::Bold, 11.0, &label, usable_w),
+                );
                 let mut y = MARGIN + title_h;
                 let width: f32 = number_w + band.iter().map(|c| c.1).sum::<f32>();
                 // Header with the column letters.
@@ -1024,7 +1168,8 @@ pub fn export_pdf(wb: &Workbook, target: &Path) -> Result<()> {
                 for r in first..last {
                     pdf.fill_rect(MARGIN, y, number_w, ROW_H, HEADER_FILL);
                     let number = (r + 1).to_string();
-                    let at = MARGIN + (number_w - text_width(Font::Regular, FONT_SIZE, &number)) / 2.0;
+                    let at =
+                        MARGIN + (number_w - text_width(Font::Regular, FONT_SIZE, &number)) / 2.0;
                     pdf.text(at, y + ROW_H - 4.0, Font::Regular, FONT_SIZE, INK, &number);
                     pdf.stroke_rect(MARGIN, y, number_w, ROW_H, GRID, 0.5);
                     let mut x = MARGIN + number_w;
@@ -1035,14 +1180,26 @@ pub fn export_pdf(wb: &Workbook, target: &Path) -> Result<()> {
                                 pdf.fill_rect(x, y, *w, ROW_H, fill);
                             }
                             let font = Font::of(style.bold, style.italic);
-                            let text = fit(font, FONT_SIZE, cell.text.lines().next().unwrap_or(""), w - 6.0);
+                            let text = fit(
+                                font,
+                                FONT_SIZE,
+                                cell.text.lines().next().unwrap_or(""),
+                                w - 6.0,
+                            );
                             let text_w = text_width(font, FONT_SIZE, &text);
                             let at = match cell.align {
                                 Align::Min => x + 3.0,
                                 Align::Center => x + (w - text_w) / 2.0,
                                 Align::Max => x + w - 3.0 - text_w,
                             };
-                            pdf.text(at, y + ROW_H - 4.0, font, FONT_SIZE, style.color.unwrap_or(INK), &text);
+                            pdf.text(
+                                at,
+                                y + ROW_H - 4.0,
+                                font,
+                                FONT_SIZE,
+                                style.color.unwrap_or(INK),
+                                &text,
+                            );
                         }
                         pdf.stroke_rect(x, y, *w, ROW_H, GRID, 0.5);
                         x += w;
@@ -1100,7 +1257,8 @@ mod tests {
 </sheetData></worksheet>"#;
 
     fn sample(name: &str) -> std::path::PathBuf {
-        let path = std::env::temp_dir().join(format!("atelier-xlsx-{}-{name}.xlsx", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("atelier-xlsx-{}-{name}.xlsx", std::process::id()));
         let mut zip = zip::ZipWriter::new(fs::File::create(&path).unwrap());
         let options = zip::write::SimpleFileOptions::default();
         for (name, data) in [
@@ -1171,7 +1329,8 @@ mod tests {
 
     #[test]
     fn rejects_other_files_and_exports_a_pdf() {
-        let text = std::env::temp_dir().join(format!("atelier-xlsx-{}-text.xlsx", std::process::id()));
+        let text =
+            std::env::temp_dir().join(format!("atelier-xlsx-{}-text.xlsx", std::process::id()));
         fs::write(&text, "not a zip").unwrap();
         let error = format!("{:#}", load(&text).err().unwrap());
         let _ = fs::remove_file(&text);
@@ -1197,7 +1356,9 @@ mod tests {
         let mut state = SheetView::default();
         for _ in 0..2 {
             let _ = ctx.run(Default::default(), |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| show(ui, &wb, &mut state, Path::new("a.xlsx"), 1.0));
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    show(ui, &wb, &mut state, Path::new("a.xlsx"), 1.0)
+                });
             });
         }
     }

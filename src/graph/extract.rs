@@ -64,18 +64,46 @@ pub fn language_of(extension: &str) -> Option<&'static str> {
 pub const MAX_SOURCE: u64 = 1_000_000;
 
 pub fn extract(language: &str, text: &str) -> Facts {
-    let mut facts = Facts { language: language.to_string(), ..Facts::default() };
+    let mut facts = Facts {
+        language: language.to_string(),
+        ..Facts::default()
+    };
     match language {
         "md" => markdown(text, &mut facts),
-        "rs" => parse(tree_sitter_rust::LANGUAGE.into(), text, &mut facts, rust_walk),
-        "ts" => parse(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(), text, &mut facts, js_walk),
-        "tsx" => parse(tree_sitter_typescript::LANGUAGE_TSX.into(), text, &mut facts, js_walk),
-        _ => parse(tree_sitter_javascript::LANGUAGE.into(), text, &mut facts, js_walk),
+        "rs" => parse(
+            tree_sitter_rust::LANGUAGE.into(),
+            text,
+            &mut facts,
+            rust_walk,
+        ),
+        "ts" => parse(
+            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+            text,
+            &mut facts,
+            js_walk,
+        ),
+        "tsx" => parse(
+            tree_sitter_typescript::LANGUAGE_TSX.into(),
+            text,
+            &mut facts,
+            js_walk,
+        ),
+        _ => parse(
+            tree_sitter_javascript::LANGUAGE.into(),
+            text,
+            &mut facts,
+            js_walk,
+        ),
     }
     facts
 }
 
-fn parse(language: tree_sitter::Language, text: &str, facts: &mut Facts, walk: fn(Node, &str, &mut Facts, Option<usize>)) {
+fn parse(
+    language: tree_sitter::Language,
+    text: &str,
+    facts: &mut Facts,
+    walk: fn(Node, &str, &mut Facts, Option<usize>),
+) {
     let mut parser = Parser::new();
     if parser.set_language(&language).is_err() {
         return;
@@ -94,20 +122,42 @@ fn field_text<'a>(node: Node, name: &str, src: &'a str) -> Option<&'a str> {
 }
 
 fn add(facts: &mut Facts, name: &str, kind: &str, node: Node) -> usize {
-    facts.symbols.push(Sym { name: name.to_string(), kind: kind.to_string(), line: node.start_position().row + 1 });
+    facts.symbols.push(Sym {
+        name: name.to_string(),
+        kind: kind.to_string(),
+        line: node.start_position().row + 1,
+    });
     facts.symbols.len() - 1
 }
 
-fn reference(facts: &mut Facts, from: Option<usize>, name: &str, qualifier: Option<&str>, kind: RefKind) {
+fn reference(
+    facts: &mut Facts,
+    from: Option<usize>,
+    name: &str,
+    qualifier: Option<&str>,
+    kind: RefKind,
+) {
     if !name.is_empty() {
-        facts.refs.push(Ref { from, name: name.to_string(), qualifier: qualifier.map(str::to_string), receiver: None, kind });
+        facts.refs.push(Ref {
+            from,
+            name: name.to_string(),
+            qualifier: qualifier.map(str::to_string),
+            receiver: None,
+            kind,
+        });
     }
 }
 
 /// A call on a value: `object.name()`.
 fn method_call(facts: &mut Facts, from: Option<usize>, name: &str, receiver: &str) {
     if !name.is_empty() {
-        facts.refs.push(Ref { from, name: name.to_string(), qualifier: None, receiver: Some(receiver.to_string()), kind: RefKind::Calls });
+        facts.refs.push(Ref {
+            from,
+            name: name.to_string(),
+            qualifier: None,
+            receiver: Some(receiver.to_string()),
+            kind: RefKind::Calls,
+        });
     }
 }
 
@@ -146,18 +196,38 @@ fn js_walk(node: Node, src: &str, facts: &mut Facts, owner: Option<usize>) {
         "class_declaration" | "abstract_class_declaration" | "class" => {
             if let Some(name) = field_text(node, "name", src) {
                 let class = add(facts, name, "class", node);
-                for heritage in children(node).into_iter().filter(|c| c.kind() == "class_heritage") {
+                for heritage in children(node)
+                    .into_iter()
+                    .filter(|c| c.kind() == "class_heritage")
+                {
                     for part in children(heritage) {
                         match part.kind() {
                             "extends_clause" => {
-                                for target in children(part).into_iter().filter(|c| matches!(c.kind(), "identifier" | "member_expression" | "type_identifier" | "nested_type_identifier")) {
+                                for target in children(part).into_iter().filter(|c| {
+                                    matches!(
+                                        c.kind(),
+                                        "identifier"
+                                            | "member_expression"
+                                            | "type_identifier"
+                                            | "nested_type_identifier"
+                                    )
+                                }) {
                                     let (q, n) = last_name(text(target, src));
                                     reference(facts, Some(class), n, q, RefKind::Extends);
                                 }
                             }
                             "implements_clause" => {
-                                for target in children(part).into_iter().filter(|c| matches!(c.kind(), "type_identifier" | "nested_type_identifier" | "generic_type")) {
-                                    let (q, n) = last_name(text(target, src).split('<').next().unwrap_or(""));
+                                for target in children(part).into_iter().filter(|c| {
+                                    matches!(
+                                        c.kind(),
+                                        "type_identifier"
+                                            | "nested_type_identifier"
+                                            | "generic_type"
+                                    )
+                                }) {
+                                    let (q, n) = last_name(
+                                        text(target, src).split('<').next().unwrap_or(""),
+                                    );
                                     reference(facts, Some(class), n, q, RefKind::Implements);
                                 }
                             }
@@ -175,7 +245,9 @@ fn js_walk(node: Node, src: &str, facts: &mut Facts, owner: Option<usize>) {
         "method_definition" | "method_signature" | "abstract_method_signature" => {
             if let Some(name) = field_text(node, "name", src) {
                 let qualified = match owner.map(|o| facts.symbols[o].name.clone()) {
-                    Some(class) if facts.symbols[owner.unwrap_or(0)].kind == "class" => format!("{class}::{name}"),
+                    Some(class) if facts.symbols[owner.unwrap_or(0)].kind == "class" => {
+                        format!("{class}::{name}")
+                    }
                     _ => name.to_string(),
                 };
                 next_owner = Some(add(facts, &qualified, "method", node));
@@ -184,8 +256,16 @@ fn js_walk(node: Node, src: &str, facts: &mut Facts, owner: Option<usize>) {
         "interface_declaration" => {
             if let Some(name) = field_text(node, "name", src) {
                 let symbol = add(facts, name, "interface", node);
-                for clause in children(node).into_iter().filter(|c| c.kind() == "extends_type_clause") {
-                    for target in children(clause).into_iter().filter(|c| matches!(c.kind(), "type_identifier" | "nested_type_identifier" | "generic_type")) {
+                for clause in children(node)
+                    .into_iter()
+                    .filter(|c| c.kind() == "extends_type_clause")
+                {
+                    for target in children(clause).into_iter().filter(|c| {
+                        matches!(
+                            c.kind(),
+                            "type_identifier" | "nested_type_identifier" | "generic_type"
+                        )
+                    }) {
                         let (q, n) = last_name(text(target, src).split('<').next().unwrap_or(""));
                         reference(facts, Some(symbol), n, q, RefKind::Extends);
                     }
@@ -204,7 +284,12 @@ fn js_walk(node: Node, src: &str, facts: &mut Facts, owner: Option<usize>) {
             }
         }
         "variable_declarator" => {
-            let function_value = node.child_by_field_name("value").is_some_and(|v| matches!(v.kind(), "arrow_function" | "function_expression" | "function"));
+            let function_value = node.child_by_field_name("value").is_some_and(|v| {
+                matches!(
+                    v.kind(),
+                    "arrow_function" | "function_expression" | "function"
+                )
+            });
             if function_value && let Some(name) = field_text(node, "name", src) {
                 next_owner = Some(add(facts, name, "function", node));
             }
@@ -214,7 +299,9 @@ fn js_walk(node: Node, src: &str, facts: &mut Facts, owner: Option<usize>) {
                 let callee = text(function, src);
                 if callee == "require" {
                     if let Some(arguments) = node.child_by_field_name("arguments")
-                        && let Some(first) = children(arguments).into_iter().find(|c| c.kind() == "string")
+                        && let Some(first) = children(arguments)
+                            .into_iter()
+                            .find(|c| c.kind() == "string")
                     {
                         facts.imports.push(unquote(text(first, src)).to_string());
                     }
@@ -224,7 +311,9 @@ fn js_walk(node: Node, src: &str, facts: &mut Facts, owner: Option<usize>) {
                     let name = field_text(function, "property", src).unwrap_or("");
                     let object = field_text(function, "object", src).unwrap_or("");
                     // `Counter.create()` is a call on a class; `x.add()` on a value, which is unknown.
-                    if object.chars().next().is_some_and(char::is_uppercase) && !object.contains('.') {
+                    if object.chars().next().is_some_and(char::is_uppercase)
+                        && !object.contains('.')
+                    {
                         reference(facts, owner, name, Some(object), RefKind::Calls);
                     } else {
                         method_call(facts, owner, name, object);
@@ -249,20 +338,32 @@ fn js_walk(node: Node, src: &str, facts: &mut Facts, owner: Option<usize>) {
 
 /// The paths a `use` brings in: `a::{b, c::d}` is `a::b` and `a::c::d`.
 fn use_paths(node: Node, src: &str, prefix: &str, out: &mut Vec<String>) {
-    let join = |name: &str| if prefix.is_empty() { name.to_string() } else { format!("{prefix}::{name}") };
+    let join = |name: &str| {
+        if prefix.is_empty() {
+            name.to_string()
+        } else {
+            format!("{prefix}::{name}")
+        }
+    };
     match node.kind() {
-        "scoped_identifier" | "identifier" | "crate" | "self" | "super" => out.push(join(text(node, src))),
+        "scoped_identifier" | "identifier" | "crate" | "self" | "super" => {
+            out.push(join(text(node, src)))
+        }
         "use_as_clause" => {
             if let Some(path) = node.child_by_field_name("path") {
                 use_paths(path, src, prefix, out);
             }
         }
         "use_wildcard" => {
-            let path = children(node).into_iter().find(|c| c.kind() != "*" && c.kind() != "::");
+            let path = children(node)
+                .into_iter()
+                .find(|c| c.kind() != "*" && c.kind() != "::");
             out.push(path.map_or_else(|| prefix.to_string(), |p| join(text(p, src))));
         }
         "scoped_use_list" => {
-            let base = node.child_by_field_name("path").map_or(prefix.to_string(), |p| join(text(p, src)));
+            let base = node
+                .child_by_field_name("path")
+                .map_or(prefix.to_string(), |p| join(text(p, src)));
             if let Some(list) = node.child_by_field_name("list") {
                 use_paths(list, src, &base, out);
             }
@@ -326,7 +427,9 @@ fn rust_walk(node: Node, src: &str, facts: &mut Facts, owner: Option<usize>) {
             if let Some(ty) = field_text(node, "type", src) {
                 let ty = ty.split('<').next().unwrap_or(ty).trim();
                 let name = ty.rsplit("::").next().unwrap_or(ty).trim_start_matches('&');
-                let existing = facts.symbols.iter().position(|s| s.name == name && matches!(s.kind.as_str(), "struct" | "enum" | "trait"));
+                let existing = facts.symbols.iter().position(|s| {
+                    s.name == name && matches!(s.kind.as_str(), "struct" | "enum" | "trait")
+                });
                 let owner_symbol = existing.unwrap_or_else(|| add(facts, name, "struct", node));
                 if let Some(tr) = field_text(node, "trait", src) {
                     let tr = tr.split('<').next().unwrap_or(tr);
@@ -339,15 +442,24 @@ fn rust_walk(node: Node, src: &str, facts: &mut Facts, owner: Option<usize>) {
         "call_expression" => {
             if let Some(function) = node.child_by_field_name("function") {
                 match function.kind() {
-                    "identifier" => reference(facts, owner, text(function, src), None, RefKind::Calls),
+                    "identifier" => {
+                        reference(facts, owner, text(function, src), None, RefKind::Calls)
+                    }
                     "scoped_identifier" => {
                         let name = field_text(function, "name", src).unwrap_or("");
-                        let qualifier = function.child_by_field_name("path").map(|p| text(p, src).rsplit("::").next().unwrap_or("").to_string());
+                        let qualifier = function
+                            .child_by_field_name("path")
+                            .map(|p| text(p, src).rsplit("::").next().unwrap_or("").to_string());
                         reference(facts, owner, name, qualifier.as_deref(), RefKind::Calls);
                     }
                     "field_expression" => {
                         if let Some(name) = field_text(function, "field", src) {
-                            method_call(facts, owner, name, field_text(function, "value", src).unwrap_or(""));
+                            method_call(
+                                facts,
+                                owner,
+                                name,
+                                field_text(function, "value", src).unwrap_or(""),
+                            );
                         }
                     }
                     _ => {}
@@ -380,7 +492,11 @@ fn markdown(text: &str, facts: &mut Facts) {
         if (1..=3).contains(&level) && trimmed[level..].starts_with(' ') {
             let title = trimmed[level..].trim().trim_end_matches('#').trim();
             if !title.is_empty() {
-                facts.symbols.push(Sym { name: title.to_string(), kind: "heading".into(), line: index + 1 });
+                facts.symbols.push(Sym {
+                    name: title.to_string(),
+                    kind: "heading".into(),
+                    line: index + 1,
+                });
             }
             continue;
         }
@@ -402,7 +518,11 @@ mod tests {
     use super::*;
 
     fn names(facts: &Facts) -> Vec<(&str, &str)> {
-        facts.symbols.iter().map(|s| (s.kind.as_str(), s.name.as_str())).collect()
+        facts
+            .symbols
+            .iter()
+            .map(|s| (s.kind.as_str(), s.name.as_str()))
+            .collect()
     }
 
     fn calls<'a>(facts: &'a Facts, kind: RefKind) -> Vec<(Option<&'a str>, &'a str)> {
@@ -410,7 +530,12 @@ mod tests {
             .refs
             .iter()
             .filter(|r| r.kind == kind)
-            .map(|r| (r.from.map(|f| facts.symbols[f].name.as_str()), r.name.as_str()))
+            .map(|r| {
+                (
+                    r.from.map(|f| facts.symbols[f].name.as_str()),
+                    r.name.as_str(),
+                )
+            })
             .collect()
     }
 
@@ -423,13 +548,30 @@ mod tests {
              class Counter extends Base {\n  increment() { this.total = add(this.total, 1); }\n}\n\
              const run = () => new Counter();\n",
         );
-        assert_eq!(names(&facts), [("function", "compute"), ("class", "Counter"), ("method", "Counter::increment"), ("function", "run")]);
+        assert_eq!(
+            names(&facts),
+            [
+                ("function", "compute"),
+                ("class", "Counter"),
+                ("method", "Counter::increment"),
+                ("function", "run")
+            ]
+        );
         assert_eq!(facts.imports, ["./math.js", "fs", "./x"]);
         let all = calls(&facts, RefKind::Calls);
-        assert!(all.contains(&(Some("compute"), "add")) && all.contains(&(Some("compute"), "helper")), "{all:?}");
-        assert!(all.contains(&(Some("Counter::increment"), "add")), "{all:?}");
+        assert!(
+            all.contains(&(Some("compute"), "add")) && all.contains(&(Some("compute"), "helper")),
+            "{all:?}"
+        );
+        assert!(
+            all.contains(&(Some("Counter::increment"), "add")),
+            "{all:?}"
+        );
         assert_eq!(calls(&facts, RefKind::Extends), [(Some("Counter"), "Base")]);
-        assert_eq!(calls(&facts, RefKind::Instantiates), [(Some("run"), "Counter")]);
+        assert_eq!(
+            calls(&facts, RefKind::Instantiates),
+            [(Some("run"), "Counter")]
+        );
     }
 
     #[test]
@@ -440,10 +582,19 @@ mod tests {
              export class Circle implements Shape { area() { return 1; } }\n",
         );
         let kinds = names(&facts);
-        for expected in [("interface", "Shape"), ("type", "Id"), ("enum", "Color"), ("class", "Circle"), ("method", "Circle::area")] {
+        for expected in [
+            ("interface", "Shape"),
+            ("type", "Id"),
+            ("enum", "Color"),
+            ("class", "Circle"),
+            ("method", "Circle::area"),
+        ] {
             assert!(kinds.contains(&expected), "{kinds:?}");
         }
-        assert_eq!(calls(&facts, RefKind::Implements), [(Some("Circle"), "Shape")]);
+        assert_eq!(
+            calls(&facts, RefKind::Implements),
+            [(Some("Circle"), "Shape")]
+        );
         assert_eq!(calls(&facts, RefKind::Extends), [(Some("Shape"), "Named")]);
     }
 
@@ -457,15 +608,41 @@ mod tests {
              fn helper() { Store::open(); }\n",
         );
         let kinds = names(&facts);
-        for expected in [("module", "server"), ("struct", "Store"), ("method", "Store::open"), ("method", "Store::load"), ("trait", "Named"), ("function", "helper")] {
+        for expected in [
+            ("module", "server"),
+            ("struct", "Store"),
+            ("method", "Store::open"),
+            ("method", "Store::load"),
+            ("trait", "Named"),
+            ("function", "helper"),
+        ] {
             assert!(kinds.contains(&expected), "{kinds:?}");
         }
-        assert_eq!(facts.imports, ["mod:server", "crate::graph::build", "crate::graph::query::Hit", "std::fs"]);
-        assert_eq!(calls(&facts, RefKind::Implements), [(Some("Store"), "Named")]);
+        assert_eq!(
+            facts.imports,
+            [
+                "mod:server",
+                "crate::graph::build",
+                "crate::graph::query::Hit",
+                "std::fs"
+            ]
+        );
+        assert_eq!(
+            calls(&facts, RefKind::Implements),
+            [(Some("Store"), "Named")]
+        );
         let all = calls(&facts, RefKind::Calls);
         assert!(all.contains(&(Some("Store::load"), "helper")), "{all:?}");
         assert!(all.contains(&(Some("helper"), "open")), "{all:?}");
-        assert_eq!(facts.refs.iter().find(|r| r.name == "open" && r.from.is_some_and(|f| facts.symbols[f].name == "helper")).and_then(|r| r.qualifier.as_deref()), Some("Store"));
+        assert_eq!(
+            facts
+                .refs
+                .iter()
+                .find(|r| r.name == "open"
+                    && r.from.is_some_and(|f| facts.symbols[f].name == "helper"))
+                .and_then(|r| r.qualifier.as_deref()),
+            Some("Store")
+        );
     }
 
     #[test]

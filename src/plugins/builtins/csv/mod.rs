@@ -26,7 +26,10 @@ const DELIMITERS: [(&str, Option<char>); 5] = [
 
 pub fn is_csv(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
-        matches!(e.to_ascii_lowercase().as_str(), "csv" | "tsv" | "psv" | "tab")
+        matches!(
+            e.to_ascii_lowercase().as_str(),
+            "csv" | "tsv" | "psv" | "tab"
+        )
     })
 }
 
@@ -56,7 +59,10 @@ pub fn detect_delimiter(path: &Path, text: &str) -> char {
             _ => {}
         }
     }
-    let best = counts.iter().enumerate().max_by_key(|(i, n)| (**n, usize::MAX - i));
+    let best = counts
+        .iter()
+        .enumerate()
+        .max_by_key(|(i, n)| (**n, usize::MAX - i));
     match best {
         Some((i, n)) if *n > 0 => [',', ';', '\t', '|'][i],
         _ => ',',
@@ -71,7 +77,11 @@ pub fn parse(text: &str, delimiter: char) -> Vec<Vec<String>> {
     let mut field = String::new();
     let mut quoted = false;
     let mut started = false;
-    let mut chars = text.strip_prefix('\u{feff}').unwrap_or(text).chars().peekable();
+    let mut chars = text
+        .strip_prefix('\u{feff}')
+        .unwrap_or(text)
+        .chars()
+        .peekable();
     while let Some(c) = chars.next() {
         if quoted {
             if c == '"' {
@@ -176,7 +186,9 @@ impl Default for State {
 
 impl State {
     fn refresh(&mut self, path: &Path, text: &str) {
-        let delimiter = self.delimiter.unwrap_or_else(|| detect_delimiter(path, text));
+        let delimiter = self
+            .delimiter
+            .unwrap_or_else(|| detect_delimiter(path, text));
         let mut hasher = DefaultHasher::new();
         text.hash(&mut hasher);
         delimiter.hash(&mut hasher);
@@ -244,7 +256,6 @@ impl BuiltinPlugin for CsvPlugin {
         Some("csv")
     }
 
-
     fn commands(&self) -> Vec<Command> {
         [
             ("csv.text", "CSV : éditeur seul"),
@@ -273,7 +284,11 @@ impl BuiltinPlugin for CsvPlugin {
     }
 
     fn editor_layout(&self, path: &Path) -> Option<EditorLayout> {
-        is_csv(path).then(|| self.states.get(path).map_or_else(EditorLayout::default, |s| s.layout))
+        is_csv(path).then(|| {
+            self.states
+                .get(path)
+                .map_or_else(EditorLayout::default, |s| s.layout)
+        })
     }
 
     fn set_editor_layout(&mut self, path: &Path, layout: EditorLayout) {
@@ -289,7 +304,8 @@ impl BuiltinPlugin for CsvPlugin {
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             ui.add_space(10.0);
-            let mut changed = ui::checkbox(ui, &mut state.header, "Première ligne en en-tête").changed();
+            let mut changed =
+                ui::checkbox(ui, &mut state.header, "Première ligne en en-tête").changed();
             ui.add_space(8.0);
             let detected = state.parsed.as_ref().map_or(',', |p| p.delimiter);
             let shown = match state.delimiter {
@@ -300,7 +316,10 @@ impl BuiltinPlugin for CsvPlugin {
                 .selected_text(shown)
                 .show_ui(ui, |ui| {
                     for (label, value) in DELIMITERS {
-                        if ui.selectable_label(state.delimiter == value, label).clicked() {
+                        if ui
+                            .selectable_label(state.delimiter == value, label)
+                            .clicked()
+                        {
                             state.delimiter = value;
                             changed = true;
                         }
@@ -323,7 +342,9 @@ impl BuiltinPlugin for CsvPlugin {
         let Some(parsed) = &state.parsed else { return };
         if parsed.rows.is_empty() {
             ui.add_space(20.0);
-            ui.vertical_centered(|ui| ui.label(RichText::new("Fichier vide").color(t.text_secondary)));
+            ui.vertical_centered(|ui| {
+                ui.label(RichText::new("Fichier vide").color(t.text_secondary))
+            });
             return;
         }
         let header_row = state.header.then(|| &parsed.rows[0]);
@@ -332,66 +353,82 @@ impl BuiltinPlugin for CsvPlugin {
         let order = &state.order;
         let rows = &parsed.rows;
         ui.push_id(("csv_table", path), |ui| {
-            egui::ScrollArea::horizontal().auto_shrink([false, false]).show(ui, |ui| {
-                let mut table = TableBuilder::new(ui)
-                    .striped(true)
-                    .resizable(true)
-                    .vscroll(true)
-                    .auto_shrink([false, false])
-                    .column(Column::exact(52.0));
-                for width in &parsed.widths {
-                    table = table.column(Column::initial(*width).at_least(36.0).clip(true));
-                }
-                table
-                    .header(26.0, |mut header| {
-                        header.col(|_| {});
-                        for c in 0..parsed.columns {
-                            header.col(|ui| {
-                                let name = header_row
-                                    .and_then(|r| r.get(c))
-                                    .filter(|n| !n.is_empty())
-                                    .cloned()
-                                    .unwrap_or_else(|| column_name(c));
-                                let arrow = match sort {
-                                    Some((col, asc)) if col == c => Some(if asc { "chevronUp" } else { "chevronDown" }),
-                                    _ => None,
-                                };
-                                ui.horizontal(|ui| {
-                                    ui.spacing_mut().item_spacing.x = 2.0;
-                                    let label = ui.add(
-                                        egui::Label::new(RichText::new(name).font(ui::semibold(12.5)))
+            egui::ScrollArea::horizontal()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    let mut table = TableBuilder::new(ui)
+                        .striped(true)
+                        .resizable(true)
+                        .vscroll(true)
+                        .auto_shrink([false, false])
+                        .column(Column::exact(52.0));
+                    for width in &parsed.widths {
+                        table = table.column(Column::initial(*width).at_least(36.0).clip(true));
+                    }
+                    table
+                        .header(26.0, |mut header| {
+                            header.col(|_| {});
+                            for c in 0..parsed.columns {
+                                header.col(|ui| {
+                                    let name = header_row
+                                        .and_then(|r| r.get(c))
+                                        .filter(|n| !n.is_empty())
+                                        .cloned()
+                                        .unwrap_or_else(|| column_name(c));
+                                    let arrow = match sort {
+                                        Some((col, asc)) if col == c => {
+                                            Some(if asc { "chevronUp" } else { "chevronDown" })
+                                        }
+                                        _ => None,
+                                    };
+                                    ui.horizontal(|ui| {
+                                        ui.spacing_mut().item_spacing.x = 2.0;
+                                        let label = ui.add(
+                                            egui::Label::new(
+                                                RichText::new(name).font(ui::semibold(12.5)),
+                                            )
                                             .truncate()
                                             .sense(egui::Sense::click()),
-                                    );
-                                    if let Some(icon) = arrow {
-                                        ui.add(ui::icon(ui, icon));
-                                    }
-                                    if label.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                                        sort_clicked = Some(c);
-                                    }
-                                });
-                            });
-                        }
-                    })
-                    .body(|body| {
-                        body.rows(ROW_HEIGHT, order.len(), |mut row| {
-                            let source = order[row.index()];
-                            row.col(|ui| {
-                                ui.label(RichText::new((source + 1 - usize::from(header_row.is_some())).to_string()).small().color(t.line_number));
-                            });
-                            for c in 0..parsed.columns {
-                                row.col(|ui| {
-                                    let cell = rows[source].get(c).map_or("", String::as_str);
-                                    let first = cell.lines().next().unwrap_or("");
-                                    let response = ui.add(egui::Label::new(first).truncate());
-                                    if cell.len() > first.len() {
-                                        response.on_hover_text(cell);
-                                    }
+                                        );
+                                        if let Some(icon) = arrow {
+                                            ui.add(ui::icon(ui, icon));
+                                        }
+                                        if label
+                                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                            .clicked()
+                                        {
+                                            sort_clicked = Some(c);
+                                        }
+                                    });
                                 });
                             }
+                        })
+                        .body(|body| {
+                            body.rows(ROW_HEIGHT, order.len(), |mut row| {
+                                let source = order[row.index()];
+                                row.col(|ui| {
+                                    ui.label(
+                                        RichText::new(
+                                            (source + 1 - usize::from(header_row.is_some()))
+                                                .to_string(),
+                                        )
+                                        .small()
+                                        .color(t.line_number),
+                                    );
+                                });
+                                for c in 0..parsed.columns {
+                                    row.col(|ui| {
+                                        let cell = rows[source].get(c).map_or("", String::as_str);
+                                        let first = cell.lines().next().unwrap_or("");
+                                        let response = ui.add(egui::Label::new(first).truncate());
+                                        if cell.len() > first.len() {
+                                            response.on_hover_text(cell);
+                                        }
+                                    });
+                                }
+                            });
                         });
-                    });
-            });
+                });
         });
         if let Some(col) = sort_clicked {
             // Ascending, then descending, then the order of the file.
@@ -421,7 +458,10 @@ mod tests {
 
     #[test]
     fn parses_quotes_line_breaks_and_empty_fields() {
-        let rows = parse("a,b,c\r\n\"x,1\",\"say \"\"hi\"\"\",\n\"multi\nline\",,z\n", ',');
+        let rows = parse(
+            "a,b,c\r\n\"x,1\",\"say \"\"hi\"\"\",\n\"multi\nline\",,z\n",
+            ',',
+        );
         assert_eq!(rows.len(), 3);
         assert_eq!(rows[1], ["x,1", "say \"hi\"", ""]);
         assert_eq!(rows[2], ["multi\nline", "", "z"]);

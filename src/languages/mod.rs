@@ -173,7 +173,9 @@ impl Location {
     pub fn in_text(path: Option<PathBuf>, text: &str, range: Range<usize>) -> Self {
         let (line, column) = lsp::to_position(text, range.start);
         let (end_line, end_column) = lsp::to_position(text, range.end);
-        let start = text[..range.start.min(text.len())].rfind('\n').map_or(0, |i| i + 1);
+        let start = text[..range.start.min(text.len())]
+            .rfind('\n')
+            .map_or(0, |i| i + 1);
         let end = text[start..].find('\n').map_or(text.len(), |i| start + i);
         Self {
             path,
@@ -227,7 +229,13 @@ pub trait Provider: Send {
     fn update(&mut self, doc: &DocRef, text: &str, version: u64);
     fn close(&mut self, key: u64);
     fn diagnostics(&mut self, key: u64) -> Arc<Vec<Diagnostic>>;
-    fn complete(&mut self, doc: &DocRef, text: &str, offset: usize, explicit: bool) -> Oneshot<Option<Completion>>;
+    fn complete(
+        &mut self,
+        doc: &DocRef,
+        text: &str,
+        offset: usize,
+        explicit: bool,
+    ) -> Oneshot<Option<Completion>>;
     fn hover(&mut self, doc: &DocRef, text: &str, offset: usize) -> Oneshot<Option<Hover>>;
     /// Where the name at `offset` is declared.
     fn definition(&mut self, _doc: &DocRef, _text: &str, _offset: usize) -> Oneshot<Vec<Location>> {
@@ -238,16 +246,31 @@ pub trait Provider: Send {
         Oneshot::ready(Vec::new())
     }
     /// Where the type of the name at `offset` is declared.
-    fn type_definition(&mut self, _doc: &DocRef, _text: &str, _offset: usize) -> Oneshot<Vec<Location>> {
+    fn type_definition(
+        &mut self,
+        _doc: &DocRef,
+        _text: &str,
+        _offset: usize,
+    ) -> Oneshot<Vec<Location>> {
         Oneshot::ready(Vec::new())
     }
     /// The implementations of the name at `offset`.
-    fn implementation(&mut self, _doc: &DocRef, _text: &str, _offset: usize) -> Oneshot<Vec<Location>> {
+    fn implementation(
+        &mut self,
+        _doc: &DocRef,
+        _text: &str,
+        _offset: usize,
+    ) -> Oneshot<Vec<Location>> {
         Oneshot::ready(Vec::new())
     }
     /// Every place in the document that is the same name as the one at `offset`, the
     /// declaration included (for the highlight under the caret).
-    fn highlights(&mut self, _doc: &DocRef, _text: &str, _offset: usize) -> Oneshot<Vec<Range<usize>>> {
+    fn highlights(
+        &mut self,
+        _doc: &DocRef,
+        _text: &str,
+        _offset: usize,
+    ) -> Oneshot<Vec<Range<usize>>> {
         Oneshot::ready(Vec::new())
     }
     /// The functions, classes and constants of the document.
@@ -255,15 +278,32 @@ pub trait Provider: Send {
         Oneshot::ready(Vec::new())
     }
     /// The changes that rename the name at `offset`, or why it cannot be.
-    fn rename(&mut self, _doc: &DocRef, _text: &str, _offset: usize, _new_name: &str) -> Oneshot<Result<Vec<FileEdit>, String>> {
-        Oneshot::ready(Err("Renommer n'est pas pris en charge pour ce langage".into()))
+    fn rename(
+        &mut self,
+        _doc: &DocRef,
+        _text: &str,
+        _offset: usize,
+        _new_name: &str,
+    ) -> Oneshot<Result<Vec<FileEdit>, String>> {
+        Oneshot::ready(Err(
+            "Renommer n'est pas pris en charge pour ce langage".into()
+        ))
     }
     /// The actions offered at `offset`.
-    fn quick_fixes(&mut self, _doc: &DocRef, _text: &str, _offset: usize) -> Oneshot<Vec<QuickFix>> {
+    fn quick_fixes(
+        &mut self,
+        _doc: &DocRef,
+        _text: &str,
+        _offset: usize,
+    ) -> Oneshot<Vec<QuickFix>> {
         Oneshot::ready(Vec::new())
     }
     /// The detail and documentation of an item that came without them.
-    fn resolve(&mut self, _doc: &DocRef, _item: &CompletionItem) -> Oneshot<Option<CompletionItem>> {
+    fn resolve(
+        &mut self,
+        _doc: &DocRef,
+        _item: &CompletionItem,
+    ) -> Oneshot<Option<CompletionItem>> {
         Oneshot::ready(None)
     }
     /// A line for the status bar: which engine answers.
@@ -322,11 +362,19 @@ impl Service {
 
     /// Tells the provider the document is at `version`. Cheap when nothing changed.
     pub fn update(&self, doc: &DocRef, text: &str, version: u64) {
-        let Ok(mut inner) = self.inner.lock() else { return };
-        let Some(index) = inner.providers.iter().position(|p| p.handles(&doc.language)) else {
+        let Ok(mut inner) = self.inner.lock() else {
             return;
         };
-        if inner.versions.get(&doc.key) == Some(&version) && inner.owners.get(&doc.key) == Some(&index) {
+        let Some(index) = inner
+            .providers
+            .iter()
+            .position(|p| p.handles(&doc.language))
+        else {
+            return;
+        };
+        if inner.versions.get(&doc.key) == Some(&version)
+            && inner.owners.get(&doc.key) == Some(&index)
+        {
             return;
         }
         // A document whose language changed (saved under another name) leaves its old provider.
@@ -340,7 +388,9 @@ impl Service {
     }
 
     pub fn close(&self, key: u64) {
-        let Ok(mut inner) = self.inner.lock() else { return };
+        let Ok(mut inner) = self.inner.lock() else {
+            return;
+        };
         if let Some(index) = inner.owners.remove(&key) {
             inner.providers[index].close(key);
         }
@@ -348,12 +398,21 @@ impl Service {
     }
 
     pub fn diagnostics(&self, doc: &DocRef) -> Arc<Vec<Diagnostic>> {
-        self.with(&doc.language, |p, _| p.diagnostics(doc.key)).unwrap_or_default()
+        self.with(&doc.language, |p, _| p.diagnostics(doc.key))
+            .unwrap_or_default()
     }
 
-    pub fn complete(&self, doc: &DocRef, text: &str, offset: usize, explicit: bool) -> Oneshot<Option<Completion>> {
-        self.with(&doc.language, |p, _| p.complete(doc, text, offset, explicit))
-            .unwrap_or_else(|| Oneshot::ready(None))
+    pub fn complete(
+        &self,
+        doc: &DocRef,
+        text: &str,
+        offset: usize,
+        explicit: bool,
+    ) -> Oneshot<Option<Completion>> {
+        self.with(&doc.language, |p, _| {
+            p.complete(doc, text, offset, explicit)
+        })
+        .unwrap_or_else(|| Oneshot::ready(None))
     }
 
     pub fn hover(&self, doc: &DocRef, text: &str, offset: usize) -> Oneshot<Option<Hover>> {
@@ -361,17 +420,32 @@ impl Service {
             .unwrap_or_else(|| Oneshot::ready(None))
     }
 
-    pub fn type_definition(&self, doc: &DocRef, text: &str, offset: usize) -> Oneshot<Vec<Location>> {
+    pub fn type_definition(
+        &self,
+        doc: &DocRef,
+        text: &str,
+        offset: usize,
+    ) -> Oneshot<Vec<Location>> {
         self.with(&doc.language, |p, _| p.type_definition(doc, text, offset))
             .unwrap_or_else(|| Oneshot::ready(Vec::new()))
     }
 
-    pub fn implementation(&self, doc: &DocRef, text: &str, offset: usize) -> Oneshot<Vec<Location>> {
+    pub fn implementation(
+        &self,
+        doc: &DocRef,
+        text: &str,
+        offset: usize,
+    ) -> Oneshot<Vec<Location>> {
         self.with(&doc.language, |p, _| p.implementation(doc, text, offset))
             .unwrap_or_else(|| Oneshot::ready(Vec::new()))
     }
 
-    pub fn highlights(&self, doc: &DocRef, text: &str, offset: usize) -> Oneshot<Vec<Range<usize>>> {
+    pub fn highlights(
+        &self,
+        doc: &DocRef,
+        text: &str,
+        offset: usize,
+    ) -> Oneshot<Vec<Range<usize>>> {
         self.with(&doc.language, |p, _| p.highlights(doc, text, offset))
             .unwrap_or_else(|| Oneshot::ready(Vec::new()))
     }
@@ -381,9 +455,19 @@ impl Service {
             .unwrap_or_else(|| Oneshot::ready(Vec::new()))
     }
 
-    pub fn rename(&self, doc: &DocRef, text: &str, offset: usize, new_name: &str) -> Oneshot<Result<Vec<FileEdit>, String>> {
+    pub fn rename(
+        &self,
+        doc: &DocRef,
+        text: &str,
+        offset: usize,
+        new_name: &str,
+    ) -> Oneshot<Result<Vec<FileEdit>, String>> {
         self.with(&doc.language, |p, _| p.rename(doc, text, offset, new_name))
-            .unwrap_or_else(|| Oneshot::ready(Err("Renommer n'est pas pris en charge pour ce langage".into())))
+            .unwrap_or_else(|| {
+                Oneshot::ready(Err(
+                    "Renommer n'est pas pris en charge pour ce langage".into()
+                ))
+            })
     }
 
     pub fn quick_fixes(&self, doc: &DocRef, text: &str, offset: usize) -> Oneshot<Vec<QuickFix>> {
@@ -430,7 +514,8 @@ pub fn fuzzy_match(query: &str, label: &str) -> Option<(i32, Vec<usize>)> {
     let mut positions = Vec::new();
     for q in query.chars() {
         let q_lower = q.to_lowercase().next().unwrap_or(q);
-        let found = (index..label_chars.len()).find(|&i| label_chars[i].to_lowercase().next() == Some(q_lower))?;
+        let found = (index..label_chars.len())
+            .find(|&i| label_chars[i].to_lowercase().next() == Some(q_lower))?;
         let boundary = found == 0
             || !label_chars[found - 1].is_alphanumeric()
             || (label_chars[found].is_uppercase() && label_chars[found - 1].is_lowercase());

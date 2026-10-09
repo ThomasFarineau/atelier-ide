@@ -48,7 +48,11 @@ fn kubectl_input(args: &[String], input: Option<String>) -> Result<String> {
     let mut cmd = Process::new("kubectl");
     cmd.args(args)
         .arg("--request-timeout=15s")
-        .stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() })
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     #[cfg(windows)]
@@ -119,7 +123,11 @@ pub fn parse_table(text: &str) -> Table {
                 if from >= to {
                     String::new()
                 } else {
-                    chars[from..to].iter().collect::<String>().trim().to_string()
+                    chars[from..to]
+                        .iter()
+                        .collect::<String>()
+                        .trim()
+                        .to_string()
                 }
             })
             .collect()
@@ -179,7 +187,10 @@ fn compare_cells(header: &str, a: &str, b: &str) -> std::cmp::Ordering {
 
 fn b64_decode(text: &str) -> Option<Vec<u8>> {
     let (mut out, mut bits, mut count) = (Vec::new(), 0u32, 0u32);
-    for c in text.bytes().filter(|c| !c.is_ascii_whitespace() && *c != b'=') {
+    for c in text
+        .bytes()
+        .filter(|c| !c.is_ascii_whitespace() && *c != b'=')
+    {
         let value = match c {
             b'A'..=b'Z' => c - b'A',
             b'a'..=b'z' => c - b'a' + 26,
@@ -225,7 +236,9 @@ impl Editor {
                 let text = value.as_str().unwrap_or_default();
                 if !secret {
                     entries.push((key.clone(), text.to_string()));
-                } else if let Some(decoded) = b64_decode(text).and_then(|b| String::from_utf8(b).ok()) {
+                } else if let Some(decoded) =
+                    b64_decode(text).and_then(|b| String::from_utf8(b).ok())
+                {
                     entries.push((key.clone(), decoded));
                 } else {
                     binary.push(key.clone());
@@ -236,7 +249,9 @@ impl Editor {
         if let Some(extra) = doc.get("binaryData").and_then(Value::as_object) {
             binary.extend(extra.keys().cloned());
         }
-        let obj = doc.as_object_mut().ok_or_else(|| anyhow!("réponse inattendue de kubectl"))?;
+        let obj = doc
+            .as_object_mut()
+            .ok_or_else(|| anyhow!("réponse inattendue de kubectl"))?;
         if let Some(meta) = obj.get_mut("metadata").and_then(Value::as_object_mut) {
             meta.remove("managedFields");
         }
@@ -288,9 +303,12 @@ impl Editor {
         let key = self.new_key.trim().to_string();
         let valid = !key.is_empty()
             && key.len() <= 253
-            && key.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'));
+            && key
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'));
         if !valid {
-            self.error = Some("Clé invalide : lettres, chiffres, « . », « _ » et « - » seulement".into());
+            self.error =
+                Some("Clé invalide : lettres, chiffres, « . », « _ » et « - » seulement".into());
         } else if self.entries.iter().any(|(k, _)| *k == key) || self.binary.contains(&key) {
             self.error = Some(format!("La clé {key} existe déjà"));
         } else {
@@ -327,7 +345,11 @@ impl<T: Send + 'static> Task<T> {
     fn poll(task: &mut Option<Self>) -> Option<Result<T>> {
         if task.as_ref().is_some_and(|t| t.handle.is_finished()) {
             let t = task.take()?;
-            return Some(t.handle.join().unwrap_or_else(|_| Err(anyhow!("la commande a planté"))));
+            return Some(
+                t.handle
+                    .join()
+                    .unwrap_or_else(|_| Err(anyhow!("la commande a planté"))),
+            );
         }
         None
     }
@@ -396,7 +418,10 @@ impl K8sPlugin {
     }
 
     fn list_key(&self) -> String {
-        format!("{:?}|{}|{}|{}", self.context, self.namespace, self.all_namespaces, self.kind)
+        format!(
+            "{:?}|{}|{}|{}",
+            self.context, self.namespace, self.all_namespaces, self.kind
+        )
     }
 
     fn reload(&mut self) {
@@ -420,12 +445,20 @@ impl K8sPlugin {
     }
 
     fn load_namespaces(&mut self) {
-        let mut args = strings(&["get", "namespaces", "-o", "jsonpath={.items[*].metadata.name}"]);
+        let mut args = strings(&[
+            "get",
+            "namespaces",
+            "-o",
+            "jsonpath={.items[*].metadata.name}",
+        ]);
         if let Some(context) = &self.context {
             args.extend(["--context".into(), context.clone()]);
         }
         self.namespaces_job = Some(Task::spawn(move || {
-            Ok(kubectl(&args)?.split_whitespace().map(str::to_string).collect())
+            Ok(kubectl(&args)?
+                .split_whitespace()
+                .map(str::to_string)
+                .collect())
         }));
     }
 
@@ -435,7 +468,9 @@ impl K8sPlugin {
         args.extend(self.scope());
         self.stale = false;
         self.refreshed_at = Some(Instant::now());
-        self.list_job = Some(Task::spawn(move || Ok((key, parse_table(&kubectl(&args)?)))));
+        self.list_job = Some(Task::spawn(move || {
+            Ok((key, parse_table(&kubectl(&args)?)))
+        }));
     }
 
     /// Name and namespace columns of a row.
@@ -476,7 +511,13 @@ impl K8sPlugin {
         self.run_action_with(label, args, None, ns);
     }
 
-    fn run_action_with(&mut self, label: String, mut args: Vec<String>, input: Option<String>, ns: &str) {
+    fn run_action_with(
+        &mut self,
+        label: String,
+        mut args: Vec<String>,
+        input: Option<String>,
+        ns: &str,
+    ) {
         if self.action_job.is_some() {
             return;
         }
@@ -517,18 +558,32 @@ impl K8sPlugin {
 
     fn describe(&mut self, ns: &str, name: &str) {
         let resource = KINDS[self.kind].1;
-        self.show(format!("describe {name}"), strings(&["describe", resource, name]), ns);
+        self.show(
+            format!("describe {name}"),
+            strings(&["describe", resource, name]),
+            ns,
+        );
     }
 
     fn yaml(&mut self, ns: &str, name: &str) {
         let resource = KINDS[self.kind].1;
-        self.show(format!("{name}.yaml"), strings(&["get", resource, name, "-o", "yaml"]), ns);
+        self.show(
+            format!("{name}.yaml"),
+            strings(&["get", resource, name, "-o", "yaml"]),
+            ns,
+        );
     }
 
     fn logs(&mut self, ns: &str, name: &str) {
         self.show(
             format!("logs {name}"),
-            strings(&["logs", name, "--all-containers", "--tail=500", "--timestamps"]),
+            strings(&[
+                "logs",
+                name,
+                "--all-containers",
+                "--tail=500",
+                "--timestamps",
+            ]),
             ns,
         );
     }
@@ -562,7 +617,11 @@ impl K8sPlugin {
             title: "Redémarrer".into(),
             text: format!("Redémarrer {resource}/{name} (rollout restart) ?"),
             label: format!("Redémarrage de {name}"),
-            args: [strings(&["rollout", "restart"]), vec![format!("{resource}/{name}")]].concat(),
+            args: [
+                strings(&["rollout", "restart"]),
+                vec![format!("{resource}/{name}")],
+            ]
+            .concat(),
         });
     }
 
@@ -650,10 +709,14 @@ impl K8sPlugin {
             if self.loaded_for.as_deref() != Some(&self.list_key()) && self.list_job.is_none() {
                 self.stale = true;
             }
-            if self.refreshed_at.is_none_or(|t| t.elapsed() > REFRESH_EVERY) {
+            if self
+                .refreshed_at
+                .is_none_or(|t| t.elapsed() > REFRESH_EVERY)
+            {
                 self.stale = true;
             }
-            if self.stale && self.list_job.is_none() && self.meta_loaded && self.meta_job.is_none() {
+            if self.stale && self.list_job.is_none() && self.meta_loaded && self.meta_job.is_none()
+            {
                 self.load_list();
             }
         }
@@ -816,56 +879,62 @@ impl K8sPlugin {
         let name_col = usize::from(self.namespaced() && self.all_namespaces);
         let text_color = ui.visuals().text_color();
         let mut clicked = None;
-        egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
-            egui::Grid::new("k8s_table")
-                .striped(true)
-                .num_columns(self.table.headers.len())
-                .spacing([18.0, 4.0])
-                .show(ui, |ui| {
-                    for header in &self.table.headers {
-                        let arrow = match &sort {
-                            Some((h, asc)) if h == header => Some(if *asc { "chevronUp" } else { "chevronDown" }),
-                            _ => None,
-                        };
-                        let response = ui
-                            .horizontal(|ui| {
-                                ui.spacing_mut().item_spacing.x = 2.0;
-                                let label = ui.add(
-                                    egui::Label::new(
-                                        RichText::new(header)
-                                            .font(ui::semibold(12.0))
-                                            .color(t.text_secondary),
-                                    )
-                                    .sense(egui::Sense::click()),
-                                );
-                                if let Some(name) = arrow {
-                                    ui.add(ui::icon(ui, name));
+        egui::ScrollArea::both()
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                egui::Grid::new("k8s_table")
+                    .striped(true)
+                    .num_columns(self.table.headers.len())
+                    .spacing([18.0, 4.0])
+                    .show(ui, |ui| {
+                        for header in &self.table.headers {
+                            let arrow = match &sort {
+                                Some((h, asc)) if h == header => {
+                                    Some(if *asc { "chevronUp" } else { "chevronDown" })
                                 }
-                                label
-                            })
-                            .inner
-                            .on_hover_cursor(egui::CursorIcon::PointingHand);
-                        if response.clicked() {
-                            sort_clicked = Some(header.clone());
-                        }
-                    }
-                    ui.end_row();
-                    for row in &rows {
-                        let identity = self.identity(row);
-                        for (c, cell) in row.iter().enumerate() {
-                            if c == name_col {
-                                let on = identity.is_some() && identity == self.selected;
-                                if ui.selectable_label(on, cell).clicked() {
-                                    clicked = identity.clone();
-                                }
-                            } else {
-                                ui.label(RichText::new(cell).color(cell_color(&t, cell, text_color)));
+                                _ => None,
+                            };
+                            let response = ui
+                                .horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing.x = 2.0;
+                                    let label = ui.add(
+                                        egui::Label::new(
+                                            RichText::new(header)
+                                                .font(ui::semibold(12.0))
+                                                .color(t.text_secondary),
+                                        )
+                                        .sense(egui::Sense::click()),
+                                    );
+                                    if let Some(name) = arrow {
+                                        ui.add(ui::icon(ui, name));
+                                    }
+                                    label
+                                })
+                                .inner
+                                .on_hover_cursor(egui::CursorIcon::PointingHand);
+                            if response.clicked() {
+                                sort_clicked = Some(header.clone());
                             }
                         }
                         ui.end_row();
-                    }
-                });
-        });
+                        for row in &rows {
+                            let identity = self.identity(row);
+                            for (c, cell) in row.iter().enumerate() {
+                                if c == name_col {
+                                    let on = identity.is_some() && identity == self.selected;
+                                    if ui.selectable_label(on, cell).clicked() {
+                                        clicked = identity.clone();
+                                    }
+                                } else {
+                                    ui.label(
+                                        RichText::new(cell).color(cell_color(&t, cell, text_color)),
+                                    );
+                                }
+                            }
+                            ui.end_row();
+                        }
+                    });
+            });
         if let Some(identity) = clicked {
             self.selected = Some(identity);
         }
@@ -895,17 +964,23 @@ impl K8sPlugin {
                 }
             });
         });
-        let color = if detail.error { t.deleted } else { ui.visuals().text_color() };
-        egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
-            ui.add(
-                egui::TextEdit::multiline(&mut detail.text.as_str())
-                    .font(egui::TextStyle::Monospace)
-                    .text_color(color)
-                    .desired_width(f32::INFINITY)
-                    .frame(false),
-            )
-            .on_hover_cursor(egui::CursorIcon::Text);
-        });
+        let color = if detail.error {
+            t.deleted
+        } else {
+            ui.visuals().text_color()
+        };
+        egui::ScrollArea::both()
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                ui.add(
+                    egui::TextEdit::multiline(&mut detail.text.as_str())
+                        .font(egui::TextStyle::Monospace)
+                        .text_color(color)
+                        .desired_width(f32::INFINITY)
+                        .frame(false),
+                )
+                .on_hover_cursor(egui::CursorIcon::Text);
+            });
         if detail.title.is_empty() {
             self.detail = None;
             self.detail_job = None;
@@ -925,7 +1000,11 @@ impl K8sPlugin {
                 if ui::icon_button(ui, "close", "Fermer sans enregistrer").clicked() {
                     close = true;
                 }
-                if ui.add_enabled_ui(!saving, |ui| ui::primary_button(ui, "Enregistrer")).inner.clicked() {
+                if ui
+                    .add_enabled_ui(!saving, |ui| ui::primary_button(ui, "Enregistrer"))
+                    .inner
+                    .clicked()
+                {
                     save = true;
                 }
             });
@@ -935,45 +1014,50 @@ impl K8sPlugin {
         }
         if !editor.binary.is_empty() {
             ui.label(
-                RichText::new(format!("Valeurs binaires conservées : {}", editor.binary.join(", ")))
-                    .color(t.text_secondary),
+                RichText::new(format!(
+                    "Valeurs binaires conservées : {}",
+                    editor.binary.join(", ")
+                ))
+                .color(t.text_secondary),
             );
         }
         let mut remove = None;
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            for (i, (key, value)) in editor.entries.iter_mut().enumerate() {
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                for (i, (key, value)) in editor.entries.iter_mut().enumerate() {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(key.as_str()).font(ui::semibold(12.5)));
+                        if ui::icon_button(ui, "delete", "Supprimer la clé").clicked() {
+                            remove = Some(i);
+                        }
+                    });
+                    let rows = value.lines().count().clamp(2, 14);
+                    ui.add(
+                        egui::TextEdit::multiline(value)
+                            .font(egui::TextStyle::Monospace)
+                            .desired_rows(rows)
+                            .desired_width(f32::INFINITY)
+                            .code_editor(),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::Text);
+                    ui.add_space(6.0);
+                }
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(key.as_str()).font(ui::semibold(12.5)));
-                    if ui::icon_button(ui, "delete", "Supprimer la clé").clicked() {
-                        remove = Some(i);
+                    let field = ui.add(
+                        egui::TextEdit::singleline(&mut editor.new_key)
+                            .hint_text("Nouvelle clé")
+                            .desired_width(200.0),
+                    );
+                    let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    if ui::button(ui, "Ajouter").clicked() || enter {
+                        editor.add_key();
                     }
                 });
-                let rows = value.lines().count().clamp(2, 14);
-                ui.add(
-                    egui::TextEdit::multiline(value)
-                        .font(egui::TextStyle::Monospace)
-                        .desired_rows(rows)
-                        .desired_width(f32::INFINITY)
-                        .code_editor(),
-                )
-                .on_hover_cursor(egui::CursorIcon::Text);
-                ui.add_space(6.0);
-            }
-            ui.horizontal(|ui| {
-                let field = ui.add(
-                    egui::TextEdit::singleline(&mut editor.new_key)
-                        .hint_text("Nouvelle clé")
-                        .desired_width(200.0),
-                );
-                let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                if ui::button(ui, "Ajouter").clicked() || enter {
-                    editor.add_key();
+                if let Some(error) = &editor.error {
+                    ui.label(RichText::new(error).color(t.deleted));
                 }
             });
-            if let Some(error) = &editor.error {
-                ui.label(RichText::new(error).color(t.deleted));
-            }
-        });
         if let Some(i) = remove {
             editor.entries.remove(i);
         }
@@ -1008,7 +1092,11 @@ impl K8sPlugin {
             && let Some(confirm) = self.confirm.take()
             && ok
         {
-            let ns = self.selected.as_ref().map(|s| s.0.clone()).unwrap_or_default();
+            let ns = self
+                .selected
+                .as_ref()
+                .map(|s| s.0.clone())
+                .unwrap_or_default();
             self.run_action(confirm.label, confirm.args, &ns);
         }
     }
@@ -1160,7 +1248,14 @@ mod tests {
         let table = parse_table(text);
         assert_eq!(
             table.headers,
-            ["NAME", "READY", "STATUS", "RESTARTS", "AGE", "NOMINATED NODE"]
+            [
+                "NAME",
+                "READY",
+                "STATUS",
+                "RESTARTS",
+                "AGE",
+                "NOMINATED NODE"
+            ]
         );
         assert_eq!(table.rows[1][2], "CrashLoopBackOff");
         assert_eq!(table.rows[1][3], "5 (2m ago)");
@@ -1226,9 +1321,16 @@ mod tests {
     #[test]
     fn row_identity_follows_the_namespace_column() {
         let mut plugin = K8sPlugin::default();
-        let row = vec!["kube-system".to_string(), "dns".to_string(), "1/1".to_string()];
+        let row = vec![
+            "kube-system".to_string(),
+            "dns".to_string(),
+            "1/1".to_string(),
+        ];
         plugin.all_namespaces = true;
-        assert_eq!(plugin.identity(&row), Some(("kube-system".into(), "dns".into())));
+        assert_eq!(
+            plugin.identity(&row),
+            Some(("kube-system".into(), "dns".into()))
+        );
         plugin.all_namespaces = false;
         plugin.namespace = "dev".into();
         let row = vec!["dns".to_string()];
@@ -1257,9 +1359,8 @@ mod tests {
         .ok();
         for _ in 0..2 {
             let _ = ctx.run(Default::default(), |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    plugin.tool_window("k8s.resources", ui, &mut host)
-                });
+                egui::CentralPanel::default()
+                    .show(ctx, |ui| plugin.tool_window("k8s.resources", ui, &mut host));
             });
         }
         assert!(plugin.editor.is_some());
@@ -1271,9 +1372,8 @@ mod tests {
         });
         for _ in 0..2 {
             let _ = ctx.run(Default::default(), |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    plugin.tool_window("k8s.resources", ui, &mut host)
-                });
+                egui::CentralPanel::default()
+                    .show(ctx, |ui| plugin.tool_window("k8s.resources", ui, &mut host));
             });
         }
         assert!(plugin.confirm.is_some());

@@ -20,8 +20,15 @@ pub fn hover(text: &str, offset: usize) -> Option<Hover> {
     let leaf = analysis.root().descendant_for_byte_range(offset, offset)?;
     // On the edge of a word, the pointer may be just past its last character.
     let leaf = match leaf.kind() {
-        "identifier" | "property_identifier" | "shorthand_property_identifier" | "this" | "type_identifier" | "predefined_type" => leaf,
-        _ => analysis.root().descendant_for_byte_range(offset.saturating_sub(1), offset.saturating_sub(1))?,
+        "identifier"
+        | "property_identifier"
+        | "shorthand_property_identifier"
+        | "this"
+        | "type_identifier"
+        | "predefined_type" => leaf,
+        _ => analysis
+            .root()
+            .descendant_for_byte_range(offset.saturating_sub(1), offset.saturating_sub(1))?,
     };
     // `string` is a token inside the node of the predefined type.
     let leaf = match leaf.parent() {
@@ -73,7 +80,10 @@ pub fn hover(text: &str, offset: usize) -> Option<Hover> {
             }
             let object = parent.child_by_field_name("object")?;
             let ty = analysis.ty_of(object, offset);
-            let prop = analysis.props_of(&ty, offset).into_iter().find(|p| p.name == name)?;
+            let prop = analysis
+                .props_of(&ty, offset)
+                .into_iter()
+                .find(|p| p.name == name)?;
             let title = if prop.method {
                 format!("(method) {}{}", prop.name, short_signature(&prop.detail))
             } else {
@@ -97,27 +107,52 @@ fn short_signature(detail: &str) -> String {
     }
 }
 
-fn declared_member(analysis: &Analysis, leaf: tree_sitter::Node, range: std::ops::Range<usize>) -> Option<Hover> {
+fn declared_member(
+    analysis: &Analysis,
+    leaf: tree_sitter::Node,
+    range: std::ops::Range<usize>,
+) -> Option<Hover> {
     let parent = leaf.parent()?;
     if !matches!(
         parent.kind(),
-        "method_definition" | "field_definition" | "pair" | "public_field_definition" | "property_signature" | "method_signature" | "abstract_method_signature" | "enum_assignment"
+        "method_definition"
+            | "field_definition"
+            | "pair"
+            | "public_field_definition"
+            | "property_signature"
+            | "method_signature"
+            | "abstract_method_signature"
+            | "enum_assignment"
     ) {
         return None;
     }
-    let doc = analysis.jsdoc_before(&parent.byte_range()).unwrap_or_default();
+    let doc = analysis
+        .jsdoc_before(&parent.byte_range())
+        .unwrap_or_default();
     let name = &analysis.text[range.clone()];
     let title = match parent.kind() {
         "method_definition" | "method_signature" | "abstract_method_signature" => {
-            format!("(method) {name}{}", short_signature(&analysis.signature(&parent)))
+            format!(
+                "(method) {name}{}",
+                short_signature(&analysis.signature(&parent))
+            )
         }
-        "public_field_definition" | "property_signature" => match parent.child_by_field_name("type") {
-            Some(annotation) => format!("(property) {name}: {}", analysis.annotation_text(annotation)),
-            None => format!("(property) {name}"),
-        },
+        "public_field_definition" | "property_signature" => {
+            match parent.child_by_field_name("type") {
+                Some(annotation) => format!(
+                    "(property) {name}: {}",
+                    analysis.annotation_text(annotation)
+                ),
+                None => format!("(property) {name}"),
+            }
+        }
         _ => format!("(property) {name}"),
     };
-    Some(Hover { range, title, body: doc })
+    Some(Hover {
+        range,
+        title,
+        body: doc,
+    })
 }
 
 fn describe_decl(analysis: &Analysis, decl: &Decl) -> (String, String) {
@@ -128,7 +163,9 @@ fn describe_decl(analysis: &Analysis, decl: &Decl) -> (String, String) {
             let header = analysis
                 .node_at_range(&decl.node)
                 .map(|n| {
-                    let end = n.child_by_field_name("body").map_or(n.end_byte(), |b| b.start_byte());
+                    let end = n
+                        .child_by_field_name("body")
+                        .map_or(n.end_byte(), |b| b.start_byte());
                     collapse(&analysis.text[n.start_byte()..end])
                 })
                 .unwrap_or_else(|| decl.name.clone());
@@ -137,14 +174,18 @@ fn describe_decl(analysis: &Analysis, decl: &Decl) -> (String, String) {
         DeclKind::Class => analysis
             .node_at_range(&decl.node)
             .map(|n| {
-                let end = n.child_by_field_name("body").map_or(n.end_byte(), |b| b.start_byte());
+                let end = n
+                    .child_by_field_name("body")
+                    .map_or(n.end_byte(), |b| b.start_byte());
                 collapse(&analysis.text[n.start_byte()..end])
             })
             .unwrap_or_else(|| format!("class {}", decl.name)),
         DeclKind::Interface | DeclKind::Enum | DeclKind::Namespace => analysis
             .node_at_range(&decl.node)
             .map(|n| {
-                let end = n.child_by_field_name("body").map_or(n.end_byte(), |b| b.start_byte());
+                let end = n
+                    .child_by_field_name("body")
+                    .map_or(n.end_byte(), |b| b.start_byte());
                 collapse(&analysis.text[n.start_byte()..end])
             })
             .unwrap_or_else(|| decl.name.clone()),
@@ -153,7 +194,11 @@ fn describe_decl(analysis: &Analysis, decl: &Decl) -> (String, String) {
             .map(|n| {
                 let text = collapse(&analysis.text[n.byte_range()]);
                 let text = text.trim_end_matches(';').to_string();
-                if text.chars().count() > 160 { format!("{} …", text.chars().take(160).collect::<String>()) } else { text }
+                if text.chars().count() > 160 {
+                    format!("{} …", text.chars().take(160).collect::<String>())
+                } else {
+                    text
+                }
             })
             .unwrap_or_else(|| decl.name.clone()),
         DeclKind::Param => format!("(parameter) {}: {}", decl.name, analysis.show(&ty)),
@@ -188,7 +233,8 @@ mod tests {
 
     #[test]
     fn names_show_their_declaration_type_and_documentation() {
-        let (text, offset) = at("/** Adds two numbers. */\nfunction add(a, b) { return a + b; }\nadd|(1, 2);\n");
+        let (text, offset) =
+            at("/** Adds two numbers. */\nfunction add(a, b) { return a + b; }\nadd|(1, 2);\n");
         let info = hover(&text, offset - 1).unwrap();
         assert_eq!(info.title, "function add(a, b)");
         assert_eq!(info.body, "Adds two numbers.");
@@ -199,10 +245,16 @@ mod tests {
         assert_eq!(&text[info.range.clone()], "total");
 
         let (text, offset) = at("function f(items) { it|ems; }\n");
-        assert_eq!(hover(&text, offset).unwrap().title, "(parameter) items: any");
+        assert_eq!(
+            hover(&text, offset).unwrap().title,
+            "(parameter) items: any"
+        );
 
         let (text, offset) = at("class Dog extends Animal { bark() {} }\nnew Do|g();\n");
-        assert_eq!(hover(&text, offset).unwrap().title, "class Dog extends Animal");
+        assert_eq!(
+            hover(&text, offset).unwrap().title,
+            "class Dog extends Animal"
+        );
     }
 
     #[test]
@@ -218,7 +270,12 @@ mod tests {
         assert!(!info.body.is_empty());
 
         let (text, offset) = at("Math.fl|oor(1.5);\n");
-        assert!(hover(&text, offset).unwrap().title.starts_with("(method) floor"));
+        assert!(
+            hover(&text, offset)
+                .unwrap()
+                .title
+                .starts_with("(method) floor")
+        );
         let (text, offset) = at("let x = 1; // no|te\n");
         assert!(hover(&text, offset).is_none());
     }

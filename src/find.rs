@@ -44,7 +44,9 @@ impl Find {
         if with_replace {
             self.show_replace = true;
         }
-        if let Some(text) = selection.filter(|s| !s.is_empty() && !s.contains('\n') && s.len() < 200) {
+        if let Some(text) =
+            selection.filter(|s| !s.is_empty() && !s.contains('\n') && s.len() < 200)
+        {
             self.query = text;
         }
     }
@@ -110,7 +112,11 @@ impl Find {
         let mut action = Action::None;
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
-            let chevron = if self.show_replace { "chevronDown" } else { "chevronRight" };
+            let chevron = if self.show_replace {
+                "chevronDown"
+            } else {
+                "chevronRight"
+            };
             if ui::icon_toggle(ui, chevron, self.show_replace, "Remplacer · Ctrl+R").clicked() {
                 self.show_replace = !self.show_replace;
             }
@@ -121,15 +127,27 @@ impl Find {
             }
             let enter = ui.input(|i| i.key_pressed(Key::Enter));
             if (field.has_focus() || field.lost_focus()) && enter {
-                action = if ui.input(|i| i.modifiers.shift) { Action::Previous } else { Action::Next };
+                action = if ui.input(|i| i.modifiers.shift) {
+                    Action::Previous
+                } else {
+                    Action::Next
+                };
                 field.request_focus();
             }
             // Alt+C, Alt+W, Alt+X as in IntelliJ.
             let alt = |key| ui.input(|i| i.modifiers.alt && i.key_pressed(key));
             let (case, word, regex) = (alt(Key::C), alt(Key::W), alt(Key::X));
-            self.options.case ^= toggle(ui, t, "Aa", self.options.case, "Respecter la casse · Alt+C") | case;
-            self.options.word ^= toggle(ui, t, "W", self.options.word, "Mots entiers · Alt+W") | word;
-            self.options.regex ^= toggle(ui, t, ".*", self.options.regex, "Expression régulière · Alt+X") | regex;
+            self.options.case ^=
+                toggle(ui, t, "Aa", self.options.case, "Respecter la casse · Alt+C") | case;
+            self.options.word ^=
+                toggle(ui, t, "W", self.options.word, "Mots entiers · Alt+W") | word;
+            self.options.regex ^= toggle(
+                ui,
+                t,
+                ".*",
+                self.options.regex,
+                "Expression régulière · Alt+X",
+            ) | regex;
             let count = self.matches.len();
             let (text, color) = if let Some(error) = &self.error {
                 (error.clone(), t.error)
@@ -138,7 +156,11 @@ impl Find {
             } else if count == 0 {
                 ("Aucun résultat".to_string(), t.error)
             } else {
-                let shown = if count >= MAX_MATCHES { format!("{count}+") } else { count.to_string() };
+                let shown = if count >= MAX_MATCHES {
+                    format!("{count}+")
+                } else {
+                    count.to_string()
+                };
                 match self.position(selection) {
                     Some(i) => (format!("{} sur {shown}", i + 1), t.text_secondary),
                     None => (format!("{shown} résultats"), t.text_secondary),
@@ -185,16 +207,30 @@ impl Find {
 
 /// A small text toggle. True when it was clicked.
 fn toggle(ui: &mut Ui, t: &Theme, label: &str, on: bool, tooltip: &str) -> bool {
-    let galley = ui
-        .painter()
-        .layout_no_wrap(label.into(), ui::semibold(12.0), if on { egui::Color32::WHITE } else { t.text_secondary });
-    let (rect, response) = ui.allocate_exact_size(vec2((galley.size().x + 12.0).max(26.0), 24.0), Sense::click());
+    let galley = ui.painter().layout_no_wrap(
+        label.into(),
+        ui::semibold(12.0),
+        if on {
+            egui::Color32::WHITE
+        } else {
+            t.text_secondary
+        },
+    );
+    let (rect, response) = ui.allocate_exact_size(
+        vec2((galley.size().x + 12.0).max(26.0), 24.0),
+        Sense::click(),
+    );
     if on {
         ui.painter().rect_filled(rect, 5.0, t.accent);
     } else if response.hovered() {
         ui.painter().rect_filled(rect, 5.0, t.hover);
     } else {
-        ui.painter().rect_stroke(rect, 5.0, Stroke::new(1.0_f32, t.border), StrokeKind::Inside);
+        ui.painter().rect_stroke(
+            rect,
+            5.0,
+            Stroke::new(1.0_f32, t.border),
+            StrokeKind::Inside,
+        );
     }
     ui.painter()
         .galley(rect.center() - galley.size() / 2.0, galley, t.text);

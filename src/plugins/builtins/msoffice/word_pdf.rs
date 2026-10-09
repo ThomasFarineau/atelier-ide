@@ -46,7 +46,11 @@ fn span(kind: Kind, format: &Format, link: bool) -> Span {
     if format.sup || format.sub {
         size *= 0.65;
     }
-    let color = if link { LINK } else { format.color.unwrap_or(INK) };
+    let color = if link {
+        LINK
+    } else {
+        format.color.unwrap_or(INK)
+    };
     Span {
         text: String::new(),
         font: Font::of(format.bold || kind != Kind::Body, format.italic),
@@ -80,10 +84,15 @@ impl Exporter<'_> {
 
     fn image(&mut self, rel: &str) -> Option<(usize, [f32; 2])> {
         if !self.images.contains_key(rel) {
-            let loaded = self.doc.images.get(rel).and_then(|data| image::load_from_memory(data).ok()).map(|img| {
-                let size = [img.width() as f32 * PX, img.height() as f32 * PX];
-                (self.pdf.add_image(&img), size)
-            });
+            let loaded = self
+                .doc
+                .images
+                .get(rel)
+                .and_then(|data| image::load_from_memory(data).ok())
+                .map(|img| {
+                    let size = [img.width() as f32 * PX, img.height() as f32 * PX];
+                    (self.pdf.add_image(&img), size)
+                });
             self.images.insert(rel.to_string(), loaded);
         }
         self.images[rel]
@@ -114,9 +123,13 @@ impl Exporter<'_> {
                     items.push(Inl::Text(s));
                 }
                 Inline::Image { rel, size } => {
-                    let Some((index, natural)) = self.image(rel) else { continue };
+                    let Some((index, natural)) = self.image(rel) else {
+                        continue;
+                    };
                     let wanted = size.map_or(natural, |s| [s[0] * PX, s[1] * PX]);
-                    let fit = (w / wanted[0]).min((PAGE_H - 2.0 * MARGIN) / wanted[1]).min(1.0);
+                    let fit = (w / wanted[0])
+                        .min((PAGE_H - 2.0 * MARGIN) / wanted[1])
+                        .min(1.0);
                     items.push(Inl::Image {
                         index,
                         w: wanted[0] * fit,
@@ -134,7 +147,8 @@ impl Exporter<'_> {
                 {
                     let size = base_points(p.kind);
                     let at = x0 - 3.0 - super::pdf::text_width(Font::Regular, size, marker);
-                    self.pdf.text(at, self.y + line.ascent, Font::Regular, size, INK, marker);
+                    self.pdf
+                        .text(at, self.y + line.ascent, Font::Regular, size, INK, marker);
                 }
                 self.pdf.draw_line(line, x0, self.y, w, p.align);
             }
@@ -155,7 +169,10 @@ impl Exporter<'_> {
             return;
         }
         let mut relative = t.widths.clone();
-        relative.resize(columns, relative.iter().sum::<f32>() / relative.len().max(1) as f32);
+        relative.resize(
+            columns,
+            relative.iter().sum::<f32>() / relative.len().max(1) as f32,
+        );
         if relative.iter().any(|w| *w <= 0.0) {
             relative = vec![1.0; columns];
         }
@@ -193,7 +210,8 @@ impl Exporter<'_> {
                     if let Some(fill) = cell.fill {
                         self.pdf.fill_rect(*left, top, *w, height, fill);
                     }
-                    self.pdf.stroke_rect(*left, top, *w, height, PAPER_BORDER, 0.6);
+                    self.pdf
+                        .stroke_rect(*left, top, *w, height, PAPER_BORDER, 0.6);
                     self.y = top + pad;
                     self.fixed = true;
                     self.blocks(&cell.blocks, left + pad, (w - 2.0 * pad).max(8.0));
@@ -227,22 +245,44 @@ mod tests {
 
     #[test]
     fn long_documents_span_several_pages() {
-        let mut blocks: Vec<Block> = (0..120).map(|i| text_para(&format!("Paragraphe numéro {i}"))).collect();
+        let mut blocks: Vec<Block> = (0..120)
+            .map(|i| text_para(&format!("Paragraphe numéro {i}")))
+            .collect();
         blocks.push(Block::Table(Table {
             widths: vec![1.0, 1.0],
             rows: vec![vec![
-                Cell { span: 1, fill: Some(Color32::LIGHT_GRAY), blocks: vec![text_para("A")] },
-                Cell { span: 1, fill: None, blocks: vec![text_para("B")] },
+                Cell {
+                    span: 1,
+                    fill: Some(Color32::LIGHT_GRAY),
+                    blocks: vec![text_para("A")],
+                },
+                Cell {
+                    span: 1,
+                    fill: None,
+                    blocks: vec![text_para("B")],
+                },
             ]],
         }));
-        let doc = Doc { blocks, images: HashMap::new(), words: 0 };
+        let doc = Doc {
+            blocks,
+            images: HashMap::new(),
+            words: 0,
+        };
         let path = std::env::temp_dir().join(format!("atelier-word-{}.pdf", std::process::id()));
         export(&doc, &path).unwrap();
         let bytes = fs::read(&path).unwrap();
         let _ = fs::remove_file(&path);
         let text = String::from_utf8_lossy(&bytes);
         assert!(bytes.starts_with(b"%PDF-"));
-        let pages: usize = text.split("/Count ").nth(1).unwrap().split(' ').next().unwrap().parse().unwrap();
+        let pages: usize = text
+            .split("/Count ")
+            .nth(1)
+            .unwrap()
+            .split(' ')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
         assert!(pages >= 3, "{pages} pages");
     }
 }

@@ -37,7 +37,11 @@ fn config_path(root: &Path) -> PathBuf {
 }
 
 fn config(root: &Path) -> Value {
-    fs::read(config_path(root)).ok().and_then(|b| serde_json::from_slice(&b).ok()).filter(Value::is_object).unwrap_or_else(|| json!({}))
+    fs::read(config_path(root))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .filter(Value::is_object)
+        .unwrap_or_else(|| json!({}))
 }
 
 /// Whether the context graph is on for the project: None when the user was never asked (or
@@ -68,7 +72,10 @@ mod tests {
         ensure_ignored(&root, "graph/");
         ensure_ignored(&root, "sessions/");
         ensure_ignored(&root, "graph/");
-        assert_eq!(fs::read_to_string(dir(&root).join(".gitignore")).unwrap(), "mes-notes/\ngraph/\nsessions/\n");
+        assert_eq!(
+            fs::read_to_string(dir(&root).join(".gitignore")).unwrap(),
+            "mes-notes/\ngraph/\nsessions/\n"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 

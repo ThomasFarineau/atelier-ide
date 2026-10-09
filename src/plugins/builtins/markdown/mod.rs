@@ -64,7 +64,6 @@ impl BuiltinPlugin for MarkdownPlugin {
         Some("markdown")
     }
 
-
     fn commands(&self) -> Vec<Command> {
         [
             ("markdown.text", "Markdown : éditeur seul"),
@@ -128,12 +127,13 @@ impl BuiltinPlugin for MarkdownPlugin {
                         .insert(egui::TextStyle::Body, egui::FontId::proportional(14.0));
                     style.spacing.item_spacing.y = 8.0;
                     let max_width = (width - 80.0).max(100.0);
-                    let viewer = |ui: &mut egui::Ui, cache: &mut CommonMarkCache, text: &mut String| {
-                        CommonMarkViewer::new()
-                            .default_implicit_uri_scheme(base_uri(path))
-                            .max_image_width(Some(max_width as usize))
-                            .show_mut(ui, cache, text);
-                    };
+                    let viewer =
+                        |ui: &mut egui::Ui, cache: &mut CommonMarkCache, text: &mut String| {
+                            CommonMarkViewer::new()
+                                .default_implicit_uri_scheme(base_uri(path))
+                                .max_image_width(Some(max_width as usize))
+                                .show_mut(ui, cache, text);
+                        };
                     let mut blocks = mermaid::split_blocks(text);
                     if blocks.iter().all(|b| matches!(b, Block::Text(_))) {
                         viewer(ui, &mut self.cache, text);
@@ -145,7 +145,9 @@ impl BuiltinPlugin for MarkdownPlugin {
                             match block {
                                 Block::Text(piece) => {
                                     let before = piece.clone();
-                                    ui.push_id(("markdown_piece", index), |ui| viewer(ui, &mut self.cache, piece));
+                                    ui.push_id(("markdown_piece", index), |ui| {
+                                        viewer(ui, &mut self.cache, piece)
+                                    });
                                     edited |= *piece != before;
                                 }
                                 Block::Diagram(source) => {
@@ -160,9 +162,11 @@ impl BuiltinPlugin for MarkdownPlugin {
                                 .iter()
                                 .map(|b| match b {
                                     Block::Text(piece) => piece.clone(),
-                                    Block::Diagram(source) => format!("```mermaid
+                                    Block::Diagram(source) => format!(
+                                        "```mermaid
 {source}```
-"),
+"
+                                    ),
                                 })
                                 .collect();
                         }
@@ -231,7 +235,8 @@ mod tests {
             "sequenceDiagram\n  A->>B: Salut\n  B-->>A: Oui\n",
         ];
         for source in sources {
-            let mut text = format!("# Titre\n\n```mermaid\n{source}```\n\nfin\n").replace('\n', "\r\n");
+            let mut text =
+                format!("# Titre\n\n```mermaid\n{source}```\n\nfin\n").replace('\n', "\r\n");
             // The diagram is drawn on a thread of its own: frames go by until it is there.
             let mut loaded = None;
             for _ in 0..600 {

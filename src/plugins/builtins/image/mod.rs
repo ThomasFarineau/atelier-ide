@@ -52,8 +52,18 @@ fn load(ctx: &egui::Context, path: &Path) -> Result<(TextureHandle, [u32; 2]), S
         image
     };
     let rgba = image.to_rgba8();
-    let color = ColorImage::from_rgba_unmultiplied([rgba.width() as usize, rgba.height() as usize], rgba.as_raw());
-    Ok((ctx.load_texture(format!("image:{}", path.display()), color, TextureOptions::LINEAR), original))
+    let color = ColorImage::from_rgba_unmultiplied(
+        [rgba.width() as usize, rgba.height() as usize],
+        rgba.as_raw(),
+    );
+    Ok((
+        ctx.load_texture(
+            format!("image:{}", path.display()),
+            color,
+            TextureOptions::LINEAR,
+        ),
+        original,
+    ))
 }
 
 impl BuiltinPlugin for ImagePlugin {
@@ -73,7 +83,6 @@ impl BuiltinPlugin for ImagePlugin {
         Some("image")
     }
 
-
     fn opens_binary(&self, path: &Path) -> bool {
         is_image(path)
     }
@@ -84,7 +93,13 @@ impl BuiltinPlugin for ImagePlugin {
         false
     }
 
-    fn preview(&mut self, ui: &mut egui::Ui, path: &Path, _text: &mut String, _scroll: Option<f32>) {
+    fn preview(
+        &mut self,
+        ui: &mut egui::Ui,
+        path: &Path,
+        _text: &mut String,
+        _scroll: Option<f32>,
+    ) {
         let t = ui::theme(ui.ctx());
         let modified = fs::metadata(path).and_then(|m| m.modified()).ok();
         if self.loaded.get(path).is_none_or(|l| l.modified != modified) {
@@ -132,7 +147,10 @@ mod tests {
         let plugin = ImagePlugin::default();
         assert!(plugin.opens_binary(Path::new("a/Photo.JPG")));
         assert!(!plugin.opens_binary(Path::new("logo.svg")));
-        assert_eq!(plugin.editor_layout(Path::new("x.png")), Some(EditorLayout::Preview));
+        assert_eq!(
+            plugin.editor_layout(Path::new("x.png")),
+            Some(EditorLayout::Preview)
+        );
         assert!(!plugin.layout_switch(Path::new("x.png")));
     }
 }

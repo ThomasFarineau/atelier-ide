@@ -119,7 +119,11 @@ impl<T> Node<T> {
         let first_is_target = matches!(&**first, Node::Leaf(t) if is_target(t));
         let second_is_target = matches!(&**second, Node::Leaf(t) if is_target(t));
         if first_is_target || second_is_target {
-            let (gone, kept) = if first_is_target { (first, second) } else { (second, first) };
+            let (gone, kept) = if first_is_target {
+                (first, second)
+            } else {
+                (second, first)
+            };
             let Node::Leaf(leaf) = std::mem::replace(&mut **gone, Node::Empty) else {
                 return None;
             };
@@ -171,18 +175,28 @@ impl<T> Node<T> {
                 first,
                 second,
             } => {
-                let total = if *stacked { rect.height() } else { rect.width() } - gap;
+                let total = if *stacked {
+                    rect.height()
+                } else {
+                    rect.width()
+                } - gap;
                 let size = (total * ratio).max(0.0);
                 let (a, line, b) = if *stacked {
                     (
                         Rect::from_min_size(rect.min, vec2(rect.width(), size)),
-                        Rect::from_min_size(pos2(rect.left(), rect.top() + size), vec2(rect.width(), gap)),
+                        Rect::from_min_size(
+                            pos2(rect.left(), rect.top() + size),
+                            vec2(rect.width(), gap),
+                        ),
                         Rect::from_min_max(pos2(rect.left(), rect.top() + size + gap), rect.max),
                     )
                 } else {
                     (
                         Rect::from_min_size(rect.min, vec2(size, rect.height())),
-                        Rect::from_min_size(pos2(rect.left() + size, rect.top()), vec2(gap, rect.height())),
+                        Rect::from_min_size(
+                            pos2(rect.left() + size, rect.top()),
+                            vec2(gap, rect.height()),
+                        ),
                         Rect::from_min_max(pos2(rect.left() + size + gap, rect.top()), rect.max),
                     )
                 };
