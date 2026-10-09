@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" style="display: block; width: 666.257px; height: 666.257px;">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7B5CFF">
+      </stop>
+      <stop offset="1" stop-color="#22B8F0">
+      </stop>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="58" fill="url(#bg)">
+  </rect>
+  <!-- the A: two strokes meeting at the top -->
+  <path d="M68 198 L128 62 L188 198" fill="none" stroke="#FFFFFF" stroke-width="30" stroke-linecap="round" stroke-linejoin="round">
+  </path>
+  <!-- the crossbar is a text cursor: the atelier is where code gets written -->
+  <rect x="100" y="150" width="56" height="22" rx="6" fill="#FFD166">
+  </rect>
+</svg>
