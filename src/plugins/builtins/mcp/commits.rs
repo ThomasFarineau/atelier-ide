@@ -54,27 +54,75 @@ pub struct Convention {
 
 fn conventional() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"^(?P<type>[A-Za-z]+)(?:\((?P<scope>[^)]+)\))?(?P<bang>!)?: (?P<desc>\S.*)$").expect("a valid expression"))
+    RE.get_or_init(|| {
+        Regex::new(r"^(?P<type>[A-Za-z]+)(?:\((?P<scope>[^)]+)\))?(?P<bang>!)?: (?P<desc>\S.*)$")
+            .expect("a valid expression")
+    })
 }
 
 fn is_gitmoji(subject: &str) -> bool {
     let first = subject.chars().next();
-    subject.starts_with(':') && subject[1..].split(':').next().is_some_and(|c| !c.is_empty() && c.chars().all(|ch| ch.is_alphanumeric() || ch == '_'))
+    subject.starts_with(':')
+        && subject[1..]
+            .split(':')
+            .next()
+            .is_some_and(|c| !c.is_empty() && c.chars().all(|ch| ch.is_alphanumeric() || ch == '_'))
         || first.is_some_and(|c| (c as u32) >= 0x2190 && !c.is_alphabetic())
 }
 
 /// Whether a line is French, from the little words and the verbs commit messages start with.
 fn french_score(subject: &str) -> i32 {
-    const FRENCH: [&str; 14] = ["le", "la", "les", "des", "du", "un", "une", "pour", "dans", "avec", "sans", "au", "aux", "et"];
-    const ENGLISH: [&str; 11] = ["the", "a", "an", "of", "for", "to", "with", "in", "on", "and", "from"];
-    const FRENCH_VERBS: [&str; 16] = [
-        "ajoute", "corrige", "configure", "supprime", "met", "rend", "remplace", "retire", "crée", "ajout", "correction", "mise", "fusionne", "renomme", "déplace", "initialise",
+    const FRENCH: [&str; 14] = [
+        "le", "la", "les", "des", "du", "un", "une", "pour", "dans", "avec", "sans", "au", "aux",
+        "et",
     ];
-    const ENGLISH_VERBS: [&str; 14] = ["add", "fix", "update", "remove", "refactor", "rename", "move", "initialize", "implement", "improve", "create", "bump", "merge", "use"];
+    const ENGLISH: [&str; 11] = [
+        "the", "a", "an", "of", "for", "to", "with", "in", "on", "and", "from",
+    ];
+    const FRENCH_VERBS: [&str; 16] = [
+        "ajoute",
+        "corrige",
+        "configure",
+        "supprime",
+        "met",
+        "rend",
+        "remplace",
+        "retire",
+        "crée",
+        "ajout",
+        "correction",
+        "mise",
+        "fusionne",
+        "renomme",
+        "déplace",
+        "initialise",
+    ];
+    const ENGLISH_VERBS: [&str; 14] = [
+        "add",
+        "fix",
+        "update",
+        "remove",
+        "refactor",
+        "rename",
+        "move",
+        "initialize",
+        "implement",
+        "improve",
+        "create",
+        "bump",
+        "merge",
+        "use",
+    ];
     let lower = subject.to_lowercase();
     // What follows a type prefix is the description.
-    let description = conventional().captures(&lower).and_then(|c| c.name("desc")).map_or(lower.as_str(), |d| d.as_str());
-    let words: Vec<&str> = description.split(|c: char| !c.is_alphabetic() && c != 'é' && c != 'è').filter(|w| !w.is_empty()).collect();
+    let description = conventional()
+        .captures(&lower)
+        .and_then(|c| c.name("desc"))
+        .map_or(lower.as_str(), |d| d.as_str());
+    let words: Vec<&str> = description
+        .split(|c: char| !c.is_alphabetic() && c != 'é' && c != 'è')
+        .filter(|w| !w.is_empty())
+        .collect();
     let mut score = 0;
     for (i, word) in words.iter().enumerate() {
         if FRENCH.contains(word) {
@@ -101,10 +149,24 @@ fn ranked(counts: HashMap<String, usize>) -> Vec<(String, usize)> {
 
 /// The conventions read from the messages of the latest commits (subject first, then the body).
 pub fn detect_from(messages: &[String]) -> Convention {
-    let subjects: Vec<&str> = messages.iter().filter_map(|m| m.lines().next()).map(str::trim).filter(|s| !s.is_empty()).collect();
+    let subjects: Vec<&str> = messages
+        .iter()
+        .filter_map(|m| m.lines().next())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
     let samples = subjects.len();
-    let share = |count: usize| if samples == 0 { 0.0 } else { count as f32 / samples as f32 };
-    let parsed: Vec<_> = subjects.iter().filter_map(|s| conventional().captures(s)).collect();
+    let share = |count: usize| {
+        if samples == 0 {
+            0.0
+        } else {
+            count as f32 / samples as f32
+        }
+    };
+    let parsed: Vec<_> = subjects
+        .iter()
+        .filter_map(|s| conventional().captures(s))
+        .collect();
     let moji = subjects.iter().filter(|s| is_gitmoji(s)).count();
     let style = if share(parsed.len()) >= 0.6 {
         Style::Conventional
@@ -124,21 +186,41 @@ pub fn detect_from(messages: &[String]) -> Convention {
         }
     }
     let descriptions: Vec<&str> = match style {
-        Style::Conventional => parsed.iter().filter_map(|c| c.name("desc")).map(|d| d.as_str()).collect(),
+        Style::Conventional => parsed
+            .iter()
+            .filter_map(|c| c.name("desc"))
+            .map(|d| d.as_str())
+            .collect(),
         _ => subjects.clone(),
     };
-    let capitalized = descriptions.iter().filter(|d| d.chars().next().is_some_and(char::is_uppercase)).count() * 2 > descriptions.len();
+    let capitalized = descriptions
+        .iter()
+        .filter(|d| d.chars().next().is_some_and(char::is_uppercase))
+        .count()
+        * 2
+        > descriptions.len();
     let period = subjects.iter().filter(|s| s.ends_with('.')).count() * 2 > samples;
-    let with_body = messages.iter().filter(|m| m.lines().skip(1).any(|l| !l.trim().is_empty())).count();
+    let with_body = messages
+        .iter()
+        .filter(|m| m.lines().skip(1).any(|l| !l.trim().is_empty()))
+        .count();
     Convention {
         style,
         french: subjects.iter().map(|s| french_score(s)).sum::<i32>() > 0,
         types: ranked(types),
         scopes: ranked(scopes),
-        scope_rate: if parsed.is_empty() { 0.0 } else { with_scope as f32 / parsed.len() as f32 },
+        scope_rate: if parsed.is_empty() {
+            0.0
+        } else {
+            with_scope as f32 / parsed.len() as f32
+        },
         capitalized,
         period,
-        max_subject: subjects.iter().map(|s| s.chars().count()).max().unwrap_or(0),
+        max_subject: subjects
+            .iter()
+            .map(|s| s.chars().count())
+            .max()
+            .unwrap_or(0),
         body_rate: share(with_body),
         examples: subjects.iter().take(5).map(|s| s.to_string()).collect(),
         samples,
@@ -147,8 +229,19 @@ pub fn detect_from(messages: &[String]) -> Convention {
 
 /// The conventions of a repository, from its history; the defaults of a new one.
 pub fn detect(repo: &Repo) -> Convention {
-    let out = repo.read(&["log", "--no-merges", &format!("-n{HISTORY}"), "--format=%B%x1e"]).unwrap_or_default();
-    let messages: Vec<String> = out.split('\u{1e}').map(|m| m.trim().to_string()).filter(|m| !m.is_empty()).collect();
+    let out = repo
+        .read(&[
+            "log",
+            "--no-merges",
+            &format!("-n{HISTORY}"),
+            "--format=%B%x1e",
+        ])
+        .unwrap_or_default();
+    let messages: Vec<String> = out
+        .split('\u{1e}')
+        .map(|m| m.trim().to_string())
+        .filter(|m| !m.is_empty())
+        .collect();
     detect_from(&messages)
 }
 
@@ -158,19 +251,34 @@ pub fn guidance(c: &Convention) -> String {
     let mut lines = Vec::new();
     match c.style {
         Style::Conventional => {
-            let types: Vec<String> = c.types.iter().take(8).map(|(t, n)| format!("{t} ({n})")).collect();
+            let types: Vec<String> = c
+                .types
+                .iter()
+                .take(8)
+                .map(|(t, n)| format!("{t} ({n})"))
+                .collect();
             lines.push(format!("Use Conventional Commits: `type(scope): description`. Types used in this repository: {}.", types.join(", ")));
             if c.scope_rate >= 0.5 {
                 let scopes: Vec<&str> = c.scopes.iter().take(8).map(|(s, _)| s.as_str()).collect();
-                lines.push(format!("Most commits have a scope ({:.0}%): {}.", c.scope_rate * 100.0, scopes.join(", ")));
+                lines.push(format!(
+                    "Most commits have a scope ({:.0}%): {}.",
+                    c.scope_rate * 100.0,
+                    scopes.join(", ")
+                ));
             } else if c.scope_rate > 0.0 {
                 lines.push(format!("A scope is used in only {:.0}% of the commits: add one only when it clarifies.", c.scope_rate * 100.0));
             } else {
-                lines.push("This repository does not use scopes: write `type: description`.".into());
+                lines
+                    .push("This repository does not use scopes: write `type: description`.".into());
             }
         }
-        Style::Gitmoji => lines.push("Start the subject with a gitmoji, as the repository's commits do.".into()),
-        Style::Free => lines.push("Commits here are free text, not Conventional Commits: do not add a `type:` prefix.".into()),
+        Style::Gitmoji => {
+            lines.push("Start the subject with a gitmoji, as the repository's commits do.".into())
+        }
+        Style::Free => lines.push(
+            "Commits here are free text, not Conventional Commits: do not add a `type:` prefix."
+                .into(),
+        ),
     }
     lines.push(format!(
         "Write the subject in {language}, {} first letter, {} trailing period, at most {} characters.",
@@ -179,11 +287,15 @@ pub fn guidance(c: &Convention) -> String {
         c.max_subject.clamp(50, HARD_SUBJECT_LIMIT)
     ));
     lines.push(if c.body_rate >= 0.4 {
-        "A body is common here: add one (after a blank line) to say why when it is not obvious.".into()
+        "A body is common here: add one (after a blank line) to say why when it is not obvious."
+            .into()
     } else {
         "Bodies are rare here: add one only when the why is not obvious.".into()
     });
-    lines.push("Never add a Co-authored-by line or any attribution to an AI; they are removed anyway.".into());
+    lines.push(
+        "Never add a Co-authored-by line or any attribution to an AI; they are removed anyway."
+            .into(),
+    );
     lines.join("\n")
 }
 
@@ -206,24 +318,45 @@ pub fn check(c: &Convention, message: &str) -> Result<(), String> {
         return Err("the commit message is empty".into());
     }
     if subject.chars().count() > HARD_SUBJECT_LIMIT {
-        return Err(format!("the subject is {} characters long: keep it under {HARD_SUBJECT_LIMIT}", subject.chars().count()));
+        return Err(format!(
+            "the subject is {} characters long: keep it under {HARD_SUBJECT_LIMIT}",
+            subject.chars().count()
+        ));
     }
     match c.style {
         Style::Conventional => match conventional().captures(subject) {
-            None => Err(format!("“{subject}” is not a Conventional Commit: this repository writes `type(scope): description`. {}", c.examples.first().map_or(String::new(), |e| format!("For example: {e}")))),
+            None => Err(format!(
+                "“{subject}” is not a Conventional Commit: this repository writes `type(scope): description`. {}",
+                c.examples
+                    .first()
+                    .map_or(String::new(), |e| format!("For example: {e}"))
+            )),
             Some(found) => {
                 let kind = found["type"].to_lowercase();
-                const STANDARD: [&str; 11] = ["feat", "fix", "docs", "style", "refactor", "perf", "test", "build", "ci", "chore", "revert"];
+                const STANDARD: [&str; 11] = [
+                    "feat", "fix", "docs", "style", "refactor", "perf", "test", "build", "ci",
+                    "chore", "revert",
+                ];
                 if !c.types.iter().any(|(t, _)| *t == kind) && !STANDARD.contains(&kind.as_str()) {
-                    return Err(format!("the type “{kind}” is not used in this repository: use one of {}", c.types.iter().map(|(t, _)| t.as_str()).collect::<Vec<_>>().join(", ")));
+                    return Err(format!(
+                        "the type “{kind}” is not used in this repository: use one of {}",
+                        c.types
+                            .iter()
+                            .map(|(t, _)| t.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
                 }
                 Ok(())
             }
         },
-        Style::Gitmoji if !is_gitmoji(subject) => Err("this repository starts its subjects with a gitmoji".into()),
-        Style::Free if conventional().is_match(subject) && c.samples >= 10 => {
-            Err("this repository does not use `type: description` prefixes: write a plain sentence".into())
+        Style::Gitmoji if !is_gitmoji(subject) => {
+            Err("this repository starts its subjects with a gitmoji".into())
         }
+        Style::Free if conventional().is_match(subject) && c.samples >= 10 => Err(
+            "this repository does not use `type: description` prefixes: write a plain sentence"
+                .into(),
+        ),
         _ => Ok(()),
     }
 }
@@ -246,15 +379,44 @@ fn bucket(path: &str) -> &'static str {
     let lower = path.to_lowercase();
     let name = lower.rsplit('/').next().unwrap_or("");
     let extension = name.rsplit_once('.').map_or("", |(_, e)| e);
-    if lower.starts_with(".github/") || lower.starts_with(".gitlab") || matches!(name, "dockerfile" | ".gitignore" | ".gitattributes" | ".editorconfig" | "dependabot.yml") {
+    if lower.starts_with(".github/")
+        || lower.starts_with(".gitlab")
+        || matches!(
+            name,
+            "dockerfile" | ".gitignore" | ".gitattributes" | ".editorconfig" | "dependabot.yml"
+        )
+    {
         "ci"
-    } else if matches!(name, "cargo.lock" | "cargo.toml" | "package.json" | "package-lock.json" | "pnpm-lock.yaml" | "yarn.lock" | "go.mod" | "go.sum" | "requirements.txt" | "poetry.lock" | "gemfile" | "gemfile.lock") {
+    } else if matches!(
+        name,
+        "cargo.lock"
+            | "cargo.toml"
+            | "package.json"
+            | "package-lock.json"
+            | "pnpm-lock.yaml"
+            | "yarn.lock"
+            | "go.mod"
+            | "go.sum"
+            | "requirements.txt"
+            | "poetry.lock"
+            | "gemfile"
+            | "gemfile.lock"
+    ) {
         "deps"
-    } else if matches!(extension, "md" | "mdx" | "rst") || lower.starts_with("docs/") || lower.starts_with("doc/") || matches!(name, "license" | "changelog" | "readme") {
+    } else if matches!(extension, "md" | "mdx" | "rst")
+        || lower.starts_with("docs/")
+        || lower.starts_with("doc/")
+        || matches!(name, "license" | "changelog" | "readme")
+    {
         "docs"
     } else {
         "code"
     }
+}
+
+/// Whether a file is documentation (not code, not configuration).
+pub fn is_documentation(path: &str) -> bool {
+    bucket(path) == "docs"
 }
 
 #[derive(Clone, Debug)]
@@ -271,12 +433,22 @@ fn directory(path: &str) -> &str {
 /// The folder all of `paths` are in (possibly the project root, as an empty string).
 fn common_directory(paths: &[&str]) -> String {
     let mut common: Vec<&str> = match paths.first() {
-        Some(first) => directory(first).split('/').filter(|p| !p.is_empty()).collect(),
+        Some(first) => directory(first)
+            .split('/')
+            .filter(|p| !p.is_empty())
+            .collect(),
         None => return String::new(),
     };
     for path in &paths[1..] {
-        let parts: Vec<&str> = directory(path).split('/').filter(|p| !p.is_empty()).collect();
-        let shared = common.iter().zip(&parts).take_while(|(a, b)| a == b).count();
+        let parts: Vec<&str> = directory(path)
+            .split('/')
+            .filter(|p| !p.is_empty())
+            .collect();
+        let shared = common
+            .iter()
+            .zip(&parts)
+            .take_while(|(a, b)| a == b)
+            .count();
         common.truncate(shared);
     }
     common.join("/")
@@ -297,12 +469,22 @@ fn describe_group(files: &[Change]) -> String {
 pub fn group(changes: &[Change], connected: &[(usize, usize)]) -> Vec<Group> {
     let mut groups: Vec<Group> = Vec::new();
     for kind in ["docs", "deps", "ci"] {
-        let files: Vec<Change> = changes.iter().filter(|c| bucket(&c.path) == kind).cloned().collect();
+        let files: Vec<Change> = changes
+            .iter()
+            .filter(|c| bucket(&c.path) == kind)
+            .cloned()
+            .collect();
         if !files.is_empty() {
-            groups.push(Group { title: describe_group(&files), kind, files });
+            groups.push(Group {
+                title: describe_group(&files),
+                kind,
+                files,
+            });
         }
     }
-    let code: Vec<usize> = (0..changes.len()).filter(|&i| bucket(&changes[i].path) == "code").collect();
+    let code: Vec<usize> = (0..changes.len())
+        .filter(|&i| bucket(&changes[i].path) == "code")
+        .collect();
     // Files that lean on each other, and files of the same folder, make one change.
     let mut parent: Vec<usize> = (0..changes.len()).collect();
     fn find(parent: &mut [usize], mut i: usize) -> usize {
@@ -313,7 +495,10 @@ pub fn group(changes: &[Change], connected: &[(usize, usize)]) -> Vec<Group> {
         i
     }
     let in_code: HashSet<usize> = code.iter().copied().collect();
-    for &(a, b) in connected.iter().filter(|(a, b)| in_code.contains(a) && in_code.contains(b)) {
+    for &(a, b) in connected
+        .iter()
+        .filter(|(a, b)| in_code.contains(a) && in_code.contains(b))
+    {
         let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
         parent[ra.max(rb)] = ra.min(rb);
     }
@@ -333,12 +518,22 @@ pub fn group(changes: &[Change], connected: &[(usize, usize)]) -> Vec<Group> {
     while code_groups.len() + groups.len() > MAX_GROUPS && code_groups.len() > 1 {
         code_groups.sort_by_key(|g| std::cmp::Reverse(g.len()));
         let smallest = code_groups.pop().unwrap_or_default();
-        let dir_of = |g: &Vec<usize>| common_directory(&g.iter().map(|&i| changes[i].path.as_str()).collect::<Vec<_>>());
+        let dir_of = |g: &Vec<usize>| {
+            common_directory(
+                &g.iter()
+                    .map(|&i| changes[i].path.as_str())
+                    .collect::<Vec<_>>(),
+            )
+        };
         let wanted = dir_of(&smallest);
         let best = (0..code_groups.len())
             .max_by_key(|&k| {
                 let other = dir_of(&code_groups[k]);
-                wanted.split('/').zip(other.split('/')).take_while(|(a, b)| a == b && !a.is_empty()).count()
+                wanted
+                    .split('/')
+                    .zip(other.split('/'))
+                    .take_while(|(a, b)| a == b && !a.is_empty())
+                    .count()
             })
             .unwrap_or(0);
         code_groups[best].extend(smallest);
@@ -348,7 +543,11 @@ pub fn group(changes: &[Change], connected: &[(usize, usize)]) -> Vec<Group> {
         .into_iter()
         .map(|g| {
             let files: Vec<Change> = g.into_iter().map(|i| changes[i].clone()).collect();
-            Group { title: describe_group(&files), kind: "code", files }
+            Group {
+                title: describe_group(&files),
+                kind: "code",
+                files,
+            }
         })
         .collect();
     made.append(&mut groups);
@@ -361,19 +560,30 @@ fn suggested_type(g: &Group) -> Option<&'static str> {
         "docs" => Some("docs"),
         "deps" => Some("build or chore"),
         "ci" => Some("ci"),
-        _ if g.files.iter().all(|c| matches!(c.kind, Kind::Added | Kind::Untracked)) => Some("feat"),
+        _ if g
+            .files
+            .iter()
+            .all(|c| matches!(c.kind, Kind::Added | Kind::Untracked)) =>
+        {
+            Some("feat")
+        }
         _ => None,
     }
 }
 
 /// Lines added and removed per file, for what git knows about (not the new files).
 fn numstat(repo: &Repo) -> HashMap<String, (u64, u64)> {
-    let out = repo.read(&["diff", "HEAD", "--numstat", "--no-renames"]).unwrap_or_default();
+    let out = repo
+        .read(&["diff", "HEAD", "--numstat", "--no-renames"])
+        .unwrap_or_default();
     out.lines()
         .filter_map(|line| {
             let mut parts = line.splitn(3, '\t');
             let (added, deleted, path) = (parts.next()?, parts.next()?, parts.next()?);
-            Some((path.to_string(), (added.parse().unwrap_or(0), deleted.parse().unwrap_or(0))))
+            Some((
+                path.to_string(),
+                (added.parse().unwrap_or(0), deleted.parse().unwrap_or(0)),
+            ))
         })
         .collect()
 }
@@ -381,22 +591,36 @@ fn numstat(repo: &Repo) -> HashMap<String, (u64, u64)> {
 fn file_json(change: &Change, stats: &HashMap<String, (u64, u64)>, repo: &Repo) -> Value {
     let (added, deleted) = stats.get(&change.path).copied().unwrap_or_else(|| {
         // A new file has no diff yet: its lines are what it adds.
-        let lines = std::fs::read_to_string(repo.abs(&change.path)).map_or(0, |t| t.lines().count() as u64);
-        (if change.kind == Kind::Untracked { lines } else { 0 }, 0)
+        let lines =
+            std::fs::read_to_string(repo.abs(&change.path)).map_or(0, |t| t.lines().count() as u64);
+        (
+            if change.kind == Kind::Untracked {
+                lines
+            } else {
+                0
+            },
+            0,
+        )
     });
     json!({"path": change.path, "status": status_name(change.kind), "renamedFrom": change.orig, "added": added, "deleted": deleted})
 }
 
 /// The pairs of changed files the context graph links, by index into `changes`.
 fn graph_links(changes: &[Change], repo: &Repo, root: &Path) -> Vec<(usize, usize)> {
-    let Some(graph) = crate::graph::current() else { return Vec::new() };
+    let Some(graph) = crate::graph::current() else {
+        return Vec::new();
+    };
     let project = crate::project::simplify(root);
     let position: HashMap<String, usize> = changes
         .iter()
         .enumerate()
         .filter_map(|(i, c)| {
             let abs = crate::project::simplify(&repo.abs(&c.path));
-            let rel = abs.strip_prefix(&project).ok()?.to_string_lossy().replace('\\', "/");
+            let rel = abs
+                .strip_prefix(&project)
+                .ok()?
+                .to_string_lossy()
+                .replace('\\', "/");
             Some((rel, i))
         })
         .collect();
@@ -422,7 +646,10 @@ fn mode_of(args: &Value) -> Result<&str, String> {
     match args["mode"].as_str() {
         Some(mode @ ("all" | "context")) => Ok(mode),
         Some(other) => Err(format!("“mode” is “all” or “context”, not “{other}”")),
-        None => Err("“mode” is required: “all” (one commit) or “context” (one commit per coherent change)".into()),
+        None => Err(
+            "“mode” is required: “all” (one commit) or “context” (one commit per coherent change)"
+                .into(),
+        ),
     }
 }
 
@@ -437,11 +664,20 @@ pub fn plan(root: &Path, args: &Value) -> Result<String, String> {
     let convention = detect(&repo);
     let stats = numstat(&repo);
     let groups = if mode == "all" {
-        vec![Group { title: describe_group(&changes), kind: "all", files: changes.clone() }]
+        vec![Group {
+            title: describe_group(&changes),
+            kind: "all",
+            files: changes.clone(),
+        }]
     } else {
         group(&changes, &graph_links(&changes, &repo, root))
     };
-    let files = |g: &Group| g.files.iter().map(|c| file_json(c, &stats, &repo)).collect::<Vec<_>>();
+    let files = |g: &Group| {
+        g.files
+            .iter()
+            .map(|c| file_json(c, &stats, &repo))
+            .collect::<Vec<_>>()
+    };
     serde_json::to_string_pretty(&json!({
         "mode": mode,
         "branch": head.branch,
@@ -474,17 +710,39 @@ pub fn plan(root: &Path, args: &Value) -> Result<String, String> {
 pub fn diff(root: &Path, args: &Value) -> Result<String, String> {
     let repo = open(root)?;
     let (_, changes) = repo.status().map_err(|e| e.to_string())?;
-    let wanted: Vec<String> = args["files"].as_array().map(|a| a.iter().filter_map(|f| f.as_str().map(str::to_string)).collect()).unwrap_or_default();
-    let selected: Vec<&Change> = changes.iter().filter(|c| wanted.is_empty() || wanted.contains(&c.path)).collect();
-    let budget = args["maxChars"].as_u64().map_or(DIFF_BUDGET, |n| n as usize).clamp(1_000, 100_000);
+    let wanted: Vec<String> = args["files"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|f| f.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let selected: Vec<&Change> = changes
+        .iter()
+        .filter(|c| wanted.is_empty() || wanted.contains(&c.path))
+        .collect();
+    let budget = args["maxChars"]
+        .as_u64()
+        .map_or(DIFF_BUDGET, |n| n as usize)
+        .clamp(1_000, 100_000);
     let mut out = String::new();
     for change in selected {
         let section = if change.kind == Kind::Untracked {
-            let text = std::fs::read_to_string(repo.abs(&change.path)).unwrap_or_else(|_| "(binary or unreadable file)".into());
+            let text = std::fs::read_to_string(repo.abs(&change.path))
+                .unwrap_or_else(|_| "(binary or unreadable file)".into());
             let shown: String = text.lines().take(200).map(|l| format!("+{l}\n")).collect();
             format!("new file: {}\n{shown}\n", change.path)
         } else {
-            repo.read(&["diff", "HEAD", "--no-color", "--unified=3", "--", &change.path]).unwrap_or_default()
+            repo.read(&[
+                "diff",
+                "HEAD",
+                "--no-color",
+                "--unified=3",
+                "--",
+                &change.path,
+            ])
+            .unwrap_or_default()
         };
         if out.len() + section.len() > budget {
             let mut cut = budget.saturating_sub(out.len()).min(section.len());
@@ -497,7 +755,11 @@ pub fn diff(root: &Path, args: &Value) -> Result<String, String> {
         }
         out.push_str(&section);
     }
-    if out.is_empty() { Err("No such changes".into()) } else { Ok(out) }
+    if out.is_empty() {
+        Err("No such changes".into())
+    } else {
+        Ok(out)
+    }
 }
 
 /// One commit to make.
@@ -509,12 +771,22 @@ pub struct Request {
 }
 
 fn requests(args: &Value) -> Result<Vec<Request>, String> {
-    let list = args["commits"].as_array().filter(|a| !a.is_empty()).ok_or("“commits” is required: a list of {message, files}")?;
+    let list = args["commits"]
+        .as_array()
+        .filter(|a| !a.is_empty())
+        .ok_or("“commits” is required: a list of {message, files}")?;
     list.iter()
         .map(|c| {
             Ok(Request {
-                message: c["message"].as_str().ok_or("each commit needs a “message”")?.to_string(),
-                files: c["files"].as_array().map(|f| f.iter().filter_map(|p| p.as_str().map(str::to_string)).collect()),
+                message: c["message"]
+                    .as_str()
+                    .ok_or("each commit needs a “message”")?
+                    .to_string(),
+                files: c["files"].as_array().map(|f| {
+                    f.iter()
+                        .filter_map(|p| p.as_str().map(str::to_string))
+                        .collect()
+                }),
             })
         })
         .collect()
@@ -527,7 +799,9 @@ pub fn commit(root: &Path, args: &Value) -> Result<String, String> {
     let asked = requests(args)?;
     let repo = open(root)?;
     if repo.state() != State::Clean {
-        return Err("A merge, rebase, cherry-pick or revert is in progress: finish it first".into());
+        return Err(
+            "A merge, rebase, cherry-pick or revert is in progress: finish it first".into(),
+        );
     }
     let (_, changes) = repo.status().map_err(|e| e.to_string())?;
     if changes.is_empty() {
@@ -547,7 +821,10 @@ pub fn commit(root: &Path, args: &Value) -> Result<String, String> {
             (_, Some(files)) if !files.is_empty() => {
                 let mut paths: Vec<String> = Vec::new();
                 for file in files {
-                    let change = changes.iter().find(|c| c.path == *file).ok_or_else(|| format!("commit {}: “{file}” has no changes", n + 1))?;
+                    let change = changes
+                        .iter()
+                        .find(|c| c.path == *file)
+                        .ok_or_else(|| format!("commit {}: “{file}” has no changes", n + 1))?;
                     if !used.insert(file.clone()) {
                         return Err(format!("“{file}” is in two commits"));
                     }
@@ -557,7 +834,12 @@ pub fn commit(root: &Path, args: &Value) -> Result<String, String> {
                 }
                 Some(paths)
             }
-            _ => return Err(format!("commit {}: “files” is required in “context” mode", n + 1)),
+            _ => {
+                return Err(format!(
+                    "commit {}: “files” is required in “context” mode",
+                    n + 1
+                ));
+            }
         };
         commits.push((message, files));
     }
@@ -566,7 +848,10 @@ pub fn commit(root: &Path, args: &Value) -> Result<String, String> {
     }
     let mut done = Vec::new();
     for (message, files) in &commits {
-        let mut paragraphs = message.split("\n\n").map(str::trim).filter(|p| !p.is_empty());
+        let mut paragraphs = message
+            .split("\n\n")
+            .map(str::trim)
+            .filter(|p| !p.is_empty());
         let mut args: Vec<String> = vec!["commit".into()];
         for paragraph in paragraphs.by_ref() {
             args.push("-m".into());
@@ -575,15 +860,23 @@ pub fn commit(root: &Path, args: &Value) -> Result<String, String> {
         let arguments: Vec<&str> = args.iter().map(String::as_str).collect();
         let outcome = match files {
             None => repo.run(&["add", "-A"]).and_then(|_| repo.run(&arguments)),
-            Some(paths) => repo.run_paths(&["add", "-A"], paths).and_then(|_| repo.run_paths(&arguments, paths)),
+            Some(paths) => repo
+                .run_paths(&["add", "-A"], paths)
+                .and_then(|_| repo.run_paths(&arguments, paths)),
         };
         match outcome {
             Ok(_) => {
-                let head = repo.read(&["log", "-1", "--format=%h %s"]).unwrap_or_default();
+                let head = repo
+                    .read(&["log", "-1", "--format=%h %s"])
+                    .unwrap_or_default();
                 done.push(head.trim().to_string());
             }
             Err(e) => {
-                let so_far = if done.is_empty() { String::new() } else { format!(" Already made: {}.", done.join("; ")) };
+                let so_far = if done.is_empty() {
+                    String::new()
+                } else {
+                    format!(" Already made: {}.", done.join("; "))
+                };
                 return Err(format!("git commit failed: {e}.{so_far}"));
             }
         }
@@ -592,8 +885,15 @@ pub fn commit(root: &Path, args: &Value) -> Result<String, String> {
     Ok(format!(
         "{} commit(s) made:\n{}\n{}",
         done.len(),
-        done.iter().map(|d| format!("- {d}")).collect::<Vec<_>>().join("\n"),
-        if left == 0 { "The working tree is clean.".to_string() } else { format!("{left} changed file(s) remain uncommitted.") }
+        done.iter()
+            .map(|d| format!("- {d}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        if left == 0 {
+            "The working tree is clean.".to_string()
+        } else {
+            format!("{left} changed file(s) remain uncommitted.")
+        }
     ))
 }
 
@@ -627,7 +927,9 @@ pub fn prompt(name: &str, args: &Value) -> Option<String> {
     let mode = match name {
         "commit-all" => Some("all"),
         "commit-by-context" => Some("context"),
-        "commit" => args["mode"].as_str().filter(|m| matches!(*m, "all" | "context")),
+        "commit" => args["mode"]
+            .as_str()
+            .filter(|m| matches!(*m, "all" | "context")),
         _ => return None,
     };
     let start = match mode {
@@ -649,14 +951,23 @@ mod tests {
     use std::{path::PathBuf, process::Command};
 
     fn git(dir: &Path, args: &[&str]) {
-        let out = Command::new("git").current_dir(dir).args(args).output().expect("git is installed");
-        assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        let out = Command::new("git")
+            .current_dir(dir)
+            .args(args)
+            .output()
+            .expect("git is installed");
+        assert!(
+            out.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
 
     fn repo_with(name: &str, history: &[&str]) -> PathBuf {
         static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!("atelier-commits-{name}-{}-{n}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("atelier-commits-{name}-{}-{n}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         git(&dir, &["init", "-q"]);
@@ -672,8 +983,16 @@ mod tests {
     }
 
     fn subjects(dir: &Path) -> Vec<String> {
-        let out = Command::new("git").current_dir(dir).args(["log", "--format=%B%x1e"]).output().unwrap();
-        String::from_utf8_lossy(&out.stdout).split('\u{1e}').map(|m| m.trim().to_string()).filter(|m| !m.is_empty()).collect()
+        let out = Command::new("git")
+            .current_dir(dir)
+            .args(["log", "--format=%B%x1e"])
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout)
+            .split('\u{1e}')
+            .map(|m| m.trim().to_string())
+            .filter(|m| !m.is_empty())
+            .collect()
     }
 
     #[test]
@@ -688,41 +1007,91 @@ mod tests {
         .map(String::from)
         .to_vec();
         let c = detect_from(&french);
-        assert_eq!((c.style, c.french, c.capitalized, c.period), (Style::Conventional, true, true, false));
+        assert_eq!(
+            (c.style, c.french, c.capitalized, c.period),
+            (Style::Conventional, true, true, false)
+        );
         assert_eq!(c.types[0], ("feat".to_string(), 2));
         assert!(c.scope_rate > 0.5 && c.scopes.iter().any(|(s, _)| s == "editor"));
-        let english: Vec<String> = ["Add folding", "Fix the terminal split", "Update the readme", "Remove dead code"].map(String::from).to_vec();
+        let english: Vec<String> = [
+            "Add folding",
+            "Fix the terminal split",
+            "Update the readme",
+            "Remove dead code",
+        ]
+        .map(String::from)
+        .to_vec();
         let c = detect_from(&english);
         assert_eq!((c.style, c.french), (Style::Free, false));
-        let moji: Vec<String> = ["✨ add folding", "🐛 fix split", "📝 docs", "🎨 style"].map(String::from).to_vec();
+        let moji: Vec<String> = ["✨ add folding", "🐛 fix split", "📝 docs", "🎨 style"]
+            .map(String::from)
+            .to_vec();
         assert_eq!(detect_from(&moji).style, Style::Gitmoji);
         assert_eq!(detect_from(&[]).samples, 0);
-        assert!(guidance(&detect_from(&french)).contains("Conventional Commits") && guidance(&detect_from(&french)).contains("French"));
+        assert!(
+            guidance(&detect_from(&french)).contains("Conventional Commits")
+                && guidance(&detect_from(&french)).contains("French")
+        );
     }
 
     #[test]
     fn messages_are_checked_against_the_conventions_of_the_repository() {
-        let conventional = detect_from(&["feat(a): x".to_string(), "fix: y".to_string(), "docs: z".to_string()]);
+        let conventional = detect_from(&[
+            "feat(a): x".to_string(),
+            "fix: y".to_string(),
+            "docs: z".to_string(),
+        ]);
         assert!(check(&conventional, "feat(ui): add a button").is_ok());
-        assert!(check(&conventional, "Add a button").unwrap_err().contains("not a Conventional Commit"));
-        assert!(check(&conventional, "wibble: add a button").unwrap_err().contains("not used"));
-        assert!(check(&conventional, &format!("feat: {}", "x".repeat(120))).unwrap_err().contains("characters"));
+        assert!(
+            check(&conventional, "Add a button")
+                .unwrap_err()
+                .contains("not a Conventional Commit")
+        );
+        assert!(
+            check(&conventional, "wibble: add a button")
+                .unwrap_err()
+                .contains("not used")
+        );
+        assert!(
+            check(&conventional, &format!("feat: {}", "x".repeat(120)))
+                .unwrap_err()
+                .contains("characters")
+        );
         assert!(check(&conventional, "  ").is_err());
-        let free = detect_from(&(0..12).map(|i| format!("Add thing {i}")).collect::<Vec<_>>());
+        let free = detect_from(
+            &(0..12)
+                .map(|i| format!("Add thing {i}"))
+                .collect::<Vec<_>>(),
+        );
         assert!(check(&free, "Add another thing").is_ok());
-        assert!(check(&free, "feat: add another thing").unwrap_err().contains("plain sentence"));
+        assert!(
+            check(&free, "feat: add another thing")
+                .unwrap_err()
+                .contains("plain sentence")
+        );
     }
 
     #[test]
     fn co_authors_and_ai_attributions_never_stay_in_a_message() {
         let message = "feat: ajoute x\n\nLe détail.\n\nCo-Authored-By: Claude Sonnet <noreply@anthropic.com>\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\nco-authored-by: Autre <a@b.c>\n";
         assert_eq!(clean_message(message), "feat: ajoute x\n\nLe détail.");
-        assert_eq!(clean_message("fix: y\r\n\r\nCo-authored-by: x <y@z>"), "fix: y");
-        assert_eq!(clean_message("docs: explain how a Generated with caching works"), "docs: explain how a Generated with caching works", "ordinary text is left alone");
+        assert_eq!(
+            clean_message("fix: y\r\n\r\nCo-authored-by: x <y@z>"),
+            "fix: y"
+        );
+        assert_eq!(
+            clean_message("docs: explain how a Generated with caching works"),
+            "docs: explain how a Generated with caching works",
+            "ordinary text is left alone"
+        );
     }
 
     fn change(path: &str, kind: Kind) -> Change {
-        Change { path: path.into(), orig: None, kind }
+        Change {
+            path: path.into(),
+            orig: None,
+            kind,
+        }
     }
 
     #[test]
@@ -740,16 +1109,39 @@ mod tests {
         let groups = group(&changes, &[(2, 3)]);
         let by_kind = |k: &str| groups.iter().filter(|g| g.kind == k).count();
         assert_eq!((by_kind("docs"), by_kind("deps"), by_kind("ci")), (1, 1, 1));
-        let code: Vec<Vec<&str>> = groups.iter().filter(|g| g.kind == "code").map(|g| g.files.iter().map(|c| c.path.as_str()).collect()).collect();
+        let code: Vec<Vec<&str>> = groups
+            .iter()
+            .filter(|g| g.kind == "code")
+            .map(|g| g.files.iter().map(|c| c.path.as_str()).collect())
+            .collect();
         assert_eq!(code.len(), 2, "{code:?}");
-        assert!(code.iter().any(|g| g == &["src/graph/mod.rs", "src/graph/build.rs"]));
-        assert!(code.iter().any(|g| g.contains(&"src/editor.rs") && g.contains(&"src/ui.rs")), "linked files stay together: {code:?}");
+        assert!(
+            code.iter()
+                .any(|g| g == &["src/graph/mod.rs", "src/graph/build.rs"])
+        );
+        assert!(
+            code.iter()
+                .any(|g| g.contains(&"src/editor.rs") && g.contains(&"src/ui.rs")),
+            "linked files stay together: {code:?}"
+        );
         // Every file is in exactly one group.
-        assert_eq!(groups.iter().map(|g| g.files.len()).sum::<usize>(), changes.len());
+        assert_eq!(
+            groups.iter().map(|g| g.files.len()).sum::<usize>(),
+            changes.len()
+        );
         // Many folders do not make many commits.
-        let many: Vec<Change> = (0..20).map(|i| change(&format!("dir{i}/f.rs"), Kind::Modified)).collect();
+        let many: Vec<Change> = (0..20)
+            .map(|i| change(&format!("dir{i}/f.rs"), Kind::Modified))
+            .collect();
         assert!(group(&many, &[]).len() <= MAX_GROUPS);
-        assert_eq!(suggested_type(&Group { title: String::new(), kind: "code", files: vec![change("a", Kind::Untracked)] }), Some("feat"));
+        assert_eq!(
+            suggested_type(&Group {
+                title: String::new(),
+                kind: "code",
+                files: vec![change("a", Kind::Untracked)]
+            }),
+            Some("feat")
+        );
     }
 
     #[test]
@@ -763,11 +1155,18 @@ mod tests {
         assert_eq!(plan["groups"].as_array().unwrap().len(), 1);
         assert_eq!(plan["groups"][0]["files"].as_array().unwrap().len(), 2);
         // A message that does not follow the repository is refused and nothing is committed.
-        let refused = commit(&dir, &json!({"mode": "all", "commits": [{"message": "Add stuff"}]})).unwrap_err();
+        let refused = commit(
+            &dir,
+            &json!({"mode": "all", "commits": [{"message": "Add stuff"}]}),
+        )
+        .unwrap_err();
         assert!(refused.contains("Conventional Commit"), "{refused}");
         assert_eq!(subjects(&dir).len(), 3);
         let done = commit(&dir, &json!({"mode": "all", "commits": [{"message": "feat: add new.rs\n\nCo-Authored-By: Claude <noreply@anthropic.com>"}]})).unwrap();
-        assert!(done.contains("1 commit(s) made") && done.contains("clean"), "{done}");
+        assert!(
+            done.contains("1 commit(s) made") && done.contains("clean"),
+            "{done}"
+        );
         let log = subjects(&dir);
         assert_eq!(log[0], "feat: add new.rs", "{log:?}");
         assert!(!log[0].to_lowercase().contains("co-authored"));
@@ -776,7 +1175,9 @@ mod tests {
     }
 
     fn plan_nothing(dir: &Path) -> bool {
-        plan(dir, &json!({"mode": "all"})).unwrap_err().contains("Nothing to commit")
+        plan(dir, &json!({"mode": "all"}))
+            .unwrap_err()
+            .contains("Nothing to commit")
     }
 
     #[test]
@@ -787,9 +1188,18 @@ mod tests {
         std::fs::write(dir.join("src/b.rs"), "b").unwrap();
         std::fs::write(dir.join("README.md"), "docs").unwrap();
         std::fs::write(dir.join("h1.txt"), "left alone").unwrap();
-        let groups: Value = serde_json::from_str(&plan(&dir, &json!({"mode": "context"})).unwrap()).unwrap();
-        let kinds: Vec<&str> = groups["groups"].as_array().unwrap().iter().filter_map(|g| g["kind"].as_str()).collect();
-        assert!(kinds.contains(&"docs") && kinds.contains(&"code"), "{kinds:?}");
+        let groups: Value =
+            serde_json::from_str(&plan(&dir, &json!({"mode": "context"})).unwrap()).unwrap();
+        let kinds: Vec<&str> = groups["groups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|g| g["kind"].as_str())
+            .collect();
+        assert!(
+            kinds.contains(&"docs") && kinds.contains(&"code"),
+            "{kinds:?}"
+        );
         // Missing files, unknown files and a file in two commits are all refused up front.
         for bad in [
             json!([{"message": "feat: x"}]),
@@ -798,29 +1208,69 @@ mod tests {
         ] {
             assert!(commit(&dir, &json!({"mode": "context", "commits": bad})).is_err());
         }
-        assert_eq!(subjects(&dir).len(), 3, "nothing was committed by the refused calls");
-        let done = commit(&dir, &json!({"mode": "context", "commits": [
-            {"message": "feat(src): add a and b", "files": ["src/a.rs", "src/b.rs"]},
-            {"message": "docs: describe the change", "files": ["README.md"]},
-        ]}))
+        assert_eq!(
+            subjects(&dir).len(),
+            3,
+            "nothing was committed by the refused calls"
+        );
+        let done = commit(
+            &dir,
+            &json!({"mode": "context", "commits": [
+                {"message": "feat(src): add a and b", "files": ["src/a.rs", "src/b.rs"]},
+                {"message": "docs: describe the change", "files": ["README.md"]},
+            ]}),
+        )
         .unwrap();
-        assert!(done.contains("2 commit(s) made") && done.contains("1 changed file(s) remain"), "{done}");
+        assert!(
+            done.contains("2 commit(s) made") && done.contains("1 changed file(s) remain"),
+            "{done}"
+        );
         let log = subjects(&dir);
-        assert_eq!(&log[..2], ["docs: describe the change", "feat(src): add a and b"]);
-        let status = Command::new("git").current_dir(&dir).args(["status", "--porcelain"]).output().unwrap();
-        assert_eq!(String::from_utf8_lossy(&status.stdout).trim(), "M h1.txt", "only the file nobody listed is left");
+        assert_eq!(
+            &log[..2],
+            ["docs: describe the change", "feat(src): add a and b"]
+        );
+        let status = Command::new("git")
+            .current_dir(&dir)
+            .args(["status", "--porcelain"])
+            .output()
+            .unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&status.stdout).trim(),
+            "M h1.txt",
+            "only the file nobody listed is left"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn the_commit_command_is_offered_with_its_two_modes() {
-        let names: Vec<String> = prompts().iter().filter_map(|p| p["name"].as_str().map(str::to_string)).collect();
+        let names: Vec<String> = prompts()
+            .iter()
+            .filter_map(|p| p["name"].as_str().map(str::to_string))
+            .collect();
         assert_eq!(names, ["commit", "commit-all", "commit-by-context"]);
-        assert!(prompt("commit-all", &json!({})).unwrap().contains("“all” mode"));
-        assert!(prompt("commit", &json!({"mode": "context"})).unwrap().contains("“context” mode"));
-        assert!(prompt("commit", &json!({})).unwrap().contains("ask the user which mode"));
+        assert!(
+            prompt("commit-all", &json!({}))
+                .unwrap()
+                .contains("“all” mode")
+        );
+        assert!(
+            prompt("commit", &json!({"mode": "context"}))
+                .unwrap()
+                .contains("“context” mode")
+        );
+        assert!(
+            prompt("commit", &json!({}))
+                .unwrap()
+                .contains("ask the user which mode")
+        );
         let text = prompt("commit-by-context", &json!({})).unwrap();
-        assert!(text.contains("never add a `Co-authored-by`") && text.contains("git_commit_plan") && text.contains("git_commit"));
+        assert!(
+            text.contains("never add a `Co-authored-by`")
+                && text.contains("git_commit_plan")
+                && text.contains("git_commit")
+        );
         assert_eq!(prompt("autre", &json!({})), None);
     }
 }

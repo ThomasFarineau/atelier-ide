@@ -9,6 +9,7 @@
 
 pub mod agents;
 mod commits;
+mod rework;
 mod server;
 mod sessions;
 mod tools;
@@ -40,13 +41,20 @@ static CONNECTION: Mutex<Option<(String, String)>> = Mutex::new(None);
 
 /// The address of the running server.
 pub fn address() -> Option<String> {
-    CONNECTION.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|(url, _)| url.clone())
+    CONNECTION
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .map(|(url, _)| url.clone())
 }
 
 /// The variables a terminal of the IDE defines so that an AI can find the server.
 pub fn env() -> Vec<(&'static str, String)> {
     match &*CONNECTION.lock().unwrap_or_else(|e| e.into_inner()) {
-        Some((url, token)) => vec![(agents::URL_VAR, url.clone()), (agents::TOKEN_VAR, token.clone())],
+        Some((url, token)) => vec![
+            (agents::URL_VAR, url.clone()),
+            (agents::TOKEN_VAR, token.clone()),
+        ],
         None => Vec::new(),
     }
 }
@@ -63,7 +71,10 @@ fn saved_path() -> std::path::PathBuf {
 
 /// The secret and port of the previous run, or new ones.
 fn load() -> Saved {
-    let mut saved: Saved = fs::read(saved_path()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+    let mut saved: Saved = fs::read(saved_path())
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default();
     if saved.token.len() < 32 {
         let random = || std::hash::RandomState::new().build_hasher().finish();
         saved.token = format!("{:016x}{:016x}{:016x}", random(), random(), random());
@@ -98,7 +109,9 @@ enum Action {
 /// What an AI is told to take a session up: it reads the context the IDE wrote, which holds the
 /// notes of the session (no quote or line break: the same line works in every shell).
 fn resume_prompt(id: &str, file: &str) -> String {
-    format!("Reprends la session Atelier {id} : lis {file} (ou appelle get_session_context) puis continue le travail.")
+    format!(
+        "Reprends la session Atelier {id} : lis {file} (ou appelle get_session_context) puis continue le travail."
+    )
 }
 
 /// The command line that starts `agent` with that first request.
@@ -114,14 +127,19 @@ impl McpPlugin {
     fn start(&mut self, ctx: &egui::Context) {
         let mut saved = load();
         let ctx = ctx.clone();
-        match server::start(saved.port, saved.token.clone(), Arc::new(move || ctx.request_repaint())) {
+        match server::start(
+            saved.port,
+            saved.token.clone(),
+            Arc::new(move || ctx.request_repaint()),
+        ) {
             Ok(server) => {
                 // The port is kept for the next run unless another window of the IDE has it.
                 if saved.port == 0 || saved.port == server.port {
                     saved.port = server.port;
                     save(&saved);
                 }
-                *CONNECTION.lock().unwrap_or_else(|e| e.into_inner()) = Some((format!("http://127.0.0.1:{}/mcp", server.port), saved.token));
+                *CONNECTION.lock().unwrap_or_else(|e| e.into_inner()) =
+                    Some((format!("http://127.0.0.1:{}/mcp", server.port), saved.token));
                 self.server = Some(server);
             }
             Err(e) => self.error = Some(format!("Serveur MCP indisponible : {e}")),
@@ -129,14 +147,20 @@ impl McpPlugin {
     }
 
     fn address(&self) -> Option<String> {
-        self.server.as_ref().map(|s| format!("http://127.0.0.1:{}/mcp", s.port))
+        self.server
+            .as_ref()
+            .map(|s| format!("http://127.0.0.1:{}/mcp", s.port))
     }
 
     /// Starts `agent` in a terminal of its own, on the context of a session: the IDE keeps the
     /// context, so any AI can take it up, not only the one that began it.
     fn resume(&mut self, agent: agents::Agent, id: &str, host: &mut dyn Host) {
         let Some(server) = &self.server else { return };
-        let exported = server.store.lock().unwrap_or_else(|e| e.into_inner()).export(id);
+        let exported = server
+            .store
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .export(id);
         let file = match exported {
             Ok(file) => file,
             Err(e) => return host.notify(format!("Erreur : {e}")),
@@ -170,7 +194,11 @@ impl BuiltinPlugin for McpPlugin {
         }
         let Some(server) = &self.server else { return };
         *server.root.lock().unwrap_or_else(|e| e.into_inner()) = host.root().to_path_buf();
-        server.store.lock().unwrap_or_else(|e| e.into_inner()).set_root(host.root());
+        server
+            .store
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_root(host.root());
         for call in server.calls.try_iter() {
             let outcome = tools::run(host, &call.tool, &call.args);
             let _ = call.reply.send(outcome);
@@ -194,10 +222,22 @@ impl BuiltinPlugin for McpPlugin {
         }
         let t = ui::theme(ui.ctx());
         let Some(server) = &self.server else {
-            ui.label(RichText::new(self.error.clone().unwrap_or_else(|| "Serveur MCP en cours de démarrage".into())).color(t.text_secondary));
+            ui.label(
+                RichText::new(
+                    self.error
+                        .clone()
+                        .unwrap_or_else(|| "Serveur MCP en cours de démarrage".into()),
+                )
+                .color(t.text_secondary),
+            );
             return;
         };
-        let sessions = server.store.lock().unwrap_or_else(|e| e.into_inner()).sessions.clone();
+        let sessions = server
+            .store
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .sessions
+            .clone();
         if sessions.is_empty() {
             ui.add_space(12.0);
             ui.vertical_centered(|ui| {
@@ -207,7 +247,10 @@ impl BuiltinPlugin for McpPlugin {
             return;
         }
         // Debug builds: a screenshot can ask for a session to be open.
-        if cfg!(debug_assertions) && self.selected.is_none() && std::env::var_os("ATELIER_SHOT_SESSION_OPEN").is_some() {
+        if cfg!(debug_assertions)
+            && self.selected.is_none()
+            && std::env::var_os("ATELIER_SHOT_SESSION_OPEN").is_some()
+        {
             self.selected = sessions.last().map(|s| s.id.clone());
         }
         let at = sessions::now();
@@ -270,7 +313,12 @@ impl BuiltinPlugin for McpPlugin {
         match action {
             Some(Action::Resume(agent, id)) => self.resume(agent, &id, host),
             Some(Action::Copy(id)) => {
-                let text = self.server.as_ref().and_then(|s| s.store.lock().unwrap_or_else(|e| e.into_inner()).markdown(&id));
+                let text = self.server.as_ref().and_then(|s| {
+                    s.store
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .markdown(&id)
+                });
                 if let Some(text) = text {
                     ui.ctx().copy_text(text);
                     host.notify("Contexte de la session copié".into());
@@ -278,7 +326,11 @@ impl BuiltinPlugin for McpPlugin {
             }
             Some(Action::Delete(id)) => {
                 if let Some(server) = &self.server {
-                    server.store.lock().unwrap_or_else(|e| e.into_inner()).delete(&id);
+                    server
+                        .store
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .delete(&id);
                 }
                 self.selected = None;
             }
@@ -288,7 +340,10 @@ impl BuiltinPlugin for McpPlugin {
 
     fn status_bar(&mut self, ui: &mut egui::Ui, _host: &mut dyn Host) {
         if let Some(address) = self.address() {
-            ui::status_text(ui, "MCP").on_hover_text(format!("Serveur MCP d'Atelier : {address}\n{} appel(s) d'outil depuis le démarrage", self.served));
+            ui::status_text(ui, "MCP").on_hover_text(format!(
+                "Serveur MCP d'Atelier : {address}\n{} appel(s) d'outil depuis le démarrage",
+                self.served
+            ));
         }
     }
 
@@ -300,7 +355,10 @@ impl BuiltinPlugin for McpPlugin {
             ("mcp.status", "MCP : afficher l'adresse du serveur"),
         ]
         .into_iter()
-        .map(|(id, label)| Command { id, label: label.into() })
+        .map(|(id, label)| Command {
+            id,
+            label: label.into(),
+        })
         .collect()
     }
 
@@ -312,7 +370,11 @@ impl BuiltinPlugin for McpPlugin {
             _ => {
                 let message = match (&self.error, self.address()) {
                     (Some(error), _) => error.clone(),
-                    (None, Some(address)) => format!("{address} · les terminaux d'Atelier définissent {} et {}", agents::URL_VAR, agents::TOKEN_VAR),
+                    (None, Some(address)) => format!(
+                        "{address} · les terminaux d'Atelier définissent {} et {}",
+                        agents::URL_VAR,
+                        agents::TOKEN_VAR
+                    ),
                     (None, None) => "Serveur MCP en cours de démarrage".into(),
                 };
                 host.notify(message);
@@ -321,8 +383,15 @@ impl BuiltinPlugin for McpPlugin {
         };
         match agents::connect(agent, host.root(), self.address().as_deref()) {
             Ok(files) => {
-                let names: Vec<String> = files.iter().filter_map(|f| f.file_name().map(|n| n.to_string_lossy().into_owned())).collect();
-                host.notify(format!("{} connecté au MCP d'Atelier ({}) · relancez-le s'il tourne déjà", agent.name(), names.join(", ")));
+                let names: Vec<String> = files
+                    .iter()
+                    .filter_map(|f| f.file_name().map(|n| n.to_string_lossy().into_owned()))
+                    .collect();
+                host.notify(format!(
+                    "{} connecté au MCP d'Atelier ({}) · relancez-le s'il tourne déjà",
+                    agent.name(),
+                    names.join(", ")
+                ));
             }
             Err(e) => host.notify(format!("Erreur : {e}")),
         }
@@ -344,8 +413,15 @@ mod tests {
             (agents::Agent::Gemini, "gemini -i \""),
         ] {
             let command = resume_command(agent, &prompt);
-            assert!(command.starts_with(start) && command.ends_with('"') && !command.contains('\n'), "{command}");
-            assert_eq!(agents::detect(&command), Some(agent), "the IDE would recognize it as that AI");
+            assert!(
+                command.starts_with(start) && command.ends_with('"') && !command.contains('\n'),
+                "{command}"
+            );
+            assert_eq!(
+                agents::detect(&command),
+                Some(agent),
+                "the IDE would recognize it as that AI"
+            );
         }
     }
 }
