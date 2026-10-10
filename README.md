@@ -116,15 +116,18 @@ Les plugins intégrés **Maven** et **Gradle** ajoutent leurs fenêtres sur le r
 
 ## Traductions (i18n)
 
-Le plugin intégré **Traductions** gère les fichiers de traduction d'un projet à partir d'un fichier choisi comme **source** (la langue de référence), enregistré dans `.atelier/i18n.json`. Les autres langues sont trouvées à côté de lui :
+Le plugin intégré **Traductions** gère les fichiers de traduction d'un projet à partir d'une **source** (la langue de référence), enregistrée dans `.atelier/i18n.json`. La source peut être :
 
-- `locales/fr.json`, `locales/en_US.json` : un fichier par langue dans un dossier ;
-- `locales/fr/common.json`, `locales/en/common.json` : un dossier par langue ;
-- `messages.properties`, `messages_fr.properties` : bundles Java (le fichier sans suffixe est la langue par défaut).
+- **un fichier** ; les autres langues sont trouvées à côté de lui :
+  - `locales/fr.json`, `locales/en_US.json` : un fichier par langue dans un dossier ;
+  - `locales/fr/common.json`, `locales/en/common.json` : un dossier par langue ;
+  - `messages.properties`, `messages_fr.properties` : bundles Java (le fichier sans suffixe est la langue par défaut) ;
+- **le dossier d'une langue** (`locales/fr`) : chaque fichier dedans, sous-dossiers compris, est un espace de noms et ses clés s'écrivent `espace:clé` (`common:menu.open`, `auth/login:title`), comme avec i18next. Les autres langues sont les dossiers voisins ; un espace de noms qu'une langue n'a pas encore est créé à la première valeur écrite ;
+- **une expression régulière** sur les chemins des fichiers du projet (relatifs, avec `/`), avec un groupe `(?<lang>…)` pour la langue et, facultatif, `(?<ns>…)` pour l'espace de noms : `src/i18n/messages\.(?<lang>\w+)\.json`, `app/(?<ns>\w+)/lang/(?<lang>[a-z]{2})\.json`. On y précise la langue de référence (par défaut l'anglais s'il est là, sinon la première). Sans `ns`, une langue qui a plusieurs fichiers les distingue par leur chemin.
 
-Les JSON peuvent être plats (`"menu.open"`) ou imbriqués (`{"menu": {"open": …}}`). La fenêtre **Traductions** (en bas) propose d'abord les fichiers qui ressemblent à des traductions, ou le fichier actif, comme source. Elle montre ensuite toutes les clés dans toutes les langues : manquantes en rouge, vides ou avec d'autres variables que la source (`{name}`, `{{count}}`, `%s`, `${x}`) en orange, identiques à la source en gris, avec le pourcentage traduit de chaque langue. Un clic sur une cellule la modifie et l'écrit dans son fichier (à sa place, avec l'indentation du fichier) ; on y ajoute une langue (fichier créé avec toutes les clés de la source) ou une clé (dans toutes les langues), et le menu d'une clé l'ouvre dans la source ou la supprime partout. Le tableau suit les fichiers modifiés hors de l'IDE.
+Les JSON peuvent être plats (`"menu.open"`) ou imbriqués (`{"menu": {"open": …}}`). La fenêtre **Traductions** (en bas) propose d'abord comme source les fichiers et dossiers de langue qui ressemblent à des traductions, le fichier actif, ou une expression régulière. Elle montre ensuite toutes les clés dans toutes les langues : manquantes en rouge, vides ou avec d'autres variables que la source (`{name}`, `{{count}}`, `%s`, `${x}`) en orange, identiques à la source en gris, avec le pourcentage traduit de chaque langue. Un clic sur une cellule la modifie et l'écrit dans son fichier (à sa place, avec l'indentation du fichier) ; on y ajoute une langue (fichier créé avec toutes les clés de la source) ou une clé (dans toutes les langues), et le menu d'une clé l'ouvre dans la source ou la supprime partout. Le tableau suit les fichiers modifiés hors de l'IDE.
 
-L'outil MCP **`i18n`** donne la même chose aux IA : `action` vaut `languages` (les langues), `check` (toutes les langues comparées à la source), `check_language` (une langue en détail, avec `language`) ou `add_language` (crée une langue, valeurs vides ou, avec `fill: "source"`, le texte de la source). Les résultats listent les clés manquantes, en trop, vides, aux variables différentes et identiques à la source. `source` choisit le fichier source quand le projet n'en a pas.
+L'outil MCP **`i18n`** donne la même chose aux IA : `action` vaut `languages` (les langues), `check` (toutes les langues comparées à la source), `check_language` (une langue en détail, avec `language`) ou `add_language` (crée une langue, valeurs vides ou, avec `fill: "source"`, le texte de la source). Les résultats listent les clés manquantes, en trop, vides, aux variables différentes et identiques à la source. `source` choisit un fichier ou un dossier source, `pattern` (avec `source_language`) une expression régulière.
 
 ## Intelligence du code (Rust)
 
@@ -290,6 +293,15 @@ l'interface, la fenêtre ne se fige pas). Un autre client MCP peut s'y connecter
 Chaque connexion d'une IA au serveur MCP est une **session du projet**, enregistrée dans `.atelier/sessions/` (le
 dossier est ignoré par git : `.atelier/.gitignore`). La fenêtre **Sessions IA** (Alt+7) les liste, avec l'IA, l'heure,
 les appels faits à l'IDE et les notes laissées.
+
+Son onglet **IA installées** montre l'état de Claude Code, Codex et Gemini CLI : installée ou non (programme trouvé dans le
+PATH, sa version, un bouton qui lance son installation par npm sinon), connectée ou non au serveur MCP de l'IDE pour ce
+projet (bouton pour la connecter), et son usage lu dans les fichiers qu'elle garde sur l'ordinateur (`~/.claude/projects`,
+`~/.codex/sessions`, `~/.gemini/tmp`) : tokens sur 24 heures, 7 et 30 jours (détail entrée / cache / sortie au survol),
+la part de ce projet, les sessions et réponses, les modèles utilisés, la dernière utilisation, les sessions et appels
+passés par Atelier et, pour Codex, les limites d'usage de l'abonnement (fenêtre de 5 h et semaine, avec leur
+réinitialisation). Rien n'est demandé aux serveurs des IA : seul l'usage de cet ordinateur est compté. Les fichiers ne
+sont relus que s'ils ont changé, en arrière-plan, au plus une fois par minute tant que l'onglet est affiché.
 
 Le protocole ne montre pas la conversation, seulement les appels d'outils. Le contexte est donc tenu par l'IDE : l'IA
 est invitée (instructions du serveur) à noter l'objectif, les décisions, les tâches restantes et l'avancement avec

@@ -13,6 +13,7 @@ mod rework;
 mod server;
 mod sessions;
 mod tools;
+mod usage;
 
 pub use sessions::clock;
 
@@ -97,7 +98,20 @@ pub struct McpPlugin {
     served: usize,
     /// The session open in the Sessions window.
     selected: Option<String>,
+    /// The tab of the window: the sessions, or the AIs installed.
+    tab: Tab,
+    usage: usage::Scanner,
 }
+
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+enum Tab {
+    #[default]
+    Sessions,
+    Usage,
+}
+
+/// The usage is read again after this long while its tab is shown.
+const USAGE_REFRESH_MS: u64 = 60_000;
 
 /// What the user asked of a session in the window.
 enum Action {
@@ -110,6 +124,15 @@ enum Action {
 /// notes of the session (no quote or line break: the same line works in every shell).
 fn resume_prompt(id: &str, file: &str) -> String {
     trf!("mcp.take_up_atelier_session_read", id = id, file = file)
+}
+
+/// The command line that installs `agent`.
+fn install_command(agent: agents::Agent) -> &'static str {
+    match agent {
+        agents::Agent::Claude => "npm install -g @anthropic-ai/claude-code",
+        agents::Agent::Codex => "npm install -g @openai/codex",
+        agents::Agent::Gemini => "npm install -g @google/gemini-cli",
+    }
 }
 
 /// The command line that starts `agent` with that first request.
@@ -172,52 +195,8 @@ impl McpPlugin {
     }
 }
 
-impl BuiltinPlugin for McpPlugin {
-    fn id(&self) -> &'static str {
-        "mcp"
-    }
-    fn name(&self) -> &'static str {
-        tr!("mcp.atelier_super_intelligence_tools")
-    }
-    fn description(&self) -> &'static str {
-        tr!("mcp.tools_atelier_ais_through_mcp")
-    }
-    fn icon(&self) -> &'static str {
-        "mcp/icon"
-    }
-
-    fn update(&mut self, ctx: &egui::Context, host: &mut dyn Host) {
-        if self.server.is_none() && self.error.is_none() {
-            self.start(ctx);
-        }
-        let Some(server) = &self.server else { return };
-        *server.root.lock().unwrap_or_else(|e| e.into_inner()) = host.root().to_path_buf();
-        server
-            .store
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .set_root(host.root());
-        for call in server.calls.try_iter() {
-            let outcome = tools::run(host, &call.tool, &call.args);
-            let _ = call.reply.send(outcome);
-            self.served += 1;
-        }
-    }
-
-    fn tool_windows(&self) -> &'static [ToolWindow] {
-        &TOOL_WINDOWS
-    }
-
-    fn shortcuts(&mut self, ctx: &egui::Context, host: &mut dyn Host) {
-        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::ALT, egui::Key::Num7)) {
-            host.show_tool_window(&TOOL_WINDOWS[0]);
-        }
-    }
-
-    fn tool_window(&mut self, id: &str, ui: &mut egui::Ui, host: &mut dyn Host) {
-        if id != TOOL_WINDOWS[0].id {
-            return;
-        }
+impl McpPlugin {
+    fn sessions_tab(&mut self, ui: &mut egui::Ui, host: &mut dyn Host) {
         let t = ui::theme(ui.ctx());
         let Some(server) = &self.server else {
             ui.label(
@@ -399,6 +378,314 @@ impl BuiltinPlugin for McpPlugin {
                 self.selected = None;
             }
             None => {}
+        }
+    }
+
+    /// Reads the usage of the AIs again, in the background.
+    fn refresh_usage(&mut self, ctx: &egui::Context, host: &dyn Host) {
+        let root = host.root().to_path_buf();
+        let address = self.address();
+        let ctx = ctx.clone();
+        self.usage.refresh(
+            &root,
+            |agent| agents::is_connected(agent, &root, address.as_deref()),
+            move || ctx.request_repaint(),
+        );
+    }
+
+    /// The calls `agent` made to the IDE, from the sessions of the MCP server: (sessions, calls).
+    fn calls_of(&self, agent: agents::Agent) -> (usize, usize) {
+        let Some(server) = &self.server else {
+            return (0, 0);
+        };
+        let store = server.store.lock().unwrap_or_else(|e| e.into_inner());
+        store
+            .sessions
+            .iter()
+            .filter(|s| s.client.to_lowercase().contains(agent.id()))
+            .fold((0, 0), |(n, calls), s| (n + 1, calls + s.events.len()))
+    }
+
+    /// The AIs installed, whether the project is connected to the IDE for them, and what they
+    /// used.
+    fn usage_tab(&mut self, ui: &mut egui::Ui, host: &mut dyn Host) {
+        let t = ui::theme(ui.ctx());
+        self.usage.poll();
+        let stale = self
+            .usage
+            .report
+            .as_ref()
+            .is_none_or(|(read, _)| sessions::now().saturating_sub(*read) > USAGE_REFRESH_MS);
+        if stale && !self.usage.busy() {
+            self.refresh_usage(ui.ctx(), host);
+        }
+        let Some((_, report)) = &self.usage.report else {
+            ui.add_space(12.0);
+            ui.vertical_centered(|ui| {
+                ui.label(RichText::new(tr!("mcp.reading_ai_usage")).color(t.text_secondary));
+            });
+            return;
+        };
+        let report = report.clone();
+        let mut action: Option<(agents::Agent, bool)> = None;
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                for (agent, usage) in &report {
+                    if let Some(wanted) = self.agent_card(ui, *agent, usage) {
+                        action = Some((*agent, wanted));
+                    }
+                    ui.separator();
+                }
+                ui.label(
+                    RichText::new(tr!("mcp.usage_local_only"))
+                        .small()
+                        .color(t.text_secondary),
+                );
+            });
+        match action {
+            Some((agent, true)) => {
+                self.run_command(&format!("mcp.{}", agent.id()), host);
+                self.refresh_usage(ui.ctx(), host);
+            }
+            Some((agent, false)) => host.run_in_new_terminal(install_command(agent).to_string()),
+            None => {}
+        }
+    }
+
+    /// One AI of the usage tab. `Some(true)` when the user asks to connect it to the IDE,
+    /// `Some(false)` to install it.
+    fn agent_card(
+        &self,
+        ui: &mut egui::Ui,
+        agent: agents::Agent,
+        usage: &usage::AgentUsage,
+    ) -> Option<bool> {
+        let t = ui::theme(ui.ctx());
+        let secondary = |text: String| RichText::new(text).size(12.0).color(t.text_secondary);
+        let installed = usage.program.is_some();
+        let mut action = None;
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            let (dot, _) = ui.allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
+            ui.painter().circle_filled(
+                dot.center(),
+                4.0,
+                if installed {
+                    Color32::from_rgb(0x5F, 0xB8, 0x65)
+                } else {
+                    t.text_disabled
+                },
+            );
+            ui.label(RichText::new(agent.name()).font(ui::semibold(13.0)));
+            match &usage.program {
+                Some(program) => {
+                    if let Some(version) = &usage.version {
+                        ui.label(RichText::new(version).color(t.text_secondary));
+                    }
+                    ui.label(secondary(program.display().to_string()));
+                }
+                None => {
+                    ui.label(secondary(tr!("mcp.not_installed").into()));
+                }
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if !installed {
+                    if ui::button(ui, tr!("mcp.install"))
+                        .on_hover_text(install_command(agent))
+                        .clicked()
+                    {
+                        action = Some(false);
+                    }
+                } else if usage.connected {
+                    ui.label(RichText::new(tr!("mcp.connected_to_ide")).color(t.accent));
+                } else if ui::button(ui, tr!("mcp.connect")).clicked() {
+                    action = Some(true);
+                }
+            });
+        });
+        egui::Frame::new()
+            .inner_margin(egui::Margin {
+                left: 22,
+                right: 12,
+                top: 0,
+                bottom: 6,
+            })
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 3.0;
+                if usage.answers == 0 {
+                    ui.label(secondary(tr!("mcp.no_usage_30_days").into()));
+                } else {
+                    let tokens = |label: &str, tokens: usage::Tokens| {
+                        format!("{label} {}", usage::short_count(tokens.total()))
+                    };
+                    let windows = trf!(
+                        "mcp.tokens_windows",
+                        day = tokens(tr!("mcp.last_24_h"), usage.day),
+                        week = tokens(tr!("mcp.last_7_days"), usage.week),
+                        month = tokens(tr!("mcp.last_30_days"), usage.month)
+                    );
+                    ui.label(RichText::new(windows).size(12.5))
+                        .on_hover_text(trf!(
+                            "mcp.tokens_detail",
+                            input = usage::short_count(usage.month.input),
+                            cached = usage::short_count(usage.month.cached),
+                            output = usage::short_count(usage.month.output)
+                        ));
+                    ui.label(secondary(trf!(
+                        "mcp.project_usage",
+                        tokens = usage::short_count(usage.project.total()),
+                        sessions = usage.sessions,
+                        answers = usage.answers
+                    )));
+                    let total: u64 = usage.models.iter().map(|(_, n)| n).sum();
+                    let models: Vec<String> = usage
+                        .models
+                        .iter()
+                        .take(4)
+                        .map(|(model, n)| {
+                            let share = (n * 100).checked_div(total).unwrap_or(0);
+                            format!("{model} {share} %")
+                        })
+                        .collect();
+                    ui.label(secondary(trf!(
+                        "mcp.models_used",
+                        models = models.join(" · ")
+                    )));
+                    if let Some(last) = usage.last {
+                        ui.label(secondary(trf!("mcp.last_used", at = sessions::clock(last))));
+                    }
+                }
+                if let Some((read, limits, plan)) = &usage.limits {
+                    for limit in limits {
+                        limit_row(ui, limit);
+                    }
+                    ui.label(secondary(trf!(
+                        "mcp.limits_read",
+                        plan = plan.as_deref().unwrap_or("?"),
+                        at = sessions::clock(*read)
+                    )));
+                } else if usage.answers > 0 {
+                    ui.label(secondary(tr!("mcp.limits_not_kept").into()));
+                }
+                let (count, calls) = self.calls_of(agent);
+                if count > 0 {
+                    ui.label(secondary(trf!(
+                        "mcp.through_atelier",
+                        sessions = count,
+                        calls = calls
+                    )));
+                }
+            });
+        action
+    }
+}
+
+/// A usage limit: its window, the share used and when it starts again.
+fn limit_row(ui: &mut egui::Ui, limit: &usage::Limit) {
+    let t = ui::theme(ui.ctx());
+    ui.horizontal(|ui| {
+        let window = match limit.window_minutes {
+            10080 => tr!("mcp.limit_week").to_string(),
+            m if m % 60 == 0 => trf!("mcp.limit_hours", hours = m / 60),
+            m => trf!("mcp.limit_minutes", minutes = m),
+        };
+        ui.label(RichText::new(window).size(12.0));
+        let used = (limit.used_percent / 100.0).clamp(0.0, 1.0) as f32;
+        ui.add(
+            egui::ProgressBar::new(used)
+                .desired_width(140.0)
+                .desired_height(8.0)
+                .fill(if used >= 0.9 { t.error } else { t.accent }),
+        );
+        ui.label(RichText::new(format!("{:.0} %", limit.used_percent)).size(12.0));
+        if let Some(reset) = limit.resets_at {
+            ui.label(
+                RichText::new(trf!("mcp.limit_resets", at = sessions::clock(reset * 1000)))
+                    .size(12.0)
+                    .color(t.text_secondary),
+            );
+        }
+    });
+}
+
+impl BuiltinPlugin for McpPlugin {
+    fn id(&self) -> &'static str {
+        "mcp"
+    }
+    fn name(&self) -> &'static str {
+        tr!("mcp.atelier_super_intelligence_tools")
+    }
+    fn description(&self) -> &'static str {
+        tr!("mcp.tools_atelier_ais_through_mcp")
+    }
+    fn icon(&self) -> &'static str {
+        "mcp/icon"
+    }
+
+    fn update(&mut self, ctx: &egui::Context, host: &mut dyn Host) {
+        if self.server.is_none() && self.error.is_none() {
+            self.start(ctx);
+        }
+        self.usage.poll();
+        let Some(server) = &self.server else { return };
+        *server.root.lock().unwrap_or_else(|e| e.into_inner()) = host.root().to_path_buf();
+        server
+            .store
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_root(host.root());
+        for call in server.calls.try_iter() {
+            let outcome = tools::run(host, &call.tool, &call.args);
+            let _ = call.reply.send(outcome);
+            self.served += 1;
+        }
+    }
+
+    fn tool_windows(&self) -> &'static [ToolWindow] {
+        &TOOL_WINDOWS
+    }
+
+    fn shortcuts(&mut self, ctx: &egui::Context, host: &mut dyn Host) {
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::ALT, egui::Key::Num7)) {
+            host.show_tool_window(&TOOL_WINDOWS[0]);
+        }
+    }
+
+    fn tool_window(&mut self, id: &str, ui: &mut egui::Ui, host: &mut dyn Host) {
+        if id != TOOL_WINDOWS[0].id {
+            return;
+        }
+        // Debug builds: a screenshot can ask for the usage tab.
+        if cfg!(debug_assertions) && std::env::var_os("ATELIER_SHOT_AI_USAGE").is_some() {
+            self.tab = Tab::Usage;
+        }
+        ui.horizontal(|ui| {
+            for (tab, label) in [
+                (Tab::Sessions, tr!("mcp.sessions_tab")),
+                (Tab::Usage, tr!("mcp.installed_ais")),
+            ] {
+                if ui.selectable_label(self.tab == tab, label).clicked() {
+                    self.tab = tab;
+                }
+            }
+            if self.tab == Tab::Usage {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let tooltip = tr!("mcp.refresh");
+                    if ui::icon_button_enabled(ui, "refresh", !self.usage.busy(), tooltip).clicked()
+                    {
+                        self.refresh_usage(ui.ctx(), host);
+                    }
+                    if self.usage.busy() {
+                        ui.spinner();
+                    }
+                });
+            }
+        });
+        ui.separator();
+        match self.tab {
+            Tab::Sessions => self.sessions_tab(ui, host),
+            Tab::Usage => self.usage_tab(ui, host),
         }
     }
 

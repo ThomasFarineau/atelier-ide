@@ -1,12 +1,20 @@
-//! The translations of a project, from one file chosen as the source: the files of the other
-//! languages are found next to it, read as lists of keys, checked against the source and
-//! written back key by key.
+//! The translations of a project, from a source chosen by the user: the files of the reference
+//! language and, found from them, those of the other languages. They are read as lists of keys,
+//! checked against the source and written back key by key.
 //!
-//! Three layouts are understood, the language being in the name of a file or of a folder:
-//! - `locales/fr_FR.json`, `locales/en.json`: one file per language in a folder;
-//! - `locales/fr/common.json`, `locales/en/common.json`: one folder per language;
-//! - `messages.properties`, `messages_fr.properties`: Java bundles, the file without a suffix
-//!   being the default language.
+//! The source is one of:
+//! - a file. The other languages are found next to it, the language being in the name of a file
+//!   or of a folder: `locales/fr_FR.json` and `locales/en.json` (one file per language),
+//!   `locales/fr/common.json` and `locales/en/common.json` (one folder per language),
+//!   `messages.properties` and `messages_fr.properties` (Java bundles, the file without a suffix
+//!   being the default language);
+//! - the folder of a language (`locales/fr`): every file in it is a namespace, and its keys are
+//!   `namespace:key` (`common:menu.open`), as with i18next. The other languages are the folders
+//!   next to it;
+//! - a regular expression on the paths of the project's files, relative to it with `/`, whose
+//!   group `lang` is the language and the optional group `ns` the namespace:
+//!   `src/i18n/(?<lang>[a-z]{2})\.json`, `app/(?<ns>\w+)/lang/(?<lang>\w+)\.properties`. The
+//!   reference language is then named too.
 //!
 //! JSON files may be flat (`"menu.open": "…"`) or nested (`{"menu": {"open": "…"}}`): the keys
 //! are the dotted paths of the strings, and a new key goes where its parent is.
@@ -15,7 +23,7 @@ use regex::Regex;
 use serde_json::{Map, Value};
 use std::{
     collections::{BTreeMap, HashMap},
-    path::{Path, PathBuf},
+    path::{MAIN_SEPARATOR_STR, Path, PathBuf},
     sync::LazyLock,
 };
 
@@ -43,30 +51,94 @@ pub enum Format {
     Properties,
 }
 
-/// How the language is written in the paths.
+/// What the user chose as the source of the translations.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Layout {
-    /// `dir/<language>.json`
-    Stem { dir: PathBuf, extension: String },
-    /// `dir/<language>/<file>`
-    Folder { dir: PathBuf, file: String },
-    /// `dir/<base>_<language>.properties`, and `dir/<base>.properties` for the default language.
-    Suffix { dir: PathBuf, base: String },
+pub enum Source {
+    /// The file of the reference language.
+    File(PathBuf),
+    /// The folder of the reference language, each file in it a namespace.
+    Folder(PathBuf),
+    /// A regular expression on the paths of the files of `root`, relative to it.
+    Pattern {
+        root: PathBuf,
+        pattern: String,
+        /// The reference language; empty: English if there is, else the first one.
+        language: String,
+    },
 }
 
+impl Source {
+    /// A file or a folder, as it is on the disk.
+    pub fn from_path(path: &Path) -> Source {
+        if path.is_dir() {
+            Source::Folder(path.to_path_buf())
+        } else {
+            Source::File(path.to_path_buf())
+        }
+    }
+
+    /// How it is shown: its path relative to `root`, or its pattern.
+    pub fn label(&self, root: &Path) -> String {
+        let relative = |path: &Path| {
+            path.strip_prefix(root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/")
+        };
+        match self {
+            Source::File(path) => relative(path),
+            Source::Folder(path) => format!("{}/", relative(path)),
+            Source::Pattern { pattern, .. } => format!("/{pattern}/"),
+        }
+    }
+}
+
+/// One file of a language.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Part {
+    /// Empty when the catalog has no namespaces.
+    pub namespace: String,
+    pub path: PathBuf,
+    pub format: Format,
+}
+
+/// The files of one language.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LocaleFile {
     pub language: String,
-    pub path: PathBuf,
+    pub parts: Vec<Part>,
+}
+
+impl LocaleFile {
+    /// Its first file, to show or open.
+    pub fn path(&self) -> &Path {
+        self.parts.first().map_or(Path::new(""), |p| &p.path)
+    }
+}
+
+/// Where the file of a namespace is for any language: `before` + language + `after`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Template {
+    namespace: String,
+    format: Format,
+    before: String,
+    after: String,
+}
+
+impl Template {
+    fn path(&self, language: &str) -> PathBuf {
+        PathBuf::from(format!("{}{language}{}", self.before, self.after))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Catalog {
-    pub format: Format,
-    pub layout: Layout,
     pub source: LocaleFile,
     /// The other languages, sorted.
     pub others: Vec<LocaleFile>,
+    /// Whether the keys start with their namespace (`common:menu.open`).
+    pub namespaced: bool,
+    templates: Vec<Template>,
 }
 
 impl Catalog {
@@ -79,30 +151,156 @@ impl Catalog {
         self.files().find(|f| f.language == language)
     }
 
-    /// The file a language has, or would have.
+    /// The first file a language has, or would have.
+    #[cfg(test)]
     pub fn path_for(&self, language: &str) -> PathBuf {
-        match &self.layout {
-            Layout::Stem { dir, extension } => dir.join(format!("{language}.{extension}")),
-            Layout::Folder { dir, file } => dir.join(language).join(file),
-            Layout::Suffix { dir, base } => dir.join(format!("{base}_{language}.properties")),
+        self.templates
+            .first()
+            .map_or_else(PathBuf::new, |t| t.path(language))
+    }
+
+    /// Every file of the catalog.
+    pub fn paths(&self) -> impl Iterator<Item = &Path> {
+        self.files()
+            .flat_map(|f| f.parts.iter().map(|p| p.path.as_path()))
+    }
+
+    /// The folders a new language would appear in, to watch.
+    pub fn folders(&self) -> Vec<PathBuf> {
+        let mut folders: Vec<PathBuf> = self
+            .templates
+            .iter()
+            .filter_map(|t| {
+                // The folder holding the file or folder named after the language.
+                let marked = t.path("\u{1}");
+                let mut path = marked.as_path();
+                while !path.file_name()?.to_string_lossy().contains('\u{1}') {
+                    path = path.parent()?;
+                }
+                path.parent().map(Path::to_path_buf)
+            })
+            .collect();
+        folders.dedup();
+        folders
+    }
+
+    /// The namespace of a key and the key in its file.
+    fn split<'a>(&self, key: &'a str) -> Result<(&'a str, &'a str), String> {
+        if !self.namespaced {
+            return Ok(("", key));
         }
+        key.split_once(':')
+            .ok_or_else(|| trf!("translations.key_needs_namespace", key = key))
+    }
+
+    /// The file a key of a language is, or would be, in: its path, format and key in it.
+    pub fn locate(&self, language: &str, key: &str) -> Result<(PathBuf, Format, String), String> {
+        let (namespace, inner) = self.split(key)?;
+        let part = self
+            .file(language)
+            .and_then(|f| f.parts.iter().find(|p| p.namespace == namespace));
+        if let Some(part) = part {
+            return Ok((part.path.clone(), part.format, inner.to_string()));
+        }
+        let template = self
+            .templates
+            .iter()
+            .find(|t| t.namespace == namespace)
+            .ok_or_else(|| trf!("translations.unknown_namespace", namespace = namespace))?;
+        Ok((template.path(language), template.format, inner.to_string()))
+    }
+
+    /// Every key and text of a language, its namespaces after one another.
+    pub fn read(&self, file: &LocaleFile) -> Result<Vec<(String, String)>, String> {
+        let mut out = Vec::new();
+        for part in &file.parts {
+            for (key, value) in read(&part.path, part.format)? {
+                let key = if self.namespaced {
+                    format!("{}:{key}", part.namespace)
+                } else {
+                    key
+                };
+                out.push((key, value));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Writes the text of a key in a language.
+    pub fn set(&self, language: &str, key: &str, text: &str) -> Result<(), String> {
+        let (path, format, inner) = self.locate(language, key)?;
+        set_value(&path, format, &inner, text)
+    }
+
+    /// Removes a key from every language.
+    pub fn remove(&self, key: &str) -> Result<(), String> {
+        let (namespace, inner) = self.split(key)?;
+        for file in self.files() {
+            for part in file.parts.iter().filter(|p| p.namespace == namespace) {
+                remove_key(&part.path, part.format, inner)?;
+            }
+        }
+        Ok(())
     }
 }
 
-fn format_of(path: &Path) -> Result<Format, String> {
+fn format_of(path: &Path) -> Option<Format> {
     match path.extension().and_then(|e| e.to_str()) {
-        Some("json") => Ok(Format::Json),
-        Some("properties") => Ok(Format::Properties),
-        _ => Err(tr!("translations.unsupported_format").into()),
+        Some("json") => Some(Format::Json),
+        Some("properties") => Some(Format::Properties),
+        _ => None,
     }
 }
 
-/// The catalog a source file belongs to: its layout, and the files of the other languages.
-pub fn discover(source: &Path) -> Result<Catalog, String> {
+fn sorted_entries(dir: &Path) -> Vec<PathBuf> {
+    let mut found: Vec<PathBuf> = std::fs::read_dir(dir)
+        .map(|entries| entries.flatten().map(|e| e.path()).collect())
+        .unwrap_or_default();
+    found.sort();
+    found
+}
+
+/// `dir` and a separator, to put a name after.
+fn prefix(dir: &Path) -> String {
+    let dir = dir.to_string_lossy();
+    if dir.ends_with(['/', '\\']) || dir.is_empty() {
+        dir.into_owned()
+    } else {
+        format!("{dir}{MAIN_SEPARATOR_STR}")
+    }
+}
+
+fn single(language: String, path: PathBuf, format: Format) -> LocaleFile {
+    LocaleFile {
+        language,
+        parts: vec![Part {
+            namespace: String::new(),
+            path,
+            format,
+        }],
+    }
+}
+
+/// The catalog of a source: its files, and those of the other languages.
+pub fn discover(source: &Source) -> Result<Catalog, String> {
+    let mut catalog = match source {
+        Source::File(path) => discover_file(path)?,
+        Source::Folder(path) => discover_folder(path)?,
+        Source::Pattern {
+            root,
+            pattern,
+            language,
+        } => discover_pattern(root, pattern, language)?,
+    };
+    catalog.others.sort_by(|a, b| a.language.cmp(&b.language));
+    Ok(catalog)
+}
+
+fn discover_file(source: &Path) -> Result<Catalog, String> {
     if !source.is_file() {
         return Err(trf!("translations.source_missing", path = source.display()));
     }
-    let format = format_of(source)?;
+    let format = format_of(source).ok_or(tr!("translations.unsupported_format"))?;
     let dir = source.parent().unwrap_or(Path::new(".")).to_path_buf();
     let stem = source
         .file_stem()
@@ -114,20 +312,19 @@ pub fn discover(source: &Path) -> Result<Catalog, String> {
         .and_then(|s| s.to_str())
         .unwrap_or_default()
         .to_string();
-    let list = |dir: &Path| -> Vec<PathBuf> {
-        let mut found: Vec<PathBuf> = std::fs::read_dir(dir)
-            .map(|entries| entries.flatten().map(|e| e.path()).collect())
-            .unwrap_or_default();
-        found.sort();
-        found
+    let template = |before: String, after: String| Template {
+        namespace: String::new(),
+        format,
+        before,
+        after,
     };
-    let (layout, language, others) = if format == Format::Properties {
+    let (template, language, others) = if format == Format::Properties {
         // `messages_fr_FR.properties`: the base is what comes before the language.
         let (base, language) = match stem.split_once('_') {
             Some((base, rest)) if is_locale(rest) => (base.to_string(), rest.to_string()),
             _ => (stem.clone(), "default".to_string()),
         };
-        let others = list(&dir)
+        let others = sorted_entries(&dir)
             .into_iter()
             .filter(|p| p.extension().is_some_and(|e| e == "properties") && p != source)
             .filter_map(|p| {
@@ -139,17 +336,18 @@ pub fn discover(source: &Path) -> Result<Catalog, String> {
                         .filter(|l| is_locale(l))?
                         .to_string()
                 };
-                Some(LocaleFile { language, path: p })
+                Some(single(language, p, format))
             })
             .collect();
-        (Layout::Suffix { dir, base }, language, others)
+        let template = template(format!("{}{base}_", prefix(&dir)), ".properties".into());
+        (template, language, others)
     } else if is_locale(&stem) {
         let extension = source
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("json")
             .to_string();
-        let others = list(&dir)
+        let others = sorted_entries(&dir)
             .into_iter()
             .filter(|p| {
                 p != source
@@ -158,10 +356,14 @@ pub fn discover(source: &Path) -> Result<Catalog, String> {
             })
             .filter_map(|p| {
                 let language = p.file_stem()?.to_str()?.to_string();
-                is_locale(&language).then_some(LocaleFile { language, path: p })
+                is_locale(&language).then(|| single(language, p, format))
             })
             .collect();
-        (Layout::Stem { dir, extension }, stem, others)
+        (
+            template(prefix(&dir), format!(".{extension}")),
+            stem,
+            others,
+        )
     } else {
         let language = dir
             .file_name()
@@ -170,37 +372,221 @@ pub fn discover(source: &Path) -> Result<Catalog, String> {
             .ok_or_else(|| tr!("translations.no_language_in_path").to_string())?
             .to_string();
         let parent = dir.parent().unwrap_or(Path::new(".")).to_path_buf();
-        let others = list(&parent)
+        let others = sorted_entries(&parent)
             .into_iter()
             .filter(|p| p.is_dir() && *p != dir)
             .filter_map(|p| {
                 let language = p.file_name()?.to_str()?.to_string();
                 let file = p.join(&file_name);
-                (is_locale(&language) && file.is_file()).then_some(LocaleFile {
-                    language,
-                    path: file,
-                })
+                (is_locale(&language) && file.is_file()).then(|| single(language, file, format))
             })
             .collect();
-        (
-            Layout::Folder {
-                dir: parent,
-                file: file_name,
-            },
-            language,
-            others,
-        )
+        let after = format!("{MAIN_SEPARATOR_STR}{file_name}");
+        (template(prefix(&parent), after), language, others)
     };
-    let mut others: Vec<LocaleFile> = others;
-    others.sort_by(|a, b| a.language.cmp(&b.language));
     Ok(Catalog {
-        format,
-        layout,
-        source: LocaleFile {
-            language,
-            path: source.to_path_buf(),
-        },
+        source: single(language, source.to_path_buf(), format),
         others,
+        namespaced: false,
+        templates: vec![template],
+    })
+}
+
+/// The translation files under `dir`, with their path relative to it without the extension.
+fn namespaces(dir: &Path) -> Vec<Part> {
+    fn walk(base: &Path, dir: &Path, depth: usize, out: &mut Vec<Part>) {
+        for path in sorted_entries(dir) {
+            if path.is_dir() {
+                if depth > 0 {
+                    walk(base, &path, depth - 1, out);
+                }
+            } else if let Some(format) = format_of(&path) {
+                let relative = path.strip_prefix(base).unwrap_or(&path).with_extension("");
+                out.push(Part {
+                    namespace: relative.to_string_lossy().replace('\\', "/"),
+                    path,
+                    format,
+                });
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(dir, dir, 4, &mut out);
+    out
+}
+
+fn discover_folder(source: &Path) -> Result<Catalog, String> {
+    if !source.is_dir() {
+        return Err(trf!("translations.source_missing", path = source.display()));
+    }
+    let language = source
+        .file_name()
+        .and_then(|n| n.to_str())
+        .filter(|n| is_locale(n))
+        .ok_or_else(|| tr!("translations.folder_not_language").to_string())?
+        .to_string();
+    let parts = namespaces(source);
+    if parts.is_empty() {
+        return Err(tr!("translations.folder_empty").into());
+    }
+    let parent = source.parent().unwrap_or(Path::new(".")).to_path_buf();
+    let templates = parts
+        .iter()
+        .map(|part| {
+            let relative = part.path.strip_prefix(source).unwrap_or(&part.path);
+            Template {
+                namespace: part.namespace.clone(),
+                format: part.format,
+                before: prefix(&parent),
+                after: format!("{MAIN_SEPARATOR_STR}{}", relative.to_string_lossy()),
+            }
+        })
+        .collect();
+    let others = sorted_entries(&parent)
+        .into_iter()
+        .filter(|p| p.is_dir() && p != source)
+        .filter_map(|p| {
+            let language = p.file_name()?.to_str()?.to_string();
+            is_locale(&language).then(|| LocaleFile {
+                language,
+                parts: namespaces(&p),
+            })
+        })
+        .collect();
+    Ok(Catalog {
+        source: LocaleFile { language, parts },
+        others,
+        namespaced: true,
+        templates,
+    })
+}
+
+/// The files of the project, relative to it with `/`, but those of tools and builds.
+fn project_files(root: &Path) -> Vec<String> {
+    fn walk(root: &Path, dir: &Path, depth: usize, out: &mut Vec<String>) {
+        for path in sorted_entries(dir) {
+            if out.len() >= 50_000 {
+                return;
+            }
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if path.is_dir() {
+                let skipped = name.starts_with('.')
+                    || matches!(name, "node_modules" | "target" | "build" | "dist" | "out");
+                if depth > 0 && !skipped {
+                    walk(root, &path, depth - 1, out);
+                }
+            } else if format_of(&path).is_some()
+                && let Ok(relative) = path.strip_prefix(root)
+            {
+                out.push(relative.to_string_lossy().replace('\\', "/"));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(root, root, 12, &mut out);
+    out
+}
+
+/// The pattern as a whole-path regular expression; it needs a group `lang`.
+pub fn compile_pattern(pattern: &str) -> Result<Regex, String> {
+    let regex = Regex::new(&format!("^(?:{pattern})$"))
+        .map_err(|e| trf!("translations.invalid_pattern", e = e))?;
+    if !regex.capture_names().flatten().any(|n| n == "lang") {
+        return Err(tr!("translations.pattern_needs_lang").into());
+    }
+    Ok(regex)
+}
+
+fn discover_pattern(root: &Path, pattern: &str, language: &str) -> Result<Catalog, String> {
+    let regex = compile_pattern(pattern)?;
+    let has_namespace = regex.capture_names().flatten().any(|n| n == "ns");
+    // language → (namespace, relative path, span of the language in it).
+    let mut found: BTreeMap<String, Vec<(String, String, std::ops::Range<usize>)>> =
+        BTreeMap::new();
+    for relative in project_files(root) {
+        let Some(captures) = regex.captures(&relative) else {
+            continue;
+        };
+        let Some(lang) = captures.name("lang").filter(|m| !m.as_str().is_empty()) else {
+            continue;
+        };
+        let namespace = captures.name("ns").map_or("", |m| m.as_str()).to_string();
+        let span = lang.range();
+        found.entry(lang.as_str().to_string()).or_default().push((
+            namespace,
+            relative.clone(),
+            span,
+        ));
+    }
+    if found.is_empty() {
+        return Err(trf!(
+            "translations.pattern_matches_nothing",
+            pattern = pattern
+        ));
+    }
+    // Without a group `ns`, several files of one language are told apart by their path.
+    let several = found.values().any(|files| files.len() > 1);
+    let namespaced = has_namespace || several;
+    let reference = if !language.trim().is_empty() {
+        language.trim().to_string()
+    } else {
+        ["en", "en_US", "en-US", "en_GB", "en-GB"]
+            .iter()
+            .find(|l| found.contains_key(**l))
+            .map_or_else(
+                || found.keys().next().cloned().unwrap_or_default(),
+                |l| l.to_string(),
+            )
+    };
+    let root_prefix = prefix(root);
+    let namespace_of = |namespace: &str, relative: &str, span: &std::ops::Range<usize>| {
+        if has_namespace || !several {
+            namespace.to_string()
+        } else {
+            format!(
+                "{}{{lang}}{}",
+                &relative[..span.start],
+                &relative[span.end..]
+            )
+        }
+    };
+    let mut languages: Vec<LocaleFile> = Vec::new();
+    let mut templates = Vec::new();
+    for (lang, files) in &found {
+        let mut parts = Vec::new();
+        for (namespace, relative, span) in files {
+            let path = root.join(relative);
+            let format = format_of(&path).unwrap_or(Format::Json);
+            let namespace = namespace_of(namespace, relative, span);
+            if *lang == reference {
+                templates.push(Template {
+                    namespace: namespace.clone(),
+                    format,
+                    before: format!("{root_prefix}{}", &relative[..span.start]),
+                    after: relative[span.end..].to_string(),
+                });
+            }
+            parts.push(Part {
+                namespace,
+                path,
+                format,
+            });
+        }
+        languages.push(LocaleFile {
+            language: lang.clone(),
+            parts,
+        });
+    }
+    let index = languages
+        .iter()
+        .position(|f| f.language == reference)
+        .ok_or_else(|| trf!("translations.unknown_language", language = reference))?;
+    let source = languages.remove(index);
+    Ok(Catalog {
+        source,
+        others: languages,
+        namespaced,
+        templates,
     })
 }
 
@@ -443,12 +829,12 @@ pub fn check(catalog: &Catalog, language: &str) -> Result<Report, String> {
     let file = catalog
         .file(language)
         .ok_or_else(|| trf!("translations.unknown_language", language = language))?;
-    let source = read(&catalog.source.path, catalog.format)?;
-    let target = read(&file.path, catalog.format)?;
+    let source = catalog.read(&catalog.source)?;
+    let target = catalog.read(file)?;
     let (translated, problems) = check_entries(&source, &target);
     Ok(Report {
         language: language.to_string(),
-        path: file.path.clone(),
+        path: file.path().to_path_buf(),
         total: source.len(),
         translated,
         problems,
@@ -568,6 +954,10 @@ pub fn set_value(path: &Path, format: Format, key: &str, text: &str) -> Result<(
             lines.join("\n") + "\n"
         }
     };
+    // The file of a namespace a language did not have yet.
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
     std::fs::write(path, new).map_err(|e| format!("{}: {e}", path.display()))
 }
 
@@ -618,8 +1008,8 @@ fn blank(value: &Value, fill: Fill) -> Value {
     }
 }
 
-/// Creates the file of a new language, with the keys of the source.
-pub fn add_language(catalog: &Catalog, language: &str, fill: Fill) -> Result<PathBuf, String> {
+/// Creates the files of a new language, with the keys of the source; the files written.
+pub fn add_language(catalog: &Catalog, language: &str, fill: Fill) -> Result<Vec<PathBuf>, String> {
     let language = language.trim();
     if !is_locale(language) {
         return Err(trf!("translations.invalid_language", language = language));
@@ -627,12 +1017,30 @@ pub fn add_language(catalog: &Catalog, language: &str, fill: Fill) -> Result<Pat
     if catalog.file(language).is_some() {
         return Err(trf!("translations.language_exists", language = language));
     }
-    let path = catalog.path_for(language);
+    let mut written = Vec::new();
+    for template in &catalog.templates {
+        let Some(part) = catalog
+            .source
+            .parts
+            .iter()
+            .find(|p| p.namespace == template.namespace)
+        else {
+            continue;
+        };
+        let path = template.path(language);
+        new_file(&part.path, &path, part.format, fill)?;
+        written.push(path);
+    }
+    Ok(written)
+}
+
+/// Writes at `path` the keys of `source`, without their texts or with them.
+fn new_file(source: &Path, path: &Path, format: Format, fill: Fill) -> Result<(), String> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
-    let source = std::fs::read_to_string(&catalog.source.path).map_err(|e| e.to_string())?;
-    let text = match catalog.format {
+    let source = std::fs::read_to_string(source).map_err(|e| e.to_string())?;
+    let text = match format {
         Format::Json => {
             let value: Value = serde_json::from_str(&source).map_err(|e| e.to_string())?;
             to_json(&blank(&value, fill), &indentation(&source), true)?
@@ -651,23 +1059,29 @@ pub fn add_language(catalog: &Catalog, language: &str, fill: Fill) -> Result<Pat
             out
         }
     };
-    std::fs::write(&path, text).map_err(|e| e.to_string())?;
-    Ok(path)
+    std::fs::write(path, text).map_err(|e| e.to_string())
 }
 
 // ---- Configuration ------------------------------------------------------------------------
 
-/// The source chosen for a project, relative to its root.
-pub fn source_of(root: &Path) -> Option<PathBuf> {
+/// The source chosen for a project: `{"source": "locales/fr.json"}` (a file or a folder,
+/// relative to the project) or `{"pattern": "…", "language": "fr"}`.
+pub fn source_of(root: &Path) -> Option<Source> {
     let text = std::fs::read_to_string(root.join(CONFIG)).ok()?;
     let value: Value = serde_json::from_str(&text).ok()?;
-    let source = root.join(value["source"].as_str()?);
-    Some(source)
+    if let Some(pattern) = value["pattern"].as_str() {
+        return Some(Source::Pattern {
+            root: root.to_path_buf(),
+            pattern: pattern.to_string(),
+            language: value["language"].as_str().unwrap_or("").to_string(),
+        });
+    }
+    Some(Source::from_path(&root.join(value["source"].as_str()?)))
 }
 
-pub fn set_source(root: &Path, source: &Path) -> Result<(), String> {
-    discover(source)?;
-    let relative = source.strip_prefix(root).unwrap_or(source);
+/// Keeps `source` as the one of the project, once it is known to be one; its catalog.
+pub fn set_source(root: &Path, source: &Source) -> Result<Catalog, String> {
+    let catalog = discover(source)?;
     let path = root.join(CONFIG);
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
@@ -675,13 +1089,33 @@ pub fn set_source(root: &Path, source: &Path) -> Result<(), String> {
     let mut value: Value = std::fs::read_to_string(&path)
         .ok()
         .and_then(|t| serde_json::from_str(&t).ok())
+        .filter(Value::is_object)
         .unwrap_or_else(|| Value::Object(Map::new()));
-    value["source"] = Value::String(relative.to_string_lossy().replace('\\', "/"));
-    std::fs::write(&path, to_json(&value, "  ", true)?).map_err(|e| e.to_string())
+    if let Some(object) = value.as_object_mut() {
+        for key in ["source", "pattern", "language"] {
+            object.remove(key);
+        }
+    }
+    match source {
+        Source::File(file) | Source::Folder(file) => {
+            let relative = file.strip_prefix(root).unwrap_or(file);
+            value["source"] = Value::String(relative.to_string_lossy().replace('\\', "/"));
+        }
+        Source::Pattern {
+            pattern, language, ..
+        } => {
+            value["pattern"] = Value::String(pattern.clone());
+            if !language.trim().is_empty() {
+                value["language"] = Value::String(language.trim().to_string());
+            }
+        }
+    }
+    std::fs::write(&path, to_json(&value, "  ", true)?).map_err(|e| e.to_string())?;
+    Ok(catalog)
 }
 
 /// Files that look like translations, to offer as the source: in a folder of languages, or
-/// named after one.
+/// named after one; a folder of a language with several files is offered whole.
 pub fn candidates(root: &Path) -> Vec<PathBuf> {
     fn walk(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
         if depth == 0 || out.len() >= 40 {
@@ -692,6 +1126,14 @@ pub fn candidates(root: &Path) -> Vec<PathBuf> {
         };
         let mut paths: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
         paths.sort();
+        let language_folder = dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(is_locale);
+        if language_folder && namespaces(dir).len() > 1 {
+            out.push(dir.to_path_buf());
+            return;
+        }
         for path in paths {
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             if path.is_dir() {

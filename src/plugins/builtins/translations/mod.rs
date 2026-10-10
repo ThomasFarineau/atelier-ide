@@ -1,5 +1,6 @@
-//! Translations built-in plugin: the i18n files of a project, from one file chosen as the source
-//! (`.atelier/i18n.json`). The Translations window shows every key in every language, with what
+//! Translations built-in plugin: the i18n files of a project, from a source chosen by the user
+//! (`.atelier/i18n.json`): a file, the folder of a language or a regular expression on the paths
+//! (see [`catalog`]). The Translations window shows every key in every language, with what
 //! is missing, empty, extra or has other placeholders than the source; a cell is edited in place
 //! and written to its file, a language or a key is added in one step. The MCP tool `i18n` lets an
 //! AI check the languages or add one ([`mcp_tool`]).
@@ -9,7 +10,7 @@ pub mod catalog;
 use crate::i18n::Text;
 use crate::plugins::builtin::{BuiltinPlugin, Command, Dock, Host, ToolWindow};
 use crate::ui;
-use catalog::{Catalog, Fill, Problem, Report};
+use catalog::{Catalog, Fill, Problem, Report, Source};
 use eframe::egui::{self, RichText};
 use egui_extras::{Column, TableBuilder};
 use serde_json::{Value, json};
@@ -36,6 +37,7 @@ type Editing = (String, String, String);
 #[derive(Default)]
 pub struct TranslationsPlugin {
     root: PathBuf,
+    source: Option<Source>,
     catalog: Option<Catalog>,
     error: Option<String>,
     /// The keys, those of the source first, then those only other languages have.
@@ -52,6 +54,9 @@ pub struct TranslationsPlugin {
     editing: Option<Editing>,
     new_language: String,
     new_key: String,
+    /// The regular expression and reference language typed in the setup.
+    pattern: String,
+    pattern_language: String,
 }
 
 fn stamp(path: &Path) -> Option<SystemTime> {
@@ -67,10 +72,11 @@ impl TranslationsPlugin {
         self.values.clear();
         self.reports.clear();
         self.stamps.clear();
-        let Some(source) = catalog::source_of(&self.root) else {
+        self.source = catalog::source_of(&self.root);
+        let Some(source) = &self.source else {
             return;
         };
-        let catalog = match catalog::discover(&source) {
+        let catalog = match catalog::discover(source) {
             Ok(catalog) => catalog,
             Err(e) => {
                 self.error = Some(e);
@@ -78,8 +84,10 @@ impl TranslationsPlugin {
             }
         };
         for file in catalog.files() {
-            self.stamps.push((file.path.clone(), stamp(&file.path)));
-            match catalog::read(&file.path, catalog.format) {
+            for part in &file.parts {
+                self.stamps.push((part.path.clone(), stamp(&part.path)));
+            }
+            match catalog.read(file) {
                 Ok(entries) => {
                     for (key, _) in &entries {
                         if !self.keys.contains(key) {
@@ -92,9 +100,18 @@ impl TranslationsPlugin {
                 Err(e) => self.error = Some(e),
             }
         }
-        // The folder of a language added outside the IDE is a new file to watch.
-        if let Some(dir) = catalog.source.path.parent() {
-            self.stamps.push((dir.to_path_buf(), stamp(dir)));
+        // A language or a namespace added outside the IDE changes a folder.
+        let mut folders = catalog.folders();
+        for path in catalog.paths() {
+            if let Some(dir) = path.parent()
+                && !folders.iter().any(|f| f == dir)
+            {
+                folders.push(dir.to_path_buf());
+            }
+        }
+        for dir in folders {
+            let at = stamp(&dir);
+            self.stamps.push((dir, at));
         }
         self.reports = catalog::check_all(&catalog)
             .into_iter()
@@ -113,9 +130,9 @@ impl TranslationsPlugin {
                 .is_some()
     }
 
-    fn use_source(&mut self, path: &Path, host: &mut dyn Host) {
-        match catalog::set_source(&self.root, path) {
-            Ok(()) => {
+    fn use_source(&mut self, source: &Source, host: &mut dyn Host) {
+        match catalog::set_source(&self.root, source) {
+            Ok(_) => {
                 self.reload();
                 if let Some(catalog) = &self.catalog {
                     host.notify(trf!(
@@ -144,9 +161,7 @@ impl TranslationsPlugin {
 
     fn write(&mut self, language: &str, key: &str, text: &str, host: &mut dyn Host) {
         let Some(catalog) = &self.catalog else { return };
-        let path = catalog.path_for(language);
-        let path = catalog.file(language).map_or(path, |f| f.path.clone());
-        if let Err(e) = catalog::set_value(&path, catalog.format, key, text) {
+        if let Err(e) = catalog.set(language, key, text) {
             host.notify(trf!("translations.cannot_write", e = e));
         }
         self.reload();
@@ -188,7 +203,41 @@ impl TranslationsPlugin {
         if let Some(active) = host.active_file()
             && ui::primary_button(ui, tr!("translations.use_active_file")).clicked()
         {
-            self.use_source(&active, host);
+            self.use_source(&Source::File(active), host);
+        }
+        ui.add_space(8.0);
+        // A regular expression on the paths, for layouts the IDE does not find by itself.
+        ui::section(ui, tr!("translations.pattern_section"));
+        let mut use_pattern = false;
+        ui.horizontal(|ui| {
+            let field = ui::search_field(
+                ui,
+                &mut self.pattern,
+                tr!("translations.pattern_hint"),
+                360.0,
+            );
+            let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            ui::search_field(
+                ui,
+                &mut self.pattern_language,
+                tr!("translations.pattern_language_hint"),
+                120.0,
+            );
+            use_pattern = (ui::button(ui, tr!("translations.use_pattern")).clicked() || enter)
+                && !self.pattern.trim().is_empty();
+        });
+        ui.label(
+            RichText::new(tr!("translations.pattern_help"))
+                .small()
+                .color(t.text_secondary),
+        );
+        if use_pattern {
+            let source = Source::Pattern {
+                root: self.root.clone(),
+                pattern: self.pattern.trim().to_string(),
+                language: self.pattern_language.trim().to_string(),
+            };
+            self.use_source(&source, host);
         }
         ui.add_space(8.0);
         if self.scanning.is_some() {
@@ -208,11 +257,7 @@ impl TranslationsPlugin {
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 for path in &self.candidates {
-                    let shown = path
-                        .strip_prefix(&self.root)
-                        .unwrap_or(path)
-                        .to_string_lossy()
-                        .replace('\\', "/");
+                    let shown = Source::from_path(path).label(&self.root);
                     ui.horizontal(|ui| {
                         if ui::button(ui, tr!("translations.use_as_source")).clicked() {
                             chosen = Some(path.clone());
@@ -222,7 +267,7 @@ impl TranslationsPlugin {
                 }
             });
         if let Some(path) = chosen {
-            self.use_source(&path, host);
+            self.use_source(&Source::from_path(&path), host);
         }
     }
 
@@ -240,13 +285,11 @@ impl TranslationsPlugin {
             if ui::icon_button(ui, "refresh", tr!("translations.reload")).clicked() {
                 self.reload();
             }
-            let source = catalog
+            let source = self
                 .source
-                .path
-                .strip_prefix(&self.root)
-                .unwrap_or(&catalog.source.path)
-                .to_string_lossy()
-                .replace('\\', "/");
+                .as_ref()
+                .map(|s| s.label(&self.root))
+                .unwrap_or_default();
             ui.label(
                 RichText::new(trf!(
                     "translations.source_label",
@@ -318,25 +361,26 @@ impl TranslationsPlugin {
         }
         if let Some(language) = add_language {
             match catalog::add_language(&catalog, &language, Fill::Empty) {
-                Ok(path) => {
+                Ok(paths) => {
                     self.new_language.clear();
                     self.reload();
+                    let path = paths.first().map(|p| p.display().to_string());
                     host.notify(trf!(
                         "translations.language_added",
                         language = language,
-                        path = path.display()
+                        path = path.unwrap_or_default(),
+                        count = paths.len()
                     ));
                 }
                 Err(e) => host.notify(trf!("translations.cannot_add_language", e = e)),
             }
         }
         if let Some(key) = add_key {
-            let path = catalog.source.path.clone();
-            if let Err(e) = catalog::set_value(&path, catalog.format, &key, "") {
+            if let Err(e) = catalog.set(&source_language, &key, "") {
                 host.notify(trf!("translations.cannot_write", e = e));
             }
             for other in &catalog.others {
-                let _ = catalog::set_value(&other.path, catalog.format, &key, "");
+                let _ = catalog.set(&other.language, &key, "");
             }
             self.new_key.clear();
             self.reload();
@@ -535,16 +579,15 @@ impl TranslationsPlugin {
         if let Some(edit) = start {
             self.editing = Some(edit);
         }
-        if let Some(index) = open {
-            let path = catalog.source.path.clone();
-            let line = Self::key_line(&path, &keys[index]);
+        if let Some(index) = open
+            && let Ok((path, _, key)) = catalog.locate(&source_language, &keys[index])
+        {
+            let line = Self::key_line(&path, &key);
             host.open_at(path, line, 0, 0);
         }
         if let Some(key) = delete {
-            for file in catalog.files() {
-                if let Err(e) = catalog::remove_key(&file.path, catalog.format, &key) {
-                    host.notify(trf!("translations.cannot_write", e = e));
-                }
+            if let Err(e) = catalog.remove(&key) {
+                host.notify(trf!("translations.cannot_write", e = e));
             }
             self.reload();
             host.reload_files();
@@ -602,7 +645,7 @@ impl BuiltinPlugin for TranslationsPlugin {
         let ours = self
             .catalog
             .as_ref()
-            .is_some_and(|c| c.files().any(|f| f.path == path));
+            .is_some_and(|c| c.paths().any(|p| p == path));
         if ours {
             self.reload();
         }
@@ -628,7 +671,7 @@ impl BuiltinPlugin for TranslationsPlugin {
     fn run_command(&mut self, id: &str, host: &mut dyn Host) {
         match id {
             "translations.use_active" => match host.active_file() {
-                Some(path) => self.use_source(&path, host),
+                Some(path) => self.use_source(&Source::File(path), host),
                 None => host.notify(tr!("translations.no_active_file").into()),
             },
             "translations.check" => {
@@ -670,14 +713,16 @@ impl BuiltinPlugin for TranslationsPlugin {
 pub fn mcp_spec() -> Value {
     json!({
         "name": "i18n",
-        "description": "The translations of the project, from the source file chosen in Atelier (.atelier/i18n.json); the other languages are the files next to it (locales/en.json, locales/en/common.json, messages_en.properties). action \"languages\" lists them; \"check\" checks every language against the source; \"check_language\" checks one language in detail; \"add_language\" creates the file of a new language with every key of the source. A check lists the missing keys, the keys the source does not have, the empty values, the values whose placeholders ({name}, {{count}}, %s) differ from the source, and the values left as in the source. Pass \"source\" (a path) to choose the source file when none is set, or to change it.",
+        "description": "The translations of the project, from the source chosen in Atelier (.atelier/i18n.json): a file of the reference language, whose other languages are the files next to it (locales/en.json, locales/en/common.json, messages_en.properties); the folder of the reference language (locales/en), each file in it a namespace whose keys are \"namespace:key\"; or a regular expression on the project's paths with a group (?<lang>…) and optionally (?<ns>…). action \"languages\" lists them; \"check\" checks every language against the source; \"check_language\" checks one language in detail; \"add_language\" creates the file of a new language with every key of the source. A check lists the missing keys, the keys the source does not have, the empty values, the values whose placeholders ({name}, {{count}}, %s) differ from the source, and the values left as in the source. Pass \"source\" (a path) to choose the source file when none is set, or to change it.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "action": {"type": "string", "enum": ["languages", "check", "check_language", "add_language"]},
                 "language": {"type": "string", "description": "The language, as in the file names: en, fr_FR, pt-BR… Required by check_language and add_language."},
                 "fill": {"type": "string", "enum": ["empty", "source"], "description": "add_language: the new values start empty (default) or as the text of the source, to translate in place."},
-                "source": {"type": "string", "description": "Path of the file to use as the source of the translations, absolute or relative to the project."},
+                "source": {"type": "string", "description": "Path of the file or folder of the reference language to use as the source of the translations, absolute or relative to the project."},
+                "pattern": {"type": "string", "description": "Instead of source: a regular expression matching the whole path of the translation files relative to the project, with '/' separators, with a group (?<lang>…) for the language and optionally (?<ns>…) for the namespace. Example: src/i18n/(?<lang>[a-z]{2})/(?<ns>\\w+)\\.json"},
+                "source_language": {"type": "string", "description": "With pattern: the reference language (default: English if present, else the first one)."},
             },
             "required": ["action"],
         },
@@ -723,17 +768,27 @@ pub fn mcp_tool(name: &str, args: &Value, root: &Path) -> Option<Result<String, 
 }
 
 fn run_tool(args: &Value, root: &Path) -> Result<String, String> {
-    if let Some(source) = args["source"].as_str().filter(|s| !s.is_empty()) {
+    if let Some(pattern) = args["pattern"].as_str().filter(|s| !s.is_empty()) {
+        let language = args["source_language"].as_str().unwrap_or("").to_string();
+        catalog::set_source(
+            root,
+            &Source::Pattern {
+                root: root.to_path_buf(),
+                pattern: pattern.to_string(),
+                language,
+            },
+        )?;
+    } else if let Some(source) = args["source"].as_str().filter(|s| !s.is_empty()) {
         let path = Path::new(source);
         let path = if path.is_absolute() {
             path.to_path_buf()
         } else {
             root.join(path)
         };
-        catalog::set_source(root, &path)?;
+        catalog::set_source(root, &Source::from_path(&path))?;
     }
     let source = catalog::source_of(root).ok_or(
-        "No translation source is set for this project. Pass \"source\" with the path of the file of the reference language (for example locales/en.json), or choose it in Atelier's Translations window.",
+        "No translation source is set for this project. Pass \"source\" with the path of the file or folder of the reference language (for example locales/en.json or locales/en), or \"pattern\", or choose it in Atelier's Translations window.",
     )?;
     let catalog = catalog::discover(&source)?;
     let language = args["language"]
@@ -742,10 +797,17 @@ fn run_tool(args: &Value, root: &Path) -> Result<String, String> {
         .filter(|l| !l.is_empty());
     let pretty = |value: Value| serde_json::to_string_pretty(&value).map_err(|e| e.to_string());
     match args["action"].as_str().unwrap_or("") {
-        "languages" => pretty(json!({
-            "source": {"language": catalog.source.language, "file": catalog.source.path},
-            "languages": catalog.others.iter().map(|f| json!({"language": f.language, "file": f.path})).collect::<Vec<_>>(),
-        })),
+        "languages" => {
+            let describe = |f: &catalog::LocaleFile| {
+                let files: Vec<&Path> = f.parts.iter().map(|p| p.path.as_path()).collect();
+                json!({"language": f.language, "files": files})
+            };
+            pretty(json!({
+                "source": describe(&catalog.source),
+                "namespaced": catalog.namespaced,
+                "languages": catalog.others.iter().map(describe).collect::<Vec<_>>(),
+            }))
+        }
         "check" => {
             let reports: Vec<Value> = catalog::check_all(&catalog)
                 .into_iter()
@@ -764,10 +826,10 @@ fn run_tool(args: &Value, root: &Path) -> Result<String, String> {
             } else {
                 Fill::Empty
             };
-            let path = catalog::add_language(&catalog, language, fill)?;
+            let paths = catalog::add_language(&catalog, language, fill)?;
             let catalog = catalog::discover(&source)?;
             pretty(
-                json!({"created": path, "report": report_json(&catalog::check(&catalog, language)?)}),
+                json!({"created": paths, "report": report_json(&catalog::check(&catalog, language)?)}),
             )
         }
         other => Err(format!(
