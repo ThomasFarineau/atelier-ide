@@ -1,0 +1,8 @@
+{
+  "problems.errors": "Erreurs",
+  "problems.list_errors_warnings_open_documents": "Liste des erreurs et avertissements des documents ouverts, groupés par fichier, avec accès direct à la ligne.",
+  "problems.no_problems_open_documents": "Aucun problème dans les documents ouverts",
+  "problems.no_problems_these_filters": "Aucun problème avec ces filtres",
+  "problems.problems": "Problèmes",
+  "problems.warnings": "Avertissements"
+}

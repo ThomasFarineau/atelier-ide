@@ -30,98 +30,50 @@ pub const KEYWORDS: &[&str] = &[
 
 /// The primitive types: (name, documentation).
 pub const PRIMITIVES: &[(&str, &str)] = &[
-    ("string", "Texte."),
-    ("number", "Nombre, entier ou décimal."),
-    ("boolean", "true ou false."),
-    ("any", "N'importe quelle valeur, sans aucune vérification."),
-    (
-        "unknown",
-        "Valeur de type inconnu : à vérifier avant tout usage.",
-    ),
-    (
-        "never",
-        "Type des valeurs qui n'existent jamais (fonction qui ne revient pas).",
-    ),
-    (
-        "void",
-        "Absence de valeur, résultat d'une fonction sans retour.",
-    ),
-    ("null", "Absence volontaire de valeur."),
-    ("undefined", "Valeur non définie."),
-    ("object", "Tout ce qui n'est pas une valeur primitive."),
-    ("symbol", "Valeur unique utilisable comme clé."),
-    ("bigint", "Entier de taille arbitraire."),
+    ("string", "typescript.type.string"),
+    ("number", "typescript.type.number"),
+    ("boolean", "typescript.type.boolean"),
+    ("any", "typescript.type.any"),
+    ("unknown", "typescript.type.unknown"),
+    ("never", "typescript.type.never"),
+    ("void", "typescript.type.void"),
+    ("null", "typescript.type.null"),
+    ("undefined", "typescript.type.undefined"),
+    ("object", "typescript.type.object"),
+    ("symbol", "typescript.type.symbol"),
+    ("bigint", "typescript.type.bigint"),
 ];
 
 /// Types of the standard library and utility types: (name, documentation).
 pub const LIBRARY_TYPES: &[(&str, &str)] = &[
-    ("Array", "Tableau : Array<T> s'écrit aussi T[]."),
-    ("ReadonlyArray", "Tableau en lecture seule."),
-    ("Promise", "Résultat futur d'une opération asynchrone."),
-    (
-        "Record",
-        "Record<K, V> : objet dont les clés sont de type K et les valeurs de type V.",
-    ),
-    (
-        "Partial",
-        "Partial<T> : T dont toutes les propriétés sont facultatives.",
-    ),
-    (
-        "Required",
-        "Required<T> : T dont toutes les propriétés sont obligatoires.",
-    ),
-    (
-        "Readonly",
-        "Readonly<T> : T dont toutes les propriétés sont en lecture seule.",
-    ),
-    ("Pick", "Pick<T, K> : T réduit aux propriétés K."),
-    ("Omit", "Omit<T, K> : T sans les propriétés K."),
-    (
-        "Exclude",
-        "Exclude<T, U> : les membres de l'union T qui ne sont pas dans U.",
-    ),
-    (
-        "Extract",
-        "Extract<T, U> : les membres de l'union T qui sont dans U.",
-    ),
-    ("NonNullable", "NonNullable<T> : T sans null ni undefined."),
-    (
-        "ReturnType",
-        "ReturnType<F> : type de retour de la fonction F.",
-    ),
-    (
-        "Parameters",
-        "Parameters<F> : types des paramètres de la fonction F, en tuple.",
-    ),
-    (
-        "InstanceType",
-        "InstanceType<C> : type des instances de la classe C.",
-    ),
-    (
-        "Awaited",
-        "Awaited<T> : type obtenu en attendant une promesse.",
-    ),
-    ("Map", "Collection de paires clé-valeur."),
-    ("Set", "Collection de valeurs uniques."),
-    ("WeakMap", "Map dont les clés objets ne sont pas retenues."),
-    ("WeakSet", "Set d'objets non retenus."),
-    ("Date", "Dates et heures."),
-    ("RegExp", "Expression régulière."),
-    ("Error", "Erreur."),
-    ("Function", "Toute fonction."),
-    ("Object", "Tout objet."),
-    (
-        "Uppercase",
-        "Uppercase<S> : la chaîne S en majuscules, au niveau des types.",
-    ),
-    (
-        "Lowercase",
-        "Lowercase<S> : la chaîne S en minuscules, au niveau des types.",
-    ),
-    (
-        "Capitalize",
-        "Capitalize<S> : la chaîne S avec une majuscule initiale.",
-    ),
+    ("Array", "typescript.type.Array"),
+    ("ReadonlyArray", "typescript.type.ReadonlyArray"),
+    ("Promise", "typescript.type.Promise"),
+    ("Record", "typescript.type.Record"),
+    ("Partial", "typescript.type.Partial"),
+    ("Required", "typescript.type.Required"),
+    ("Readonly", "typescript.type.Readonly"),
+    ("Pick", "typescript.type.Pick"),
+    ("Omit", "typescript.type.Omit"),
+    ("Exclude", "typescript.type.Exclude"),
+    ("Extract", "typescript.type.Extract"),
+    ("NonNullable", "typescript.type.NonNullable"),
+    ("ReturnType", "typescript.type.ReturnType"),
+    ("Parameters", "typescript.type.Parameters"),
+    ("InstanceType", "typescript.type.InstanceType"),
+    ("Awaited", "typescript.type.Awaited"),
+    ("Map", "typescript.type.Map"),
+    ("Set", "typescript.type.Set"),
+    ("WeakMap", "typescript.type.WeakMap"),
+    ("WeakSet", "typescript.type.WeakSet"),
+    ("Date", "typescript.type.Date"),
+    ("RegExp", "typescript.type.RegExp"),
+    ("Error", "typescript.type.Error"),
+    ("Function", "typescript.type.Function"),
+    ("Object", "typescript.type.Object"),
+    ("Uppercase", "typescript.type.Uppercase"),
+    ("Lowercase", "typescript.type.Lowercase"),
+    ("Capitalize", "typescript.type.Capitalize"),
 ];
 
 /// Code templates for TypeScript: (trigger, label, text, caret offset in the text, description).
@@ -131,44 +83,56 @@ pub const SNIPPETS: &[(&str, &str, &str, usize, &str)] = &[
         "interface",
         "interface Name {\n    \n}",
         10,
-        "Déclaration d'interface",
+        "typescript.snippet.interface",
     ),
-    ("type", "type", "type Name = ;", 12, "Alias de type"),
-    ("enum", "enum", "enum Name {\n    \n}", 5, "Énumération"),
+    (
+        "type",
+        "type",
+        "type Name = ;",
+        12,
+        "typescript.snippet.type",
+    ),
+    (
+        "enum",
+        "enum",
+        "enum Name {\n    \n}",
+        5,
+        "typescript.snippet.enum",
+    ),
     (
         "tclass",
         "tclass",
         "class Name {\n    constructor(private readonly value: string) {}\n}",
         6,
-        "Classe avec propriété de constructeur",
+        "typescript.snippet.tclass",
     ),
     (
         "tfunc",
         "tfunc",
         "function name(param: string): void {\n    \n}",
         9,
-        "Fonction typée",
+        "typescript.snippet.tfunc",
     ),
     (
         "tarrow",
         "tarrow",
         "const name = (param: string): void => {\n    \n};",
         6,
-        "Fonction fléchée typée",
+        "typescript.snippet.tarrow",
     ),
     (
         "atry",
         "atry",
         "try {\n    \n} catch (error: unknown) {\n    \n}",
         11,
-        "try / catch avec erreur unknown",
+        "typescript.snippet.atry",
     ),
     (
         "generic",
         "generic",
         "function name<T>(value: T): T {\n    return value;\n}",
         9,
-        "Fonction générique",
+        "typescript.snippet.generic",
     ),
 ];
 
@@ -181,7 +145,7 @@ pub fn items() -> Vec<CompletionItem> {
     for (_, label, text, caret, doc) in SNIPPETS {
         items.push(
             CompletionItem::new(*label, ItemKind::Snippet)
-                .detail(*doc)
+                .detail(crate::i18n::t(doc))
                 .insert(*text, Some(*caret))
                 .rank(80),
         );
@@ -195,14 +159,14 @@ pub fn type_items() -> Vec<CompletionItem> {
         .iter()
         .map(|(name, doc)| {
             CompletionItem::new(*name, ItemKind::Keyword)
-                .doc(*doc)
+                .doc(crate::i18n::t(doc))
                 .rank(40)
         })
         .collect();
     for (name, doc) in LIBRARY_TYPES {
         items.push(
             CompletionItem::new(*name, ItemKind::Interface)
-                .doc(*doc)
+                .doc(crate::i18n::t(doc))
                 .rank(45),
         );
     }
@@ -218,7 +182,7 @@ pub fn type_doc(name: &str) -> Option<&'static str> {
         .iter()
         .chain(LIBRARY_TYPES.iter())
         .find(|(n, _)| *n == name)
-        .map(|(_, doc)| *doc)
+        .map(|(_, doc)| crate::i18n::t(doc))
 }
 
 /// Whether the name is a type of the language or its library (no import needed).

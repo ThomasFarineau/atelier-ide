@@ -141,7 +141,7 @@ pub fn install() {
                     .output()
                     .map_err(|e| {
                         if e.kind() == std::io::ErrorKind::NotFound {
-                            "npm est introuvable : installez Node.js".to_string()
+                            tr!("javascript.npm_cannot_found_install_node").to_string()
                         } else {
                             e.to_string()
                         }
@@ -161,11 +161,13 @@ pub fn install() {
             match result {
                 Ok(()) => {
                     c.restart_requested = true;
-                    c.messages
-                        .push(("Serveur de langage JavaScript installé".into(), false));
+                    c.messages.push((
+                        tr!("javascript.javascript_language_server_installed").into(),
+                        false,
+                    ));
                 }
                 Err(e) => c.messages.push((
-                    format!("Installation du serveur de langage impossible : {e}"),
+                    trf!("javascript.cannot_install_language_server", e = e),
                     true,
                 )),
             }
@@ -185,29 +187,5 @@ pub fn node_available() -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_project_server_wins_over_the_managed_one() {
-        let dir = std::env::temp_dir().join(format!("atelier-js-server-{}", std::process::id()));
-        let bin = dir.join("node_modules").join(".bin");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&bin).unwrap();
-        let name = executable_names("typescript-language-server").remove(0);
-        std::fs::write(bin.join(&name), "").unwrap();
-        assert_eq!(find_server(&dir), Some(bin.join(&name)));
-        let tsserver = dir.join("node_modules").join("typescript").join("lib");
-        std::fs::create_dir_all(&tsserver).unwrap();
-        std::fs::write(tsserver.join("tsserver.js"), "").unwrap();
-        let launch = launch(&dir).unwrap();
-        assert_eq!(launch.args, ["--stdio"]);
-        assert!(
-            launch.options["tsserver"]["path"]
-                .as_str()
-                .unwrap()
-                .ends_with("tsserver.js")
-        );
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-}
+#[path = "../../../test/languages/javascript/server/tests.rs"]
+mod tests;

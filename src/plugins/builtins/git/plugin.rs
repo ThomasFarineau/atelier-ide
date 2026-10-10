@@ -24,14 +24,14 @@ use std::{
 pub static TOOL_WINDOWS: [ToolWindow; 2] = [
     ToolWindow {
         id: "git.commit",
-        title: "Commit",
+        title: crate::i18n::Text("git.commit"),
         icon: "commit",
         dock: Dock::Left,
         shortcut: "Alt+0",
     },
     ToolWindow {
         id: "git.log",
-        title: "Git",
+        title: crate::i18n::Text("git.git"),
         icon: "git",
         dock: Dock::Bottom,
         shortcut: "Alt+9",
@@ -341,7 +341,7 @@ impl Default for GitPlugin {
             theme: ui::theme_by_index(0),
             #[cfg(debug_assertions)]
             previewed: false,
-            collapsed: ["changes:Fichiers non versionnés".to_string()].into(),
+            collapsed: ["changes:git.unversioned_files".to_string()].into(),
             commit_tab: CommitTab::Changes,
             message: String::new(),
             amend: false,
@@ -542,7 +542,7 @@ impl GitPlugin {
                     }
                     Ok(Err(e)) => {
                         self.annotated.remove(&path);
-                        self.toast(format!("Annotations impossibles : {e:#}"), true);
+                        self.toast(trf!("git.cannot_annotate", e = format!("{:#}", e)), true);
                     }
                     Err(_) => {}
                 }
@@ -630,12 +630,12 @@ impl GitPlugin {
         let result = job
             .handle
             .join()
-            .unwrap_or_else(|_| bail!("l'opération a planté"));
+            .unwrap_or_else(|_| bail!(tr!("git.operation_crashed")));
         host.reload_files();
         self.invalidate();
         match result {
             Ok(_) => {
-                host.balloon(&job.label, "terminé".into(), false);
+                host.balloon(&job.label, tr!("git.done").into(), false);
                 match job.after {
                     After::Nothing => {}
                     After::Committed { push } => {
@@ -660,14 +660,14 @@ impl GitPlugin {
                 } else {
                     shown
                 };
-                host.balloon(&format!("{} a échoué", job.label), shown, true);
+                host.balloon(&trf!("git.failed", label = job.label), shown, true);
             }
         }
     }
 
     fn spawn_task(&mut self, label: impl Into<String>, after: After, task: Task) {
         if self.job.is_some() {
-            self.toast("Une opération Git est déjà en cours", true);
+            self.toast(tr!("git.git_operation_already_running"), true);
             return;
         }
         self.job = Some(Job {
@@ -763,17 +763,17 @@ impl GitPlugin {
     fn commit(&mut self, host: &mut dyn Host, push: bool) {
         let message = self.message.trim().to_string();
         if message.is_empty() {
-            self.toast("Saisissez un message de commit", true);
+            self.toast(tr!("git.enter_commit_message"), true);
             return;
         }
         let changes = self.checked();
         if changes.iter().any(|c| c.kind == Kind::Conflicted) {
-            self.toast("Résolvez les conflits avant de commiter", true);
+            self.toast(tr!("git.resolve_conflicts_before_committing"), true);
             return;
         }
         let whole_index = self.snap.state != State::Clean;
         if changes.is_empty() && !self.amend && !whole_index {
-            self.toast("Aucun fichier sélectionné pour le commit", true);
+            self.toast(tr!("git.no_file_selected_commit"), true);
             return;
         }
         if !host.save_files() {
@@ -818,7 +818,7 @@ impl GitPlugin {
 
     fn rollback(&mut self, changes: Vec<Change>) {
         if changes.is_empty() {
-            self.toast("Sélectionnez les fichiers à restaurer", true);
+            self.toast(tr!("git.select_files_roll_back"), true);
             return;
         }
         let items = changes.iter().map(|c| c.path.clone()).collect();
@@ -836,12 +836,11 @@ impl GitPlugin {
             }
         }
         let text = if delete.is_empty() {
-            "Les modifications locales de ces fichiers seront perdues. Les fichiers ajoutés restent sur le disque, hors de Git.".into()
+            tr!("git.local_changes_these_files_will").into()
         } else {
-            "Les modifications locales seront perdues et les fichiers non versionnés supprimés."
-                .into()
+            tr!("git.local_changes_will_lost_unversioned").into()
         };
-        let pending = self.pending("Annulation des modifications", After::Nothing, move |git| {
+        let pending = self.pending(tr!("git.rolling_back"), After::Nothing, move |git| {
             if !unstage.is_empty() {
                 git.run_paths(&["reset", "-q"], &unstage)?;
             }
@@ -856,17 +855,17 @@ impl GitPlugin {
             }
             Ok(String::new())
         });
-        self.confirm("Annuler les modifications", text, items, pending);
+        self.confirm(tr!("git.rollback_changes"), text, items, pending);
     }
 
     fn add_to_vcs(&mut self, paths: Vec<String>) {
-        self.spawn("Ajout à Git", After::Nothing, move |git| {
+        self.spawn(tr!("git.adding_git"), After::Nothing, move |git| {
             git.run_paths(&["add"], &paths)
         });
     }
 
     fn ignore(&mut self, path: String) {
-        self.spawn("Ajout au .gitignore", After::Nothing, move |git| {
+        self.spawn(tr!("git.adding_gitignore"), After::Nothing, move |git| {
             let file = git.abs(".gitignore");
             let mut text = std::fs::read_to_string(&file).unwrap_or_default();
             if !text.is_empty() && !text.ends_with('\n') {
@@ -880,14 +879,14 @@ impl GitPlugin {
 
     fn accept(&mut self, path: String, theirs: bool) {
         let side = if theirs { "--theirs" } else { "--ours" };
-        self.spawn("Résolution du conflit", After::Nothing, move |git| {
+        self.spawn(tr!("git.resolving_conflict"), After::Nothing, move |git| {
             git.run(&["checkout", side, "--", &path])?;
             git.run(&["add", "--", &path])
         });
     }
 
     fn mark_resolved(&mut self, path: String) {
-        self.spawn("Conflit résolu", After::Nothing, move |git| {
+        self.spawn(tr!("git.conflict_resolved"), After::Nothing, move |git| {
             git.run(&["add", "--", &path])
         });
     }
@@ -900,12 +899,12 @@ impl GitPlugin {
             State::CherryPicking => "cherry-pick",
             State::Reverting => "revert",
         };
-        let pending = self.pending("Abandon", After::Nothing, move |git| {
+        let pending = self.pending(tr!("git.aborting"), After::Nothing, move |git| {
             git.run(&[command, "--abort"])
         });
         self.confirm(
-            "Abandonner l'opération",
-            "Les modifications de l'opération en cours seront annulées.".into(),
+            tr!("git.abort_operation"),
+            tr!("git.changes_operation_progress_will_undone").into(),
             Vec::new(),
             pending,
         );
@@ -922,7 +921,7 @@ impl GitPlugin {
         if !host.save_files() {
             return;
         }
-        self.git("Poursuite", &[command, "--continue"]);
+        self.git(tr!("git.continuing"), &[command, "--continue"]);
     }
 
     // ---- Branches -----------------------------------------------------------------------
@@ -967,11 +966,11 @@ impl GitPlugin {
     }
 
     fn create_branch(&mut self, name: String, from: Option<String>, checkout: bool) {
-        if let Err(e) = repo::ensure_name(&name, "Nom de branche") {
+        if let Err(e) = repo::ensure_name(&name, tr!("git.branch_name")) {
             self.toast(e.to_string(), true);
             return;
         }
-        self.spawn("Nouvelle branche", After::Nothing, move |git| {
+        self.spawn(tr!("git.new_branch_job"), After::Nothing, move |git| {
             let mut args = if checkout {
                 vec!["checkout", "-b", &name]
             } else {
@@ -988,13 +987,13 @@ impl GitPlugin {
         };
         let (remote, branch) = (remote.to_string(), branch.to_string());
         let pending = self.pending(
-            "Suppression de la branche distante",
+            tr!("git.deleting_remote_branch"),
             After::Nothing,
             move |git| git.run(&["push", &remote, "--delete", &branch]),
         );
         self.confirm(
-            "Supprimer la branche distante",
-            format!("La branche {name} sera supprimée du serveur."),
+            tr!("git.delete_remote_branch"),
+            trf!("git.branch_will_deleted_from_server", name = name),
             Vec::new(),
             pending,
         );
@@ -1002,13 +1001,16 @@ impl GitPlugin {
 
     fn merge(&mut self, name: String, host: &mut dyn Host) {
         if host.save_files() {
-            self.git(&format!("Fusion de {name}"), &["merge", "--no-edit", &name]);
+            self.git(
+                &trf!("git.merging_name", name = name),
+                &["merge", "--no-edit", &name],
+            );
         }
     }
 
     fn rebase(&mut self, onto: String, host: &mut dyn Host) {
         if host.save_files() {
-            self.git(&format!("Rebase sur {onto}"), &["rebase", &onto]);
+            self.git(&trf!("git.rebasing_onto", onto = onto), &["rebase", &onto]);
         }
     }
 
@@ -1020,10 +1022,7 @@ impl GitPlugin {
 
     fn open_update(&mut self) {
         if self.snap.head.upstream.is_none() {
-            self.toast(
-                "La branche courante n'a pas de branche amont : poussez-la d'abord",
-                true,
-            );
+            self.toast(tr!("git.current_branch_has_no_upstream"), true);
             return;
         }
         self.dialog = Some(Dialog::Update {
@@ -1045,14 +1044,14 @@ impl GitPlugin {
         if autostash {
             args.push("--autostash");
         }
-        self.git("Mise à jour du projet", &args);
+        self.git(tr!("git.updating_project"), &args);
     }
 
     fn open_push(&mut self, host: &mut dyn Host) {
         let Some(branch) = self.current_branch().map(str::to_string) else {
             host.balloon(
-                "Push impossible",
-                "HEAD détaché : créez une branche avant de pousser".into(),
+                tr!("git.cannot_push"),
+                tr!("git.detached_head_create_branch_before").into(),
                 true,
             );
             return;
@@ -1070,10 +1069,7 @@ impl GitPlugin {
             .or(self.snap.remotes.first())
             .map(|r| r.name.clone());
         let Some(remote) = remote else {
-            self.toast(
-                "Aucun remote : ajoutez-en un via « Gérer les remotes »",
-                true,
-            );
+            self.toast(tr!("git.no_remotes_add_one_manage"), true);
             return;
         };
         let target = upstream
@@ -1130,7 +1126,7 @@ impl GitPlugin {
         if !host.save_files() {
             return;
         }
-        self.spawn("Mise de côté", After::Nothing, move |git| {
+        self.spawn(tr!("git.stashing"), After::Nothing, move |git| {
             let mut args = vec!["stash", "push"];
             if untracked {
                 args.push("--include-untracked");
@@ -1233,7 +1229,7 @@ impl GitPlugin {
     fn undo_commit(&mut self) {
         let Some(repo) = &self.repo else { return };
         let message = repo.message("HEAD").unwrap_or_default();
-        self.spawn("Annulation du commit", After::Message(message), |git| {
+        self.spawn(tr!("git.undoing_commit"), After::Message(message), |git| {
             git.run(&["reset", "--soft", "HEAD~1"])
         });
     }
@@ -1254,7 +1250,7 @@ impl GitPlugin {
                     old,
                     new,
                     "HEAD".to_string(),
-                    "Copie de travail".to_string(),
+                    tr!("git.working_copy").to_string(),
                 )
             }
             DiffSource::Revision { from, to, change } => {
@@ -1293,14 +1289,11 @@ impl GitPlugin {
             Ok(text) => {
                 let segments = conflict::parse(&text);
                 if conflict::conflicts(&segments) == 0 {
-                    self.toast(
-                        "Aucun marqueur de conflit dans ce fichier : utilisez « Marquer comme résolu »",
-                        false,
-                    );
+                    self.toast(tr!("git.no_conflict_markers_file_use"), false);
                 }
                 self.resolver = Some(Resolver { path, segments });
             }
-            Err(e) => self.toast(format!("Lecture impossible : {e}"), true),
+            Err(e) => self.toast(trf!("git.cannot_read", e = e), true),
         }
     }
 
@@ -1312,7 +1305,7 @@ impl GitPlugin {
         let done = conflict::resolved(&resolver.segments);
         let path = resolver.path.clone();
         if let Err(e) = std::fs::write(repo.abs(&path), text) {
-            self.toast(format!("Écriture impossible : {e}"), true);
+            self.toast(trf!("git.cannot_write", e = e), true);
             return;
         }
         host.reload_files();
@@ -1321,7 +1314,7 @@ impl GitPlugin {
             self.mark_resolved(path);
         } else {
             self.invalidate();
-            self.toast("Résolution partielle enregistrée", false);
+            self.toast(tr!("git.partial_resolution_saved"), false);
         }
     }
 
@@ -1342,7 +1335,7 @@ impl GitPlugin {
                     .iter()
                     .map(|l| {
                         if l.hash.bytes().all(|b| b == b'0') {
-                            format!("{:<10}  {:<14}", "", "Non commité")
+                            format!("{:<10}  {:<14}", "", tr!("git.not_committed"))
                         } else {
                             let author: String = l.author.chars().take(14).collect();
                             format!("{}  {author:<14}", repo::date(l.time, &l.tz))
@@ -1365,7 +1358,7 @@ impl GitPlugin {
         let root = host.root().to_path_buf();
         let console = self.console.clone();
         self.spawn_task(
-            "Création du dépôt",
+            tr!("git.creating_repository"),
             After::Reopen,
             Box::new(move || repo::Repo::init(&root, &console).map(|()| String::new())),
         );
@@ -1384,18 +1377,18 @@ impl GitPlugin {
             name.trim().to_string()
         };
         if url.is_empty() || name.is_empty() || parent.trim().is_empty() {
-            self.toast("Renseignez l'URL et le dossier de destination", true);
+            self.toast(tr!("git.enter_url_destination_folder"), true);
             return;
         }
         let parent = PathBuf::from(parent.trim());
         let target = parent.join(&name);
         if target.exists() {
-            self.toast(format!("{} existe déjà", target.display()), true);
+            self.toast(trf!("git.already_exists", target = target.display()), true);
             return;
         }
         let console = self.console.clone();
         self.spawn_task(
-            "Clonage",
+            tr!("git.cloning"),
             After::OpenProject(target),
             Box::new(move || {
                 std::fs::create_dir_all(&parent)?;
@@ -1413,7 +1406,7 @@ impl BuiltinPlugin for GitPlugin {
         "Git"
     }
     fn description(&self) -> &'static str {
-        "Commit, branches, historique, diff, push/pull, stash, conflits et annotations, avec la commande git installée."
+        tr!("git.commit_branches_history_diff_push")
     }
     fn tool_windows(&self) -> &'static [ToolWindow] {
         &TOOL_WINDOWS
@@ -1489,24 +1482,24 @@ impl BuiltinPlugin for GitPlugin {
 
     fn commands(&self) -> Vec<Command> {
         let mut commands = vec![
-            ("git.clone", "Git : cloner un dépôt…"),
-            ("git.console", "Git : console"),
+            ("git.clone", tr!("git.git_clone_repository")),
+            ("git.console", tr!("git.git_console")),
         ];
         if self.repo.is_none() {
-            commands.push(("git.init", "Git : créer un dépôt"));
+            commands.push(("git.init", tr!("git.git_create_repository")));
         } else {
             commands.extend([
-                ("git.commit", "Git : commit…  Ctrl+K"),
-                ("git.push", "Git : pousser…  Ctrl+Shift+K"),
-                ("git.update", "Git : mettre à jour le projet…  Ctrl+T"),
-                ("git.fetch", "Git : récupérer (fetch)"),
-                ("git.branch", "Git : nouvelle branche…"),
-                ("git.checkout", "Git : checkout d'un tag ou d'une révision…"),
-                ("git.stash", "Git : mettre de côté (stash)…"),
-                ("git.log", "Git : historique  Alt+9"),
-                ("git.history", "Git : historique du fichier actif"),
-                ("git.annotate", "Git : annoter le fichier actif (blame)"),
-                ("git.remotes", "Git : gérer les remotes…"),
+                ("git.commit", tr!("git.git_commit_ctrl_k")),
+                ("git.push", tr!("git.git_push_ctrl_shift_k")),
+                ("git.update", tr!("git.git_update_project_ctrl_t")),
+                ("git.fetch", tr!("git.git_fetch")),
+                ("git.branch", tr!("git.git_new_branch")),
+                ("git.checkout", tr!("git.git_checkout_tag_revision")),
+                ("git.stash", tr!("git.git_stash_changes")),
+                ("git.log", tr!("git.git_log_alt_9")),
+                ("git.history", tr!("git.git_history_current_file")),
+                ("git.annotate", tr!("git.git_annotate_current_file_blame")),
+                ("git.remotes", tr!("git.git_manage_remotes")),
             ]);
         }
         commands
@@ -1572,7 +1565,7 @@ impl BuiltinPlugin for GitPlugin {
             }
             "git.history" | "git.annotate" | "git.file_diff" | "git.file_rollback" => {
                 let Some(path) = active else {
-                    host.notify("Ouvrez un fichier du dépôt".into());
+                    host.notify(tr!("git.open_file_repository").into());
                     return;
                 };
                 match id {
@@ -1580,7 +1573,7 @@ impl BuiltinPlugin for GitPlugin {
                     "git.annotate" => self.toggle_annotations(path),
                     "git.file_diff" => match self.change_at(&path) {
                         Some(change) => self.open_diff(DiffSource::WorkingTree(change)),
-                        None => host.notify("Aucune modification par rapport à HEAD".into()),
+                        None => host.notify(tr!("git.no_changes_compared_head").into()),
                     },
                     _ => {
                         if host.save_files() {
@@ -1661,9 +1654,9 @@ impl BuiltinPlugin for GitPlugin {
             return Vec::new();
         }
         let annotate = if self.annotated.contains(path) {
-            "Masquer les annotations Git"
+            tr!("git.hide_git_annotations")
         } else {
-            "Annoter avec Git Blame"
+            tr!("git.annotate_git_blame")
         };
         let mut commands = vec![
             Command {
@@ -1672,18 +1665,18 @@ impl BuiltinPlugin for GitPlugin {
             },
             Command {
                 id: "git.history",
-                label: "Historique du fichier".into(),
+                label: tr!("git.file_history").into(),
             },
         ];
         if self.colors.contains_key(path) {
             commands.extend([
                 Command {
                     id: "git.file_diff",
-                    label: "Afficher le diff avec HEAD".into(),
+                    label: tr!("git.show_diff_head").into(),
                 },
                 Command {
                     id: "git.file_rollback",
-                    label: "Annuler les modifications du fichier…".into(),
+                    label: tr!("git.rollback_file").into(),
                 },
             ]);
         }
@@ -1692,287 +1685,5 @@ impl BuiltinPlugin for GitPlugin {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::plugins::builtins::git::repo::tests::TempRepo;
-
-    fn wait(plugin: &mut GitPlugin) -> Result<String> {
-        let job = plugin.job.take().expect("a job was started");
-        job.handle.join().unwrap()
-    }
-
-    fn plugin(t: &TempRepo) -> GitPlugin {
-        let mut plugin = GitPlugin {
-            repo: Some(t.repo.clone()),
-            ..Default::default()
-        };
-        plugin.apply(load(&t.repo).unwrap());
-        plugin
-    }
-
-    struct NoHost(PathBuf);
-    impl Host for NoHost {
-        fn root(&self) -> &Path {
-            &self.0
-        }
-        fn active_file(&self) -> Option<PathBuf> {
-            None
-        }
-        fn open_file(&mut self, _: PathBuf) {}
-        fn open_project(&mut self, _: PathBuf) {}
-        fn save_files(&mut self) -> bool {
-            true
-        }
-        fn reload_files(&mut self) {}
-        fn show_tool_window(&mut self, _: &'static ToolWindow) {}
-        fn notify(&mut self, _: String) {}
-    }
-
-    #[test]
-    fn commits_only_checked_files_including_renames() {
-        let t = TempRepo::new("commit");
-        t.write("keep.txt", "k\n");
-        t.write("old.txt", "o\n");
-        t.commit_all("init");
-        t.write("keep.txt", "changed\n");
-        t.repo.run(&["mv", "old.txt", "renamed.txt"]).unwrap();
-        t.write("new.txt", "n\n");
-        let mut host = NoHost(t.repo.root.clone());
-        let mut plugin = plugin(&t);
-        // Like IntelliJ: tracked changes are checked, new files are not.
-        let keep = plugin
-            .snap
-            .changes
-            .iter()
-            .find(|c| c.path == "keep.txt")
-            .cloned()
-            .unwrap();
-        plugin.set_included(&keep, false);
-        plugin.message = "rename".into();
-        plugin.commit(&mut host, false);
-        wait(&mut plugin).unwrap();
-        let (_, changes) = t.repo.status().unwrap();
-        let left: Vec<_> = changes.iter().map(|c| (c.path.as_str(), c.kind)).collect();
-        assert_eq!(
-            left,
-            [("keep.txt", Kind::Modified), ("new.txt", Kind::Untracked)]
-        );
-        let files = t.repo.changed_files(Some("HEAD~1"), "HEAD").unwrap();
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0].kind, Kind::Renamed);
-    }
-
-    #[test]
-    fn rollback_restores_tracked_files_and_unstages_added_ones() {
-        let t = TempRepo::new("rollback");
-        t.write("a.txt", "a\n");
-        t.commit_all("init");
-        t.write("a.txt", "edited\n");
-        t.write("b.txt", "b\n");
-        t.repo.run(&["add", "b.txt"]).unwrap();
-        let mut plugin = plugin(&t);
-        plugin.rollback(plugin.snap.changes.clone());
-        let Some(Dialog::Confirm { pending, .. }) = plugin.dialog.take() else {
-            panic!("rollback asks for confirmation");
-        };
-        (pending.task)().unwrap();
-        assert_eq!(std::fs::read_to_string(t.repo.abs("a.txt")).unwrap(), "a\n");
-        let (_, changes) = t.repo.status().unwrap();
-        assert_eq!(changes.len(), 1);
-        assert_eq!(
-            changes[0].kind,
-            Kind::Untracked,
-            "the added file stays on disk"
-        );
-    }
-
-    #[test]
-    fn smart_checkout_keeps_local_changes() {
-        let t = TempRepo::new("smart");
-        t.write("a.txt", "a\n");
-        t.commit_all("init");
-        t.repo.run(&["branch", "other"]).unwrap();
-        t.write("a.txt", "local\n");
-        let mut plugin = plugin(&t);
-        let mut host = NoHost(t.repo.root.clone());
-        plugin.checkout(Target::Branch("other".into()), &mut host);
-        let Some(Dialog::SmartCheckout { target }) = plugin.dialog.take() else {
-            panic!("local changes trigger the smart checkout dialog");
-        };
-        plugin.run_checkout(target, true, false);
-        wait(&mut plugin).unwrap();
-        let (head, changes) = t.repo.status().unwrap();
-        assert_eq!(head.branch.as_deref(), Some("other"));
-        assert_eq!(changes.len(), 1);
-        assert_eq!(
-            std::fs::read_to_string(t.repo.abs("a.txt")).unwrap(),
-            "local\n"
-        );
-    }
-
-    /// Draws every view, popup and dialog for a few frames: nothing may panic.
-    #[test]
-    fn every_view_and_dialog_renders() {
-        let t = TempRepo::new("render");
-        t.write("src/a.rs", "fn a() {}\n");
-        t.commit_all("init");
-        t.repo.run(&["branch", "feature"]).unwrap();
-        t.write("src/a.rs", "fn a() { b(); }\n");
-        t.write("new.txt", "n\n");
-        let mut host = NoHost(t.repo.root.clone());
-        let mut plugin = plugin(&t);
-        plugin.project = Some(t.repo.root.clone());
-        plugin.log.rows = t.repo.log(&plugin.log.query).unwrap();
-        plugin.log.graph = graph::layout(
-            plugin
-                .log
-                .rows
-                .iter()
-                .map(|c| (c.hash.as_str(), c.parents.as_slice())),
-        );
-        plugin.log.stale = false;
-        let hash = plugin.log.rows[0].hash.clone();
-        plugin.select_commit(hash.clone());
-        let change = plugin.snap.changes[0].clone();
-        plugin.open_diff(DiffSource::WorkingTree(change));
-        plugin.resolver = Some(Resolver {
-            path: "src/a.rs".into(),
-            segments: conflict::parse("a\n<<<<<<< HEAD\nb\n=======\nc\n>>>>>>> feature\n"),
-        });
-        let current = plugin
-            .snap
-            .branches
-            .iter()
-            .find(|b| b.current)
-            .cloned()
-            .unwrap();
-        plugin.branch_popup = Some((egui::pos2(10.0, 10.0), egui::Align2::LEFT_TOP, 0));
-        plugin.branch_sub = Some((current, egui::pos2(380.0, 40.0)));
-        let ctx = egui::Context::default();
-        ui::install(&ctx, ui::theme_by_index(0), 14.0);
-        let frame = |plugin: &mut GitPlugin, host: &mut NoHost| {
-            for _ in 0..2 {
-                let _ = ctx.run(Default::default(), |ctx| {
-                    egui::TopBottomPanel::top("bar").show(ctx, |ui| {
-                        ui.horizontal(|ui| {
-                            plugin.toolbar(ui, host);
-                            plugin.status_bar(ui, host);
-                        });
-                    });
-                    egui::SidePanel::left("commit")
-                        .show(ctx, |ui| plugin.tool_window("git.commit", ui, host));
-                    egui::CentralPanel::default()
-                        .show(ctx, |ui| plugin.tool_window("git.log", ui, host));
-                    plugin.windows(ctx, host);
-                });
-            }
-        };
-        frame(&mut plugin, &mut host);
-        plugin.commit_tab = CommitTab::Stash;
-        plugin.log_tab = LogTab::Console;
-        frame(&mut plugin, &mut host);
-        plugin.rollback(plugin.snap.changes.clone());
-        assert!(matches!(plugin.dialog, Some(Dialog::Confirm { .. })));
-        frame(&mut plugin, &mut host);
-        let dialogs = [
-            Dialog::NewBranch {
-                from: Some(hash.clone()),
-                name: String::new(),
-                checkout: true,
-            },
-            Dialog::RenameBranch {
-                old: "feature".into(),
-                name: "feature".into(),
-            },
-            Dialog::DeleteBranch {
-                name: "feature".into(),
-                force: false,
-            },
-            Dialog::NewTag {
-                rev: hash.clone(),
-                name: String::new(),
-                message: String::new(),
-            },
-            Dialog::Revision { rev: String::new() },
-            Dialog::SmartCheckout {
-                target: Target::Branch("feature".into()),
-            },
-            Dialog::Push {
-                remote: "origin".into(),
-                branch: "main".into(),
-                target: "main".into(),
-                force: false,
-                tags: false,
-                commits: vec!["abc1234  init".into()],
-                upstream: false,
-            },
-            Dialog::Update {
-                rebase: false,
-                autostash: true,
-            },
-            Dialog::Stash {
-                message: String::new(),
-                untracked: false,
-            },
-            Dialog::Reset {
-                rev: hash.clone(),
-                subject: "init".into(),
-                mode: ResetMode::Mixed,
-            },
-            Dialog::Clone {
-                url: String::new(),
-                parent: String::new(),
-                name: String::new(),
-            },
-            Dialog::Remotes {
-                name: String::new(),
-                url: String::new(),
-            },
-        ];
-        for dialog in dialogs {
-            plugin.dialog = Some(dialog);
-            frame(&mut plugin, &mut host);
-            assert!(plugin.dialog.is_some(), "a dialog stays open without input");
-        }
-        assert!(plugin.job.is_none());
-    }
-
-    #[test]
-    fn gutter_marks_and_tree_colors() {
-        let t = TempRepo::new("marks");
-        t.write("src/a.txt", "1\n2\n3\n");
-        t.commit_all("init");
-        t.write("src/a.txt", "1\ntwo\n3\n");
-        let mut plugin = plugin(&t);
-        let path = t.repo.abs("src/a.txt");
-        let marks = plugin.line_marks(&path, "1\ntwo\n3\nfour\n");
-        assert_eq!(marks.len(), 2);
-        assert_eq!(plugin.file_color(&path), Some(plugin.theme.modified));
-        assert!(plugin.file_color(&t.repo.abs("src")).is_some());
-        assert!(plugin.file_color(&t.repo.abs("other")).is_none());
-    }
-
-    #[test]
-    fn ignored_files_and_folders_are_orange() {
-        let t = TempRepo::new("ignored");
-        t.write(
-            ".gitignore",
-            "target/
-*.log
-",
-        );
-        t.write(
-            "a.txt", "1
-",
-        );
-        t.commit_all("init");
-        t.write("target/debug/x.bin", "x");
-        t.write("run.log", "x");
-        let plugin = plugin(&t);
-        let orange = plugin.file_color(&t.repo.abs("run.log"));
-        assert!(orange.is_some());
-        assert_eq!(plugin.file_color(&t.repo.abs("target")), orange);
-        assert_eq!(plugin.file_color(&t.repo.abs("target/debug/x.bin")), orange);
-        assert!(plugin.file_color(&t.repo.abs("a.txt")).is_none());
-    }
-}
+#[path = "../../../../test/plugins/builtins/git/plugin/tests.rs"]
+mod tests;

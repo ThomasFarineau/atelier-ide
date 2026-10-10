@@ -8,4 +8,5 @@ pub mod highlight;
 pub mod types;
 
 #[cfg(test)]
+#[path = "../../../test/languages/typescript/tests.rs"]
 mod tests;

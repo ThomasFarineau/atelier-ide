@@ -30,7 +30,7 @@ use std::{
 
 pub static TOOL_WINDOWS: [ToolWindow; 1] = [ToolWindow {
     id: "mcp.sessions",
-    title: "Sessions IA",
+    title: crate::i18n::Text("mcp.ai_sessions"),
     icon: "mcp/icon",
     dock: Dock::Bottom,
     shortcut: "Alt+7",
@@ -109,9 +109,7 @@ enum Action {
 /// What an AI is told to take a session up: it reads the context the IDE wrote, which holds the
 /// notes of the session (no quote or line break: the same line works in every shell).
 fn resume_prompt(id: &str, file: &str) -> String {
-    format!(
-        "Reprends la session Atelier {id} : lis {file} (ou appelle get_session_context) puis continue le travail."
-    )
+    trf!("mcp.take_up_atelier_session_read", id = id, file = file)
 }
 
 /// The command line that starts `agent` with that first request.
@@ -142,7 +140,7 @@ impl McpPlugin {
                     Some((format!("http://127.0.0.1:{}/mcp", server.port), saved.token));
                 self.server = Some(server);
             }
-            Err(e) => self.error = Some(format!("Serveur MCP indisponible : {e}")),
+            Err(e) => self.error = Some(trf!("mcp.mcp_server_not_available", e = e)),
         }
     }
 
@@ -163,14 +161,14 @@ impl McpPlugin {
             .export(id);
         let file = match exported {
             Ok(file) => file,
-            Err(e) => return host.notify(format!("Erreur : {e}")),
+            Err(e) => return host.notify(trf!("mcp.error", e = e)),
         };
         // The AI has to find the server to leave notes in the session it starts.
         if let Err(e) = agents::connect(agent, host.root(), self.address().as_deref()) {
-            return host.notify(format!("Erreur : {e}"));
+            return host.notify(trf!("mcp.error", e = e));
         }
         host.run_in_new_terminal(resume_command(agent, &resume_prompt(id, &file)));
-        host.notify(format!("Session reprise avec {}", agent.name()));
+        host.notify(trf!("mcp.session_taken_up", agent = agent.name()));
     }
 }
 
@@ -179,10 +177,10 @@ impl BuiltinPlugin for McpPlugin {
         "mcp"
     }
     fn name(&self) -> &'static str {
-        "Atelier Super Intelligence Tools"
+        tr!("mcp.atelier_super_intelligence_tools")
     }
     fn description(&self) -> &'static str {
-        "Les outils d'Atelier pour les IA, par un serveur MCP : une IA lancée dans un terminal d'Atelier peut s'y connecter pour utiliser ses outils (fichiers ouverts, éditeur actif, problèmes, recherche dans le projet, ouverture d'un fichier). L'IDE propose la connexion quand on lance Claude Code, Gemini CLI ou Codex."
+        tr!("mcp.tools_atelier_ais_through_mcp")
     }
     fn icon(&self) -> &'static str {
         "mcp/icon"
@@ -226,7 +224,7 @@ impl BuiltinPlugin for McpPlugin {
                 RichText::new(
                     self.error
                         .clone()
-                        .unwrap_or_else(|| "Serveur MCP en cours de démarrage".into()),
+                        .unwrap_or_else(|| tr!("mcp.mcp_server_starting").into()),
                 )
                 .color(t.text_secondary),
             );
@@ -241,8 +239,12 @@ impl BuiltinPlugin for McpPlugin {
         if sessions.is_empty() {
             ui.add_space(12.0);
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("Aucune session d'IA dans ce projet").color(t.text_secondary));
-                ui.label(RichText::new("Lancez claude, codex ou gemini dans un terminal d'Atelier : chaque connexion devient une session.").small().color(t.text_secondary));
+                ui.label(RichText::new(tr!("mcp.no_ai_sessions_project")).color(t.text_secondary));
+                ui.label(
+                    RichText::new(tr!("mcp.start_claude_codex_gemini_terminal"))
+                        .small()
+                        .color(t.text_secondary),
+                );
             });
             return;
         }
@@ -255,61 +257,123 @@ impl BuiltinPlugin for McpPlugin {
         }
         let at = sessions::now();
         let mut action: Option<Action> = None;
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            ui.spacing_mut().item_spacing.y = 0.0;
-            for session in &sessions {
-                let open = self.selected.as_deref() == Some(session.id.as_str());
-                let (rect, response) = ui::row(ui, open);
-                let live = session.active(at);
-                ui.painter().circle_filled(egui::pos2(rect.left() + 14.0, rect.center().y), 4.0, if live { Color32::from_rgb(0x5F, 0xB8, 0x65) } else { t.text_secondary });
-                let end = ui::paint_text(ui, rect, rect.left() + 28.0, &session.display_title(), t.text, ui::semibold(12.5));
-                let hint = format!("{} · {} · {} appel(s){}", session.client, sessions::clock(session.started), session.events.len(), if live { " · en cours" } else { "" });
-                ui::paint_text(ui, rect, end + 12.0, &hint, t.text_secondary, FontId::proportional(12.0));
-                if response.clicked() {
-                    self.selected = if open { None } else { Some(session.id.clone()) };
-                }
-                if !open {
-                    continue;
-                }
-                egui::Frame::new().inner_margin(egui::Margin { left: 28, right: 12, top: 6, bottom: 10 }).show(ui, |ui| {
-                    ui.spacing_mut().item_spacing.y = 4.0;
-                    if session.notes.is_empty() {
-                        ui.label(RichText::new("Pas de note : l'IA n'a pas laissé de contexte (session_note). La reprise ne s'appuiera que sur ses appels.").small().color(t.text_secondary));
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for session in &sessions {
+                    let open = self.selected.as_deref() == Some(session.id.as_str());
+                    let (rect, response) = ui::row(ui, open);
+                    let live = session.active(at);
+                    ui.painter().circle_filled(
+                        egui::pos2(rect.left() + 14.0, rect.center().y),
+                        4.0,
+                        if live {
+                            Color32::from_rgb(0x5F, 0xB8, 0x65)
+                        } else {
+                            t.text_secondary
+                        },
+                    );
+                    let end = ui::paint_text(
+                        ui,
+                        rect,
+                        rect.left() + 28.0,
+                        &session.display_title(),
+                        t.text,
+                        ui::semibold(12.5),
+                    );
+                    let hint = trf!(
+                        "mcp.call_s",
+                        client = session.client,
+                        started = sessions::clock(session.started),
+                        count = session.events.len(),
+                        plural = if live { tr!("mcp.running") } else { "" }
+                    );
+                    ui::paint_text(
+                        ui,
+                        rect,
+                        end + 12.0,
+                        &hint,
+                        t.text_secondary,
+                        FontId::proportional(12.0),
+                    );
+                    if response.clicked() {
+                        self.selected = if open { None } else { Some(session.id.clone()) };
                     }
-                    for note in &session.notes {
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label(RichText::new(match note.kind.as_str() {
-                                "goal" => "Objectif",
-                                "decision" => "Décision",
-                                "todo" => "À faire",
-                                "progress" => "Avancement",
-                                _ => "Résumé",
-                            }).font(ui::semibold(12.0)).color(t.accent));
-                            ui.label(RichText::new(&note.text).size(12.5));
-                        });
+                    if !open {
+                        continue;
                     }
-                    for event in session.events.iter().rev().take(6) {
-                        ui.label(RichText::new(format!("{} {} {}", sessions::clock(event.at), event.tool, event.summary)).small().color(if event.ok { t.text_secondary } else { t.error }));
-                    }
-                    ui.add_space(4.0);
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label(RichText::new("Reprendre avec").color(t.text_secondary));
-                        for agent in [agents::Agent::Claude, agents::Agent::Codex, agents::Agent::Gemini] {
-                            if ui::button(ui, agent.name()).clicked() {
-                                action = Some(Action::Resume(agent, session.id.clone()));
+                    egui::Frame::new()
+                        .inner_margin(egui::Margin {
+                            left: 28,
+                            right: 12,
+                            top: 6,
+                            bottom: 10,
+                        })
+                        .show(ui, |ui| {
+                            ui.spacing_mut().item_spacing.y = 4.0;
+                            if session.notes.is_empty() {
+                                ui.label(
+                                    RichText::new(tr!("mcp.no_notes_ai_left_no"))
+                                        .small()
+                                        .color(t.text_secondary),
+                                );
                             }
-                        }
-                        ui.separator();
-                        if ui::button(ui, "Copier le contexte").clicked() {
-                            action = Some(Action::Copy(session.id.clone()));
-                        }
-                        if ui::button(ui, "Supprimer").clicked() {
-                            action = Some(Action::Delete(session.id.clone()));
-                        }
-                    });
-                });
-            }
-        });
+                            for note in &session.notes {
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.label(
+                                        RichText::new(match note.kind.as_str() {
+                                            "goal" => tr!("mcp.goal"),
+                                            "decision" => tr!("mcp.decision"),
+                                            "todo" => tr!("mcp.do"),
+                                            "progress" => tr!("mcp.progress"),
+                                            _ => tr!("mcp.summary"),
+                                        })
+                                        .font(ui::semibold(12.0))
+                                        .color(t.accent),
+                                    );
+                                    ui.label(RichText::new(&note.text).size(12.5));
+                                });
+                            }
+                            for event in session.events.iter().rev().take(6) {
+                                ui.label(
+                                    RichText::new(format!(
+                                        "{} {} {}",
+                                        sessions::clock(event.at),
+                                        event.tool,
+                                        event.summary
+                                    ))
+                                    .small()
+                                    .color(if event.ok {
+                                        t.text_secondary
+                                    } else {
+                                        t.error
+                                    }),
+                                );
+                            }
+                            ui.add_space(4.0);
+                            ui.horizontal_wrapped(|ui| {
+                                ui.label(RichText::new(tr!("mcp.take_up")).color(t.text_secondary));
+                                for agent in [
+                                    agents::Agent::Claude,
+                                    agents::Agent::Codex,
+                                    agents::Agent::Gemini,
+                                ] {
+                                    if ui::button(ui, agent.name()).clicked() {
+                                        action = Some(Action::Resume(agent, session.id.clone()));
+                                    }
+                                }
+                                ui.separator();
+                                if ui::button(ui, tr!("mcp.copy_context")).clicked() {
+                                    action = Some(Action::Copy(session.id.clone()));
+                                }
+                                if ui::button(ui, tr!("mcp.delete")).clicked() {
+                                    action = Some(Action::Delete(session.id.clone()));
+                                }
+                            });
+                        });
+                }
+            });
         match action {
             Some(Action::Resume(agent, id)) => self.resume(agent, &id, host),
             Some(Action::Copy(id)) => {
@@ -321,7 +385,7 @@ impl BuiltinPlugin for McpPlugin {
                 });
                 if let Some(text) = text {
                     ui.ctx().copy_text(text);
-                    host.notify("Contexte de la session copié".into());
+                    host.notify(tr!("mcp.session_context_copied").into());
                 }
             }
             Some(Action::Delete(id)) => {
@@ -340,19 +404,20 @@ impl BuiltinPlugin for McpPlugin {
 
     fn status_bar(&mut self, ui: &mut egui::Ui, _host: &mut dyn Host) {
         if let Some(address) = self.address() {
-            ui::status_text(ui, "MCP").on_hover_text(format!(
-                "Serveur MCP d'Atelier : {address}\n{} appel(s) d'outil depuis le démarrage",
-                self.served
+            ui::status_text(ui, "MCP").on_hover_text(trf!(
+                "mcp.atelier_mcp_server_tool_call",
+                address = address,
+                served = self.served
             ));
         }
     }
 
     fn commands(&self) -> Vec<Command> {
         [
-            ("mcp.claude", "MCP : connecter Claude Code à ce projet"),
-            ("mcp.gemini", "MCP : connecter Gemini CLI à ce projet"),
-            ("mcp.codex", "MCP : connecter Codex à ce projet"),
-            ("mcp.status", "MCP : afficher l'adresse du serveur"),
+            ("mcp.claude", tr!("mcp.mcp_connect_claude_code_project")),
+            ("mcp.gemini", tr!("mcp.mcp_connect_gemini_cli_project")),
+            ("mcp.codex", tr!("mcp.mcp_connect_codex_project")),
+            ("mcp.status", tr!("mcp.mcp_show_server_address")),
         ]
         .into_iter()
         .map(|(id, label)| Command {
@@ -370,12 +435,13 @@ impl BuiltinPlugin for McpPlugin {
             _ => {
                 let message = match (&self.error, self.address()) {
                     (Some(error), _) => error.clone(),
-                    (None, Some(address)) => format!(
-                        "{address} · les terminaux d'Atelier définissent {} et {}",
-                        agents::URL_VAR,
-                        agents::TOKEN_VAR
+                    (None, Some(address)) => trf!(
+                        "mcp.terminals_atelier_set",
+                        address = address,
+                        value = agents::URL_VAR,
+                        value2 = agents::TOKEN_VAR
                     ),
-                    (None, None) => "Serveur MCP en cours de démarrage".into(),
+                    (None, None) => tr!("mcp.mcp_server_starting").into(),
                 };
                 host.notify(message);
                 return;
@@ -387,41 +453,17 @@ impl BuiltinPlugin for McpPlugin {
                     .iter()
                     .filter_map(|f| f.file_name().map(|n| n.to_string_lossy().into_owned()))
                     .collect();
-                host.notify(format!(
-                    "{} connecté au MCP d'Atelier ({}) · relancez-le s'il tourne déjà",
-                    agent.name(),
-                    names.join(", ")
+                host.notify(trf!(
+                    "mcp.connected_atelier_mcp_restart_if",
+                    agent = agent.name(),
+                    names = names.join(", ")
                 ));
             }
-            Err(e) => host.notify(format!("Erreur : {e}")),
+            Err(e) => host.notify(trf!("mcp.error", e = e)),
         }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn any_ai_is_started_on_the_same_context_with_one_line_every_shell_accepts() {
-        let prompt = resume_prompt("0123abcd", ".atelier/sessions/0123abcd.md");
-        assert!(!prompt.contains(['"', '\n', '\'', '`', '$']), "{prompt}");
-        assert!(prompt.contains(".atelier/sessions/0123abcd.md"));
-        for (agent, start) in [
-            (agents::Agent::Claude, "claude \""),
-            (agents::Agent::Codex, "codex \""),
-            (agents::Agent::Gemini, "gemini -i \""),
-        ] {
-            let command = resume_command(agent, &prompt);
-            assert!(
-                command.starts_with(start) && command.ends_with('"') && !command.contains('\n'),
-                "{command}"
-            );
-            assert_eq!(
-                agents::detect(&command),
-                Some(agent),
-                "the IDE would recognize it as that AI"
-            );
-        }
-    }
-}
+#[path = "../../../../test/plugins/builtins/mcp/mod/tests.rs"]
+mod tests;

@@ -1,0 +1,21 @@
+{
+  "csv.auto": "Auto ({detected})",
+  "csv.auto_2": "Auto",
+  "csv.comma": "comma",
+  "csv.comma_2": "Comma ,",
+  "csv.csv_editor_only": "CSV: Editor Only",
+  "csv.csv_editor_table": "CSV: Editor and Table",
+  "csv.csv_table_only": "CSV: Table Only",
+  "csv.empty_file": "Empty file",
+  "csv.first_row_as_header": "First row as header",
+  "csv.open_csv_tsv_psv_file": "Open a CSV, TSV or PSV file",
+  "csv.other": "other",
+  "csv.pipe": "pipe",
+  "csv.pipe_2": "Pipe |",
+  "csv.rows_columns": "{body} rows · {columns} columns",
+  "csv.semicolon": "semicolon",
+  "csv.semicolon_2": "Semicolon ;",
+  "csv.tab": "tab",
+  "csv.tab_2": "Tab",
+  "csv.table_preview_csv_tsv_psv": "Table preview of CSV, TSV and PSV files: detected separator, first row as header, column sorting, editor only, side by side or table only."
+}

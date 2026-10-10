@@ -1,4 +1,5 @@
 use crate::{
+    i18n::Text,
     icons,
     plugins::{
         self, Plugin,
@@ -27,6 +28,11 @@ use std::{
 };
 
 mod plugins_page;
+mod projects_page;
+mod reformat;
+mod settings_page;
+use crate::editor::FormatRequest;
+use settings_page::{Draft, Page, RunTool};
 
 const TITLE_HEIGHT: f32 = 40.0;
 const STATUS_HEIGHT: f32 = 28.0;
@@ -38,91 +44,93 @@ const CLOSE_HOVER: Color32 = Color32::from_rgb(0xE8, 0x11, 0x23);
 /// The IDE's own tool windows, next to those of the built-in plugins.
 static PROJECT_TOOL: ToolWindow = ToolWindow {
     id: "project",
-    title: "Projet",
+    title: Text("project"),
     icon: "project",
     dock: Dock::Left,
     shortcut: "Alt+1",
 };
 static TERMINAL_TOOL: ToolWindow = ToolWindow {
     id: "terminal",
-    title: "Terminal",
+    title: Text("terminal"),
     icon: "terminal",
     dock: Dock::Bottom,
     shortcut: "Ctrl+`",
 };
 static NOTIFICATIONS_TOOL: ToolWindow = ToolWindow {
     id: "notifications",
-    title: "Notifications",
+    title: Text("notifications"),
     icon: "notifications",
     dock: Dock::Right,
     shortcut: "",
 };
 
 /// Actions of Search Everywhere and of the main menu: (label, shortcut, icon).
-const ACTIONS: [(&str, &str, &str); 11] = [
-    ("Ouvrir un projet…", "", "project"),
-    ("Ouvrir un fichier…", "Ctrl+O", "openNewTab"),
-    ("Tout enregistrer", "Ctrl+S", "save"),
-    ("Terminal", "Ctrl+`", "terminal"),
-    ("Paramètres…", "Ctrl+Alt+S", "settings"),
-    ("Plugins…", "", "settings"),
-    ("Exécuter le fichier actif", "F5", "run"),
-    ("Actualiser le projet", "", "refresh"),
-    (
-        "Ouvrir un projet dans une nouvelle fenêtre…",
-        "",
-        "openNewTab",
-    ),
-    ("Nouveau fichier dans le projet…", "", "add"),
-    ("Notifications", "", "notifications"),
+const ACTIONS: [(Text, &str, &str); 14] = [
+    (Text("open_project_dialog"), "", "project"),
+    (Text("open_file_dialog"), "Ctrl+O", "openNewTab"),
+    (Text("save_all"), "Ctrl+S", "save"),
+    (Text("terminal"), "Ctrl+`", "terminal"),
+    (Text("settings_dialog"), "Ctrl+Alt+S", "settings"),
+    (Text("plugins_dialog"), "", "settings"),
+    (Text("run_current_file"), "F5", "run"),
+    (Text("refresh_project"), "", "refresh"),
+    (Text("open_project_new_window"), "", "openNewTab"),
+    (Text("new_file_project"), "", "add"),
+    (Text("notifications"), "", "notifications"),
+    (Text("reformat_code"), "Ctrl+Alt+L", "edit"),
+    (Text("optimize_imports"), "Ctrl+Alt+O", "edit"),
+    (Text("projects.all"), "", "project"),
 ];
 
-const SHORTCUTS: [(&str, &str); 36] = [
-    ("Ctrl+O", "Ouvrir un fichier"),
-    ("Ctrl+N", "Nouveau fichier"),
-    ("Ctrl+S", "Enregistrer"),
-    ("Ctrl+Shift+S", "Enregistrer sous"),
-    ("Ctrl+W", "Fermer l'onglet"),
-    ("Ctrl+F", "Rechercher dans le fichier"),
-    ("Double Maj / Ctrl+P", "Rechercher partout"),
-    ("Ctrl+Shift+N", "Aller au fichier"),
-    ("Ctrl+Alt+S", "Paramètres"),
-    ("Alt+1", "Fenêtre Projet"),
-    ("Ctrl+`", "Terminal"),
-    ("F5", "Exécuter le fichier actif"),
-    ("Ctrl+Espace", "Complétion du code"),
-    ("Maj+F6", "Renommer"),
+const SHORTCUTS: [(Text, Text); 39] = [
+    (Text("ctrl_o"), Text("open_file")),
+    (Text("ctrl_n"), Text("new_file")),
+    (Text("ctrl_s"), Text("save")),
+    (Text("ctrl_shift_s"), Text("save_as")),
+    (Text("ctrl_w"), Text("close_tab")),
+    (Text("ctrl_f"), Text("find_file")),
+    (Text("double_shift_ctrl_p"), Text("search_everywhere")),
+    (Text("ctrl_shift_n"), Text("go_file")),
+    (Text("ctrl_alt_s"), Text("settings")),
+    (Text("alt_1"), Text("project_window")),
+    (Text("ctrl"), Text("terminal")),
+    (Text("f5"), Text("run_current_file")),
+    (Text("ctrl_space"), Text("code_completion")),
+    (Text("shift_f6"), Text("rename")),
+    (Text("ctrl_alt_l"), Text("reformat_code")),
+    (Text("ctrl_alt_shift_l"), Text("reformat_file")),
+    (Text("ctrl_alt_o"), Text("optimize_imports")),
     (
-        "Ctrl+F / Ctrl+R / F3",
-        "Rechercher / Remplacer / occurrence suivante",
+        Text("ctrl_f_ctrl_r_f3"),
+        Text("find_replace_next_occurrence"),
     ),
-    ("Ctrl+Maj+F", "Rechercher dans le projet"),
+    (Text("ctrl_shift_f"), Text("find_project")),
+    (Text("ctrl_click_ctrl_b"), Text("go_declaration_usages")),
     (
-        "Ctrl+clic / Ctrl+B",
-        "Aller à la déclaration (ou aux utilisations)",
+        Text("ctrl_shift_b_ctrl_alt"),
+        Text("type_declaration_implementations"),
     ),
+    (Text("alt_f7"), Text("usages")),
+    (Text("ctrl_f12"), Text("file_structure")),
+    (Text("alt_enter"), Text("quick_actions_import")),
+    (Text("ctrl_shift_m"), Text("matching_bracket_brace")),
+    (Text("ctrl_e"), Text("recent_files")),
+    (Text("ctrl_g"), Text("go_line")),
+    (Text("ctrl_ctrl"), Text("collapse_expand_code")),
     (
-        "Ctrl+Maj+B / Ctrl+Alt+B",
-        "Déclaration du type / implémentations",
+        Text("ctrl_shift_ctrl_shift"),
+        Text("collapse_all_expand_all"),
     ),
-    ("Alt+F7", "Utilisations"),
-    ("Ctrl+F12", "Structure du fichier"),
-    ("Alt+Entrée", "Actions rapides (importer…)"),
-    ("Ctrl+Maj+M", "Parenthèse ou accolade correspondante"),
-    ("Ctrl+E", "Fichiers récents"),
-    ("Ctrl+G", "Aller à la ligne"),
-    ("Ctrl+- / Ctrl+=", "Replier / déplier le code"),
-    ("Ctrl+Maj+- / Ctrl+Maj+=", "Tout replier / tout déplier"),
-    ("Ctrl+Alt+Gauche", "Retour à l'emplacement précédent"),
-    ("Ctrl+Alt+Droite", "Emplacement suivant"),
-    ("Ctrl+K", "Commit"),
-    ("Ctrl+Shift+K", "Pousser"),
-    ("Ctrl+T", "Mettre à jour le projet"),
-    ("Alt+0", "Fenêtre Commit"),
-    ("Alt+9", "Fenêtre Git"),
-    ("Alt+8", "Fenêtre Kubernetes"),
-    ("F7 / Maj+F7", "Différence suivante / précédente"),
-    ("Échap", "Rendre le clavier à l'IDE (terminal)"),
+    (Text("ctrl_alt_left"), Text("back_previous_location")),
+    (Text("ctrl_alt_right"), Text("forward_next_location")),
+    (Text("ctrl_k"), Text("commit")),
+    (Text("ctrl_shift_k"), Text("push")),
+    (Text("ctrl_t"), Text("update_project")),
+    (Text("alt_0"), Text("commit_window")),
+    (Text("alt_9"), Text("git_window")),
+    (Text("alt_8"), Text("kubernetes_window")),
+    (Text("f7_shift_f7"), Text("next_previous_difference")),
+    (Text("esc"), Text("give_keyboard_back_ide_terminal")),
 ];
 
 /// What to select once a document is open.
@@ -145,8 +153,8 @@ fn line_hit(query: &str) -> Option<Hit> {
     let line: usize = line.trim().parse().ok().filter(|&l| l > 0)?;
     let column: usize = column.trim().parse().ok().filter(|&c| c > 0).unwrap_or(1);
     Some(Hit {
-        label: format!("Ligne {line}, colonne {column}"),
-        hint: "Entrée pour y aller".into(),
+        label: trf!("line_column", line = line, column = column),
+        hint: tr!("enter_go_there").into(),
         icon: Some("search"),
         file: None,
         target: Target::Line(line - 1, column - 1),
@@ -176,6 +184,9 @@ const PROJECT_COLORS: [Color32; 8] = [
     Color32::from_rgb(0x5E, 0x8C, 0x9E),
 ];
 
+/// The options of the IDE, kept in `settings.json` of the data folder of Atelier
+/// (`%LOCALAPPDATA%\Atelier` on Windows, `~/Library/Application Support/Atelier` on macOS,
+/// `$XDG_DATA_HOME/Atelier` or `~/.local/share/Atelier` on Linux).
 #[derive(Default, Deserialize, Serialize)]
 #[serde(default)]
 struct Settings {
@@ -190,6 +201,34 @@ struct Settings {
     /// What the user answered when offered to connect an AI to the MCP server of a project,
     /// by `project|ai`.
     mcp_choices: BTreeMap<String, bool>,
+    /// When each project was last opened, in seconds since 1970, for the Projects page.
+    opened: BTreeMap<PathBuf, u64>,
+    /// The language of the interface; the one of the system until the user picks one.
+    /// Its identifier (`fr_FR`, `en_US`).
+    language: Option<String>,
+}
+
+/// The projects the Projects page keeps; the project widget shows the first ten.
+const MAX_RECENT: usize = 50;
+
+fn settings_path() -> PathBuf {
+    crate::cli::data_dir().join("settings.json")
+}
+
+fn load_settings(path: &Path) -> Option<Settings> {
+    let text = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+/// Writes the settings through a temporary file, so that a crash never leaves half a file.
+fn save_settings(path: &Path, settings: &Settings) -> anyhow::Result<()> {
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    let temporary = path.with_extension("json.tmp");
+    fs::write(&temporary, serde_json::to_string_pretty(settings)?)?;
+    fs::rename(&temporary, path)?;
+    Ok(())
 }
 
 #[derive(Clone)]
@@ -262,7 +301,20 @@ pub struct Ide {
     show_project: bool,
     show_notifications: bool,
     show_settings: bool,
-    settings_page: usize,
+    /// The Projects page, open, and its search.
+    show_projects: bool,
+    projects_filter: String,
+    settings_page: Page,
+    /// What the settings dialog edits, and the settings it started from.
+    settings_draft: Draft,
+    settings_original: Draft,
+    settings_filter: String,
+    run_tools: Vec<RunTool>,
+    /// The dialog opened this frame: the key that opened it is not its own.
+    settings_fresh: bool,
+    /// The Reformat File dialog, open with its choices, and the choices of the last time.
+    reformat_dialog: Option<reformat::Choice>,
+    reformat_choice: reformat::Choice,
     plugin_filter: String,
     /// When the font size last changed with the wheel, to show it briefly.
     zoom_hint: Option<Instant>,
@@ -330,6 +382,8 @@ pub struct Ide {
     builtins: Vec<Box<dyn BuiltinPlugin>>,
     /// Built-in tool window shown instead of the project view.
     left_tool: Option<&'static ToolWindow>,
+    /// A plugin's tool window on the right (npm, Maven, Gradle), in the place of the notifications.
+    right_tool: Option<&'static ToolWindow>,
     /// Built-in tool window shown instead of the terminal.
     bottom_tool: Option<&'static ToolWindow>,
     /// Tool window that has the focus (blue stripe button); None for the editor.
@@ -383,9 +437,9 @@ fn project_color(name: &str) -> Color32 {
 
 fn ago(at: Instant) -> String {
     match at.elapsed().as_secs() {
-        0..60 => "à l'instant".into(),
-        s @ 60..3600 => format!("il y a {} min", s / 60),
-        s => format!("il y a {} h", s / 3600),
+        0..60 => tr!("just_now").into(),
+        s @ 60..3600 => trf!("min_ago", s = s / 60),
+        s => trf!("h_ago", s = s / 3600),
     }
 }
 
@@ -416,6 +470,7 @@ fn list_files(root: &Path) -> Vec<PathBuf> {
 impl Ide {
     fn blank(root: PathBuf, settings: Settings, reload: Option<Arc<AtomicBool>>) -> Self {
         let (plugins, plugin_errors) = plugins::load(&root);
+        let draft = Draft::of(&settings);
         let repaint: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
         Self {
             languages: Arc::new(crate::languages::Service::new(&root, repaint.clone())),
@@ -446,7 +501,16 @@ impl Ide {
             show_project: true,
             show_notifications: false,
             show_settings: false,
-            settings_page: 0,
+            show_projects: false,
+            projects_filter: String::new(),
+            settings_page: Page::Appearance,
+            settings_draft: draft.clone(),
+            settings_original: draft,
+            settings_filter: String::new(),
+            run_tools: Vec::new(),
+            settings_fresh: false,
+            reformat_dialog: None,
+            reformat_choice: Default::default(),
             plugin_filter: String::new(),
             zoom_hint: None,
             plugin_selected: None,
@@ -476,8 +540,8 @@ impl Ide {
             pending_copy: None,
             plugins,
             plugin_errors,
-            status: "Prêt".into(),
-            logged_status: "Prêt".into(),
+            status: tr!("ready").into(),
+            logged_status: tr!("ready").into(),
             notes: Vec::new(),
             balloons: Vec::new(),
             pending: None,
@@ -487,6 +551,7 @@ impl Ide {
             reload,
             builtins: builtin::all(),
             left_tool: None,
+            right_tool: None,
             bottom_tool: None,
             focus: None,
             panel_rects: Vec::new(),
@@ -498,12 +563,16 @@ impl Ide {
     }
 
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let mut settings: Settings = cc
-            .storage
-            .and_then(|s| eframe::get_value(s, "settings"))
+        // The file of the data folder; the first time, what eframe kept before it existed.
+        let mut settings: Settings = load_settings(&settings_path())
+            .or_else(|| cc.storage.and_then(|s| eframe::get_value(s, "settings")))
             .unwrap_or_default();
         if settings.font_size < 10.0 {
             settings.font_size = 14.0;
+        }
+        match &settings.language {
+            Some(language) => crate::i18n::set(language),
+            None => crate::i18n::set(crate::i18n::system()),
         }
         let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let mut ide = Self::blank(root, settings, crate::dev::listen(&cc.egui_ctx));
@@ -595,7 +664,7 @@ impl Ide {
         let session: Session = match serde_json::from_slice(&bytes) {
             Ok(session) => session,
             Err(e) => {
-                self.status = format!("Erreur : session de rechargement illisible : {e}");
+                self.status = trf!("error_unreadable_reload_session", e = e);
                 return;
             }
         };
@@ -628,7 +697,7 @@ impl Ide {
                 self.open_tool(tool);
             }
         }
-        self.status = "Rechargé à chaud".into();
+        self.status = tr!("hot_reloaded").into();
     }
 
     /// Rounded panel floating on the window background, as in IntelliJ's Islands theme.
@@ -648,7 +717,7 @@ impl Ide {
         match result {
             Ok(()) => true,
             Err(e) => {
-                self.status = format!("Erreur : {e:#}");
+                self.status = trf!("error_detail", e = format!("{:#}", e));
                 false
             }
         }
@@ -682,8 +751,8 @@ impl Ide {
         }
         self.logged_status = self.status.clone();
         let message = self.status.clone();
-        match message.strip_prefix("Erreur : ") {
-            Some(error) => self.push_note("Erreur", error.to_string(), true, true),
+        match crate::i18n::error_message(&message) {
+            Some(error) => self.push_note(tr!("error"), error.to_string(), true, true),
             None => self.push_note("Atelier IDE", message, false, false),
         }
     }
@@ -714,9 +783,9 @@ impl Ide {
             Ok(doc) => {
                 self.documents.push(doc);
                 self.active = self.documents.len() - 1;
-                self.status = "Fichier ouvert".into();
+                self.status = tr!("file_opened").into();
             }
-            Err(e) => self.status = format!("Erreur : {e:#}"),
+            Err(e) => self.status = trf!("error_detail", e = format!("{:#}", e)),
         }
     }
     /// Once a second, reloads the unmodified documents that another program changed.
@@ -734,7 +803,7 @@ impl Ide {
                 }
             }
             if let Some(error) = errors.first() {
-                self.status = format!("Erreur : rechargement de {error}");
+                self.status = trf!("error_reloading", error = error);
             }
             self.refresh_tree();
         }
@@ -769,7 +838,7 @@ impl Ide {
         let mut failed = Vec::new();
         for (index, doc) in self.documents.iter_mut().enumerate() {
             if let Some(Err(e)) = doc.poll() {
-                failed.push((index, format!("Erreur : {e:#}")));
+                failed.push((index, trf!("error_detail", e = format!("{:#}", e))));
             }
         }
         for (index, message) in failed.into_iter().rev() {
@@ -830,18 +899,21 @@ impl Ide {
         match result {
             Ok(_) => {
                 self.remember(&path);
-                self.status = format!(
-                    "Projet ouvert dans une nouvelle fenêtre : {}",
-                    path.display()
-                );
+                self.status = trf!("project_opened_new_window", path = path.display());
             }
-            Err(e) => self.status = format!("Erreur : nouvelle fenêtre impossible : {e}"),
+            Err(e) => self.status = trf!("error_cannot_open_new_window", e = e),
         }
     }
     fn remember(&mut self, path: &Path) {
         self.settings.recent.retain(|p| p != path);
         self.settings.recent.insert(0, path.to_path_buf());
-        self.settings.recent.truncate(10);
+        self.settings.recent.truncate(MAX_RECENT);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        self.settings.opened.insert(path.to_path_buf(), now);
+        let recent = &self.settings.recent;
+        self.settings.opened.retain(|p, _| recent.contains(p));
     }
     fn switch_project(&mut self, root: PathBuf) {
         self.root = root.canonicalize().unwrap_or(root);
@@ -863,7 +935,7 @@ impl Ide {
         ));
         self.problems = (0, 0);
         self.graph.set_root(&self.root, self.repaint.clone());
-        self.status = format!("Projet : {}", self.root.display());
+        self.status = trf!("project_root", root = self.root.display());
     }
     fn new_document(&mut self) {
         self.documents.push(Document::untitled());
@@ -889,7 +961,7 @@ impl Ide {
             .enumerate()
             .any(|(i, d)| i != index && d.path.as_ref() == Some(&path))
         {
-            self.status = "Ce fichier est déjà ouvert dans un autre onglet".into();
+            self.status = tr!("file_already_open_another_tab").into();
             return false;
         }
         let result = self.documents[index].save(path.clone(), save_as);
@@ -899,7 +971,7 @@ impl Ide {
             }
             self.tree.clear();
             self.graph.file_changed();
-            self.status = "Enregistré".into();
+            self.status = tr!("saved").into();
             true
         } else {
             false
@@ -954,7 +1026,8 @@ impl Ide {
                 })
             }
             Err(e) => {
-                self.terminal_error = format!("Impossible de démarrer {} : {e:#}", shell.name);
+                self.terminal_error =
+                    trf!("cannot_start", name = shell.name, e = format!("{:#}", e));
                 None
             }
         }
@@ -1050,7 +1123,7 @@ impl Ide {
             &self.root,
             crate::plugins::builtins::mcp::address().as_deref(),
         ) {
-            Ok(_) => self.status = format!("{} connecté au MCP d'Atelier", agent.name()),
+            Ok(_) => self.status = trf!("connected_atelier_mcp", agent = agent.name()),
             Err(e) => self.push_note("MCP", e, true, true),
         }
     }
@@ -1127,7 +1200,7 @@ impl Ide {
     }
     fn run_file(&mut self) {
         let Some(doc) = self.documents.get(self.active) else {
-            self.status = "Ouvrez un fichier à exécuter".into();
+            self.status = tr!("open_file_run").into();
             return;
         };
         if (doc.dirty() || doc.path.is_none()) && !self.save_document(self.active, false) {
@@ -1156,9 +1229,7 @@ impl Ide {
                 cmd
             }
             _ => {
-                self.status =
-                    "Erreur : ce type de fichier n'est pas exécutable (pour le CSS, ouvrez la page HTML associée)"
-                        .into();
+                self.status = tr!("error_type_file_cannot_run").into();
                 return;
             }
         };
@@ -1178,9 +1249,7 @@ impl Ide {
                 crate::wsl::quote(&path)
             ),
             _ => {
-                self.status =
-                    "Erreur : ce type de fichier n'est pas exécutable (pour le CSS, ouvrez la page HTML associée)"
-                        .into();
+                self.status = tr!("error_type_file_cannot_run").into();
                 return;
             }
         };
@@ -1314,7 +1383,7 @@ impl Ide {
                 changed += 1;
             }
         }
-        self.status = format!("Renommé, avec {changed} autre(s) fichier(s) modifié(s)");
+        self.status = trf!("renamed_other_file_s_changed", changed = changed);
     }
 
     /// The selection of the active document, for the find bar and the search window.
@@ -1346,14 +1415,8 @@ impl Ide {
                 self.save_all();
             }
             3 => self.set_terminal(!self.show_terminal),
-            4 => {
-                self.show_settings = true;
-                self.settings_page = 0;
-            }
-            5 => {
-                self.show_settings = true;
-                self.settings_page = 3;
-            }
+            4 => self.open_settings(Page::Appearance),
+            5 => self.open_settings(Page::Plugins),
             6 => self.run_file(),
             7 => {
                 self.tree.clear();
@@ -1361,7 +1424,13 @@ impl Ide {
             }
             8 => self.choose_project(true),
             9 => self.show_new_file = true,
-            _ => self.show_notifications = !self.show_notifications,
+            10 => self.show_notifications = !self.show_notifications,
+            11 => self.reformat_code(),
+            12 => self.reformat(FormatRequest {
+                imports_only: true,
+                ..Default::default()
+            }),
+            _ => self.open_projects_page(),
         }
     }
 
@@ -1375,8 +1444,20 @@ impl Ide {
         if pressed(command | Modifiers::SHIFT, Key::S) {
             self.save_document(self.active, true);
         }
+        if pressed(command | Modifiers::ALT | Modifiers::SHIFT, Key::L) {
+            self.open_reformat_dialog();
+        }
+        if pressed(command | Modifiers::ALT, Key::L) {
+            self.reformat_code();
+        }
+        if pressed(command | Modifiers::ALT, Key::O) {
+            self.reformat(FormatRequest {
+                imports_only: true,
+                ..Default::default()
+            });
+        }
         if pressed(command | Modifiers::ALT, Key::S) {
-            self.show_settings = true;
+            self.open_settings(self.settings_page);
         }
         if pressed(command, Key::S) {
             self.save_document(self.active, false);
@@ -1511,10 +1592,10 @@ impl Ide {
                         ui.spacing_mut().item_spacing.x = 4.0;
                         self.window_controls(ui, maximized);
                         ui.add_space(6.0);
-                        if ui::icon_button(ui, "settings", "Paramètres · Ctrl+Alt+S").clicked() {
-                            self.show_settings = true;
+                        if ui::icon_button(ui, "settings", tr!("settings_ctrl_alt_s")).clicked() {
+                            self.open_settings(self.settings_page);
                         }
-                        if ui::icon_button(ui, "search", "Rechercher partout · Double Maj")
+                        if ui::icon_button(ui, "search", tr!("search_everywhere_double_shift"))
                             .clicked()
                         {
                             self.open_palette();
@@ -1526,7 +1607,7 @@ impl Ide {
                         .ui(ui, |ui| {
                             for (index, (label, shortcut, _)) in ACTIONS.iter().enumerate() {
                                 if ui
-                                    .add(egui::Button::new(*label).shortcut_text(*shortcut))
+                                    .add(egui::Button::new(label.get()).shortcut_text(*shortcut))
                                     .clicked()
                                 {
                                     self.perform_action(index);
@@ -1535,10 +1616,9 @@ impl Ide {
                             }
                         });
                         ui.add_enabled_ui(false, |ui| {
-                            ui::icon_button(ui, "debug", "Débogueur : non disponible");
+                            ui::icon_button(ui, "debug", tr!("debugger_not_available"));
                         });
-                        if ui::icon_button(ui, "run", "Exécuter le fichier actif · F5").clicked()
-                        {
+                        if ui::icon_button(ui, "run", tr!("run_current_file_f5")).clicked() {
                             self.run_file();
                         }
                         self.run_widget(ui);
@@ -1557,29 +1637,33 @@ impl Ide {
                     ui.add(egui::Button::new(label).shortcut_text(shortcut))
                         .clicked()
                 };
-                ui.menu_button("Fichier", |ui| {
-                    if item(ui, "Nouveau fichier", "Ctrl+N") {
+                ui.menu_button(tr!("file"), |ui| {
+                    if item(ui, tr!("new_file"), "Ctrl+N") {
                         self.new_document();
                         ui.close();
                     }
-                    if item(ui, "Nouveau fichier dans le projet…", "") {
+                    if item(ui, tr!("new_file_project"), "") {
                         self.show_new_file = true;
                         ui.close();
                     }
                     ui.separator();
-                    if item(ui, "Ouvrir un fichier…", "Ctrl+O") {
+                    if item(ui, tr!("open_file_dialog"), "Ctrl+O") {
                         self.choose_file();
                         ui.close();
                     }
-                    if item(ui, "Ouvrir un projet…", "") {
+                    if item(ui, tr!("open_project_dialog"), "") {
                         self.choose_project(false);
                         ui.close();
                     }
-                    if item(ui, "Ouvrir un projet dans une nouvelle fenêtre…", "") {
+                    if item(ui, tr!("open_project_new_window"), "") {
                         self.choose_project(true);
                         ui.close();
                     }
-                    ui.menu_button("Projets récents", |ui| {
+                    if item(ui, tr!("projects.all"), "") {
+                        self.open_projects_page();
+                        ui.close();
+                    }
+                    ui.menu_button(tr!("recent_projects"), |ui| {
                         for path in self.settings.recent.clone() {
                             if path != self.root && item(ui, &path.display().to_string(), "") {
                                 self.open_project(path);
@@ -1588,61 +1672,78 @@ impl Ide {
                         }
                     });
                     ui.separator();
-                    if item(ui, "Enregistrer", "Ctrl+S") {
+                    if item(ui, tr!("save"), "Ctrl+S") {
                         self.save_document(self.active, false);
                         ui.close();
                     }
-                    if item(ui, "Enregistrer sous…", "Ctrl+Shift+S") {
+                    if item(ui, tr!("save_as_dialog"), "Ctrl+Shift+S") {
                         self.save_document(self.active, true);
                         ui.close();
                     }
-                    if item(ui, "Tout enregistrer", "") {
+                    if item(ui, tr!("save_all"), "") {
                         self.save_all();
                         ui.close();
                     }
                     ui.separator();
-                    if item(ui, "Paramètres…", "Ctrl+Alt+S") {
-                        self.show_settings = true;
+                    if item(ui, tr!("settings_dialog"), "Ctrl+Alt+S") {
+                        self.open_settings(self.settings_page);
                         ui.close();
                     }
                     ui.separator();
-                    if item(ui, "Quitter", "") {
+                    if item(ui, tr!("exit"), "") {
                         ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                         ui.close();
                     }
                 });
-                ui.menu_button("Édition", |ui| {
-                    if item(ui, "Rechercher…", "Ctrl+F") {
+                ui.menu_button(tr!("edit"), |ui| {
+                    if item(ui, tr!("find_dialog"), "Ctrl+F") {
                         let selected = self.selected_text();
                         self.find.show(selected, false);
                         ui.close();
                     }
-                    if item(ui, "Renommer…", "Maj+F6") {
+                    if item(ui, tr!("rename_dialog"), &crate::i18n::shortcut("Shift+F6")) {
                         if let Some(doc) = self.documents.get_mut(self.active) {
                             doc.view.request_rename(&doc.text);
                         }
                         ui.close();
                     }
-                    if item(ui, "Remplacer…", "Ctrl+R") {
+                    if item(ui, tr!("replace_dialog"), "Ctrl+R") {
                         let selected = self.selected_text();
                         self.find.show(selected, true);
                         ui.close();
                     }
-                    if item(ui, "Rechercher partout…", "Double Maj") {
+                    if item(ui, tr!("search_everywhere_dialog"), tr!("double_shift")) {
                         self.open_palette();
                         ui.close();
                     }
                 });
-                ui.menu_button("Affichage", |ui| {
-                    ui.menu_button("Fenêtres d'outils", |ui| {
+                ui.menu_button(tr!("code"), |ui| {
+                    if item(ui, tr!("reformat_code"), "Ctrl+Alt+L") {
+                        self.reformat_code();
+                        ui.close();
+                    }
+                    if item(ui, tr!("reformat_file"), tr!("ctrl_alt_shift_l")) {
+                        self.open_reformat_dialog();
+                        ui.close();
+                    }
+                    if item(ui, tr!("optimize_imports"), "Ctrl+Alt+O") {
+                        self.reformat(FormatRequest {
+                            imports_only: true,
+                            ..Default::default()
+                        });
+                        ui.close();
+                    }
+                });
+                ui.menu_button(tr!("view"), |ui| {
+                    ui.menu_button(tr!("tool_windows"), |ui| {
                         for tool in self.all_tools() {
-                            if item(ui, tool.title, tool.shortcut) {
+                            if item(ui, tool.title.get(), &crate::i18n::shortcut(tool.shortcut)) {
                                 self.open_tool(tool);
                                 ui.close();
                             }
                         }
                     });
-                    ui.menu_button("Thème", |ui| {
+                    ui.menu_button(tr!("theme"), |ui| {
                         for (index, name) in ui::THEMES.iter().enumerate() {
                             if ui.radio(self.settings.theme == index, *name).clicked() {
                                 self.settings.theme = index;
@@ -1652,8 +1753,8 @@ impl Ide {
                         }
                     });
                 });
-                ui.menu_button("Exécuter", |ui| {
-                    if item(ui, "Exécuter le fichier actif", "F5") {
+                ui.menu_button(tr!("run"), |ui| {
+                    if item(ui, tr!("run_current_file"), "F5") {
                         self.run_file();
                         ui.close();
                     }
@@ -1662,7 +1763,7 @@ impl Ide {
                 let menus: Vec<_> = self
                     .builtins
                     .iter()
-                    .filter(|p| self.builtin_enabled(p.id()))
+                    .filter(|p| self.builtin_enabled(p.id()) && p.applies())
                     .map(|p| (p.id(), p.name(), p.commands()))
                     .collect();
                 for (plugin, name, commands) in menus {
@@ -1680,8 +1781,8 @@ impl Ide {
                         }
                     });
                 }
-                ui.menu_button("Fenêtre", |ui| {
-                    if item(ui, "Nouvelle fenêtre de projet…", "") {
+                ui.menu_button(tr!("window"), |ui| {
+                    if item(ui, tr!("new_project_window"), "") {
                         self.choose_project(true);
                         ui.close();
                     }
@@ -1690,13 +1791,12 @@ impl Ide {
                         ui.close();
                     }
                 });
-                ui.menu_button("Aide", |ui| {
-                    if item(ui, "Raccourcis clavier", "") {
-                        self.show_settings = true;
-                        self.settings_page = 2;
+                ui.menu_button(tr!("help"), |ui| {
+                    if item(ui, tr!("keymap"), "") {
+                        self.open_settings(Page::Keymap);
                         ui.close();
                     }
-                    if item(ui, "À propos", "") {
+                    if item(ui, tr!("about"), "") {
                         self.push_note(
                             "Atelier IDE",
                             format!("Version {}", env!("CARGO_PKG_VERSION")),
@@ -1775,8 +1875,15 @@ impl Ide {
         let popup = egui::Popup::menu(&response).id(egui::Id::new("project_menu"));
         popup.show(|ui| {
             ui.set_min_width(300.0);
-            ui::section(ui, "Projets récents");
-            for path in self.settings.recent.clone() {
+            ui::section(ui, tr!("recent_projects"));
+            for path in self
+                .settings
+                .recent
+                .iter()
+                .take(10)
+                .cloned()
+                .collect::<Vec<_>>()
+            {
                 let label = path
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
@@ -1795,26 +1902,30 @@ impl Ide {
                     ui.close();
                 }
                 response.context_menu(|ui| {
-                    if ui.button("Ouvrir dans cette fenêtre").clicked() {
+                    if ui.button(tr!("open_window")).clicked() {
                         self.request(Pending::Project(path.clone()));
                         ui.close();
                     }
-                    if ui.button("Ouvrir dans une nouvelle fenêtre").clicked() {
+                    if ui.button(tr!("open_new_window")).clicked() {
                         self.open_window(path.clone());
                         ui.close();
                     }
-                    if ui.button("Retirer de la liste").clicked() {
+                    if ui.button(tr!("remove_from_list")).clicked() {
                         self.settings.recent.retain(|p| p != &path);
                         ui.close();
                     }
                 });
             }
+            if ui.button(tr!("projects.all")).clicked() {
+                self.open_projects_page();
+                ui.close();
+            }
             ui.separator();
-            if ui.button("Ouvrir un projet…").clicked() {
+            if ui.button(tr!("open_project_dialog")).clicked() {
                 self.choose_project(false);
                 ui.close();
             }
-            if ui.button("Ouvrir dans une nouvelle fenêtre…").clicked() {
+            if ui.button(tr!("open_new_window_dialog")).clicked() {
                 self.choose_project(true);
                 ui.close();
             }
@@ -1826,7 +1937,7 @@ impl Ide {
                 .filter(|(_, c)| c.id == "git.clone")
                 .collect();
             for (plugin, command) in git {
-                if ui.button("Cloner un dépôt Git…").clicked() {
+                if ui.button(tr!("clone_git_repository")).clicked() {
                     self.run_builtin_command(plugin, command.id);
                     ui.close();
                 }
@@ -1838,7 +1949,7 @@ impl Ide {
     fn run_widget(&mut self, ui: &mut egui::Ui) {
         let label = match self.documents.get(self.active) {
             Some(doc) => doc.title(),
-            None => "Fichier actif".into(),
+            None => tr!("current_file").into(),
         };
         let response = ui::icon_text_button(ui, None, &label, true);
         egui::Popup::menu(&response)
@@ -1846,7 +1957,7 @@ impl Ide {
             .show(|ui| {
                 ui.set_min_width(220.0);
                 if ui
-                    .add(egui::Button::new(format!("Exécuter « {label} »")).shortcut_text("F5"))
+                    .add(egui::Button::new(trf!("run_label", label = label)).shortcut_text("F5"))
                     .clicked()
                 {
                     self.run_file();
@@ -1880,18 +1991,18 @@ impl Ide {
                 .paint_at(ui, Rect::from_center_size(rect.center(), vec2(16.0, 16.0)));
             response.on_hover_text(tooltip).clicked()
         };
-        if control(ui, "winClose", true, "Fermer") {
+        if control(ui, "winClose", true, tr!("close")) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         let (icon, tooltip) = if maximized {
-            ("winRestore", "Restaurer")
+            ("winRestore", tr!("restore"))
         } else {
-            ("winMaximize", "Agrandir")
+            ("winMaximize", tr!("maximize"))
         };
         if control(ui, icon, false, tooltip) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
         }
-        if control(ui, "winMinimize", false, "Réduire") {
+        if control(ui, "winMinimize", false, tr!("minimize")) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
         }
     }
@@ -1939,7 +2050,7 @@ impl Ide {
         match tool.id {
             "project" => self.show_project && self.left_tool.is_none(),
             "terminal" => self.show_terminal && self.bottom_tool.is_none(),
-            "notifications" => self.show_notifications,
+            "notifications" => self.show_notifications && self.right_tool.is_none(),
             _ => self.tool_open(tool),
         }
     }
@@ -2020,9 +2131,13 @@ impl Ide {
         };
         image.paint_at(ui, Rect::from_center_size(rect.center(), vec2(20.0, 20.0)));
         let tooltip = if tool.shortcut.is_empty() {
-            tool.title.to_string()
+            tool.title.get().to_string()
         } else {
-            format!("{}  {}", tool.title, tool.shortcut)
+            format!(
+                "{}  {}",
+                tool.title.get(),
+                crate::i18n::shortcut(tool.shortcut)
+            )
         };
         response.on_hover_text(tooltip).clicked()
     }
@@ -2047,7 +2162,7 @@ impl Ide {
         child.label(RichText::new(title).font(ui::semibold(13.0)));
         child.add_space(8.0);
         child.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            hide = ui::icon_button(ui, "hide", "Masquer").clicked();
+            hide = ui::icon_button(ui, "hide", tr!("hide")).clicked();
             extra(self, ui);
         });
         hide
@@ -2078,13 +2193,13 @@ impl Ide {
     /// The menu of the graph button of the project window.
     fn graph_menu(&mut self, ui: &mut egui::Ui) {
         ui::menu_begin(ui);
-        ui::menu_title(ui, "Graphe de contexte");
+        ui::menu_title(ui, tr!("context_graph"));
         let status = self.graph.status();
         if !self.graph.enabled() {
             if ui::menu_item(
                 ui,
                 Some("refresh"),
-                "Générer le graphe de contexte",
+                tr!("generate_context_graph"),
                 None,
                 false,
             )
@@ -2094,18 +2209,20 @@ impl Ide {
                 ui.close();
             }
             ui.label(
-                RichText::new("Les IA lisent ce plan du projet au lieu de ses fichiers.")
+                RichText::new(tr!("ais_read_map_project_instead"))
                     .small()
                     .color(self.theme(ui.ctx()).text_secondary),
             );
             return;
         }
         let state = if status.busy {
-            "Mise à jour…".to_string()
+            tr!("updating").to_string()
         } else {
-            format!(
-                "À jour · {} fichiers · {} éléments · {} groupes",
-                status.files, status.symbols, status.groups
+            trf!(
+                "up_date_files_symbols_groups",
+                files = status.files,
+                symbols = status.symbols,
+                groups = status.groups
             )
         };
         ui.label(
@@ -2116,18 +2233,18 @@ impl Ide {
         if let Some(error) = &status.error {
             ui.colored_label(self.theme(ui.ctx()).error, error);
         }
-        if ui::menu_item(ui, Some("editorPreview"), "Ouvrir le rapport", None, false).clicked() {
+        if ui::menu_item(ui, Some("editorPreview"), tr!("open_report"), None, false).clicked() {
             let report = crate::graph::folder(&self.root).join("GRAPH_REPORT.md");
             if report.exists() {
                 self.open_file(report);
             }
             ui.close();
         }
-        if ui::menu_item(ui, Some("refresh"), "Régénérer", None, false).clicked() {
+        if ui::menu_item(ui, Some("refresh"), tr!("regenerate"), None, false).clicked() {
             self.graph.regenerate();
             ui.close();
         }
-        if ui::menu_item(ui, Some("closeSmall"), "Désactiver", None, false).clicked() {
+        if ui::menu_item(ui, Some("closeSmall"), tr!("disable"), None, false).clicked() {
             self.graph.disable();
             ui.close();
         }
@@ -2140,22 +2257,33 @@ impl Ide {
             return;
         }
         let t = self.theme(ui.ctx());
-        egui::Frame::new().fill(t.hover).corner_radius(8).inner_margin(Margin::same(10)).outer_margin(Margin::symmetric(8, 4)).show(ui, |ui| {
-            ui.label(RichText::new("Générer le graphe de contexte ?").font(ui::semibold(12.5)));
-            ui.label(RichText::new("Un plan du projet, fait sans IA et tenu à jour, que les IA lisent au lieu d'ouvrir tous les fichiers.").small().color(t.text_secondary));
-            ui.add_space(4.0);
-            ui.horizontal_wrapped(|ui| {
-                if ui::primary_button(ui, "Générer").clicked() {
-                    self.graph.enable(self.repaint.clone());
-                }
-                if ui::button(ui, "Plus tard").clicked() {
-                    self.graph.postpone();
-                }
-                if ui::button(ui, "Ne plus proposer").clicked() {
-                    self.graph.decline();
-                }
+        egui::Frame::new()
+            .fill(t.hover)
+            .corner_radius(8)
+            .inner_margin(Margin::same(10))
+            .outer_margin(Margin::symmetric(8, 4))
+            .show(ui, |ui| {
+                ui.label(
+                    RichText::new(tr!("generate_context_graph_question")).font(ui::semibold(12.5)),
+                );
+                ui.label(
+                    RichText::new(tr!("map_project_made_without_ai"))
+                        .small()
+                        .color(t.text_secondary),
+                );
+                ui.add_space(4.0);
+                ui.horizontal_wrapped(|ui| {
+                    if ui::primary_button(ui, tr!("generate")).clicked() {
+                        self.graph.enable(self.repaint.clone());
+                    }
+                    if ui::button(ui, tr!("later")).clicked() {
+                        self.graph.postpone();
+                    }
+                    if ui::button(ui, tr!("don_t_ask_again")).clicked() {
+                        self.graph.decline();
+                    }
+                });
             });
-        });
     }
 
     // ---- Project tool window ------------------------------------------------------------
@@ -2180,24 +2308,24 @@ impl Ide {
             .frame(self.island(ctx))
             .show_separator_line(false)
             .show(ctx, |ui| {
-                let hide = self.tool_header(ui, "Projet", |ide, ui| {
-                    if ui::icon_button(ui, "collapseAll", "Tout replier").clicked() {
+                let hide = self.tool_header(ui, tr!("project"), |ide, ui| {
+                    if ui::icon_button(ui, "collapseAll", tr!("collapse_all")).clicked() {
                         ide.expanded = BTreeSet::from([ide.root.clone()]);
                     }
-                    if ui::icon_button(ui, "refresh", "Actualiser fichiers et plugins").clicked() {
+                    if ui::icon_button(ui, "refresh", tr!("refresh_files_plugins")).clicked() {
                         ide.tree.clear();
                         (ide.plugins, ide.plugin_errors) = plugins::load(&ide.root);
                     }
-                    if ui::icon_button(ui, "add", "Nouveau fichier").clicked() {
+                    if ui::icon_button(ui, "add", tr!("new_file")).clicked() {
                         ide.show_new_file = true;
                     }
                     let graph = ui::icon_button(
                         ui,
                         "graph",
                         if ide.graph.enabled() {
-                            "Graphe de contexte (activé)"
+                            tr!("context_graph_enabled")
                         } else {
-                            "Graphe de contexte"
+                            tr!("context_graph")
                         },
                     );
                     egui::Popup::menu(&graph)
@@ -2250,7 +2378,7 @@ impl Ide {
     }
 
     fn tool_panel(&mut self, ui: &mut egui::Ui, tool: &'static ToolWindow) {
-        if self.tool_header(ui, tool.title, |_, _| {}) {
+        if self.tool_header(ui, tool.title.get(), |_, _| {}) {
             self.toggle_tool(tool);
         }
         egui::Frame::new()
@@ -2285,13 +2413,19 @@ impl Ide {
                 .filter(|p| *p != self.root)
                 .collect();
             if selection.len() > 1 && selection.iter().any(|p| p == path) {
-                ui::menu_title(ui, &format!("{} éléments sélectionnés", selection.len()));
-                if ui::menu_item(ui, Some("delete"), "Supprimer…", Some("Suppr"), true).clicked()
+                ui::menu_title(ui, &trf!("items_selected", count = selection.len()));
+                if ui::menu_item(
+                    ui,
+                    Some("delete"),
+                    tr!("delete_dialog"),
+                    Some(tr!("del")),
+                    true,
+                )
+                .clicked()
                 {
                     self.tree_dialog = Some(TreeDialog::Delete(selection));
                     ui.close();
-                } else if ui::menu_item(ui, Some("copy"), "Copier les chemins", None, false)
-                    .clicked()
+                } else if ui::menu_item(ui, Some("copy"), tr!("copy_paths"), None, false).clicked()
                 {
                     let paths: Vec<_> = selection
                         .iter()
@@ -2303,7 +2437,14 @@ impl Ide {
                 return;
             }
             if !is_dir
-                && ui::menu_item(ui, Some("openNewTab"), "Ouvrir", Some("Entrée"), false).clicked()
+                && ui::menu_item(
+                    ui,
+                    Some("openNewTab"),
+                    tr!("open"),
+                    Some(tr!("enter")),
+                    false,
+                )
+                .clicked()
             {
                 self.open_file(path.to_path_buf());
                 ui.close();
@@ -2320,19 +2461,29 @@ impl Ide {
                     if p.is_empty() { p } else { format!("{p}/") }
                 })
                 .unwrap_or_default();
-            if ui::menu_item(ui, Some("add"), "Nouveau fichier…", Some("Ctrl+N"), false).clicked()
+            if ui::menu_item(
+                ui,
+                Some("add"),
+                tr!("new_file_dialog"),
+                Some("Ctrl+N"),
+                false,
+            )
+            .clicked()
             {
                 self.new_name = prefix.clone();
                 self.show_new_file = true;
                 ui.close();
             }
-            if ui::menu_item(ui, Some("newFolder"), "Nouveau dossier…", None, false).clicked() {
+            if ui::menu_item(ui, Some("newFolder"), tr!("new_folder_dialog"), None, false).clicked()
+            {
                 self.tree_dialog = Some(TreeDialog::NewFolder(prefix));
                 ui.close();
             }
             if !is_root {
                 ui::menu_separator(ui);
-                if ui::menu_item(ui, Some("edit"), "Renommer…", Some("F2"), false).clicked() {
+                if ui::menu_item(ui, Some("edit"), tr!("rename_dialog"), Some("F2"), false)
+                    .clicked()
+                {
                     let name = path
                         .file_name()
                         .unwrap_or_default()
@@ -2344,33 +2495,32 @@ impl Ide {
                     });
                     ui.close();
                 }
-                if ui::menu_item(ui, Some("delete"), "Supprimer…", Some("Suppr"), true).clicked()
+                if ui::menu_item(
+                    ui,
+                    Some("delete"),
+                    tr!("delete_dialog"),
+                    Some(tr!("del")),
+                    true,
+                )
+                .clicked()
                 {
                     self.tree_dialog = Some(TreeDialog::Delete(vec![path.to_path_buf()]));
                     ui.close();
                 }
             }
             ui::menu_separator(ui);
-            if ui::menu_item(ui, Some("copy"), "Copier le chemin", None, false).clicked() {
+            if ui::menu_item(ui, Some("copy"), tr!("copy_path"), None, false).clicked() {
                 ui.ctx()
                     .copy_text(project::simplify(path).display().to_string());
                 ui.close();
             }
-            if ui::menu_item(ui, None, "Copier le chemin relatif", None, false).clicked() {
+            if ui::menu_item(ui, None, tr!("copy_relative_path"), None, false).clicked() {
                 let relative = path.strip_prefix(&self.root).unwrap_or(path);
                 ui.ctx().copy_text(relative.display().to_string());
                 ui.close();
             }
             ui::menu_separator(ui);
-            if ui::menu_item(
-                ui,
-                Some("locate"),
-                "Afficher dans l'explorateur",
-                None,
-                false,
-            )
-            .clicked()
-            {
+            if ui::menu_item(ui, Some("locate"), tr!("show_explorer"), None, false).clicked() {
                 let target = project::simplify(path);
                 #[cfg(windows)]
                 let _ = std::process::Command::new("explorer")
@@ -2383,8 +2533,7 @@ impl Ide {
                 ui.close();
             }
             if is_dir
-                && ui::menu_item(ui, Some("terminal"), "Ouvrir dans le terminal", None, false)
-                    .clicked()
+                && ui::menu_item(ui, Some("terminal"), tr!("open_terminal"), None, false).clicked()
             {
                 let dir = project::simplify(path).display().to_string();
                 let command = if cfg!(windows) {
@@ -2469,7 +2618,7 @@ impl Ide {
             && let Some(pointer) = ctx.pointer_interact_pos()
         {
             let name = if self.tree_drag_set.len() > 1 {
-                format!("{} éléments", self.tree_drag_set.len())
+                trf!("items", count = self.tree_drag_set.len())
             } else {
                 from.file_name()
                     .unwrap_or_default()
@@ -2518,18 +2667,18 @@ impl Ide {
                             moved.push(new);
                         }
                         Err(e) => {
-                            self.status = format!("Erreur : {e:#}");
+                            self.status = trf!("error_detail", e = format!("{:#}", e));
                             break;
                         }
                     }
                 }
                 if let [only] = &moved[..] {
-                    self.status = format!("Déplacé : {}", only.display());
+                    self.status = trf!("moved", only = only.display());
                 } else if moved.len() > 1 {
-                    self.status = format!("{} éléments déplacés", moved.len());
+                    self.status = trf!("items_moved", count = moved.len());
                     self.tree_multi = moved.into_iter().collect();
                 }
-                if self.tree_multi.len() > 1 || !self.status.starts_with("Erreur") {
+                if self.tree_multi.len() > 1 || !crate::i18n::is_error(&self.status) {
                     self.expanded.insert(to);
                 }
             }
@@ -2823,7 +2972,7 @@ impl Ide {
             TreeDialog::NewFolder(mut name) => {
                 let modal = egui::Modal::new(egui::Id::new("new_folder")).show(ctx, |ui| {
                     ui.set_width(420.0);
-                    ui::dialog_title(ui, "Nouveau dossier");
+                    ui::dialog_title(ui, tr!("new_folder"));
                     ui.add(
                         egui::TextEdit::singleline(&mut name)
                             .hint_text("src/module")
@@ -2831,11 +2980,11 @@ impl Ide {
                     )
                     .request_focus();
                     ui.label(
-                        RichText::new("Chemin relatif au projet")
+                        RichText::new(tr!("path_relative_project"))
                             .small()
                             .color(t.text_secondary),
                     );
-                    ui::dialog_buttons(ui, "Créer")
+                    ui::dialog_buttons(ui, tr!("create"))
                 });
                 let (ok, cancel) = modal.inner;
                 if ok {
@@ -2846,7 +2995,7 @@ impl Ide {
                             self.tree.clear();
                         }
                         Err(e) => {
-                            self.status = format!("Erreur : {e:#}");
+                            self.status = trf!("error_detail", e = format!("{:#}", e));
                             keep = Some(TreeDialog::NewFolder(name));
                         }
                     }
@@ -2857,10 +3006,10 @@ impl Ide {
             TreeDialog::Rename { path, mut name } => {
                 let modal = egui::Modal::new(egui::Id::new("rename")).show(ctx, |ui| {
                     ui.set_width(420.0);
-                    ui::dialog_title(ui, "Renommer");
+                    ui::dialog_title(ui, tr!("rename"));
                     ui.add(egui::TextEdit::singleline(&mut name).desired_width(f32::INFINITY))
                         .request_focus();
-                    ui::dialog_buttons(ui, "Renommer")
+                    ui::dialog_buttons(ui, tr!("rename"))
                 });
                 let (ok, cancel) = modal.inner;
                 if ok {
@@ -2870,7 +3019,7 @@ impl Ide {
                             self.reveal(&new);
                         }
                         Err(e) => {
-                            self.status = format!("Erreur : {e:#}");
+                            self.status = trf!("error_detail", e = format!("{:#}", e));
                             keep = Some(TreeDialog::Rename { path, name });
                         }
                     }
@@ -2881,20 +3030,25 @@ impl Ide {
             TreeDialog::Delete(paths) => {
                 let modal = egui::Modal::new(egui::Id::new("delete")).show(ctx, |ui| {
                     ui.set_width(420.0);
-                    ui::dialog_title(ui, "Supprimer");
+                    ui::dialog_title(ui, tr!("delete"));
                     if let [path] = &paths[..] {
-                        let what = if path.is_dir() { "ce dossier et son contenu" } else { "ce fichier" };
-                        ui.label(format!(
-                            "Supprimer « {} » ? Cette action supprime {what} définitivement.",
-                            path.file_name().unwrap_or_default().to_string_lossy()
+                        let what = if path.is_dir() {
+                            tr!("folder_content")
+                        } else {
+                            tr!("this_file")
+                        };
+                        ui.label(trf!(
+                            "delete_permanently_deletes",
+                            path = path.file_name().unwrap_or_default().to_string_lossy(),
+                            what = what
                         ));
                     } else {
-                        ui.label(format!(
-                            "Supprimer ces {} éléments et le contenu des dossiers ? Cette action est définitive.",
-                            paths.len()
+                        ui.label(trf!(
+                            "delete_these_items_content_folders",
+                            count = paths.len()
                         ));
                     }
-                    ui::dialog_buttons(ui, "Supprimer")
+                    ui::dialog_buttons(ui, tr!("delete"))
                 });
                 let (ok, cancel) = modal.inner;
                 if ok {
@@ -2909,7 +3063,7 @@ impl Ide {
                         match project::delete_path(path) {
                             Ok(()) => self.path_deleted(path),
                             Err(e) => {
-                                self.status = format!("Erreur : {e:#}");
+                                self.status = trf!("error_detail", e = format!("{:#}", e));
                                 break;
                             }
                         }
@@ -2924,7 +3078,7 @@ impl Ide {
 
     fn tree_ui(&mut self, ui: &mut egui::Ui, path: &Path, depth: usize) {
         if depth > 16 {
-            ui.weak("Profondeur maximale atteinte");
+            ui.weak(tr!("maximum_depth_reached"));
             return;
         }
         if !self.tree.contains_key(path) {
@@ -2942,10 +3096,7 @@ impl Ide {
                     self.tree.insert(path.into(), entries);
                 }
                 Err(e) => {
-                    ui.colored_label(
-                        self.theme(ui.ctx()).error,
-                        format!("Lecture impossible : {e}"),
-                    );
+                    ui.colored_label(self.theme(ui.ctx()).error, trf!("cannot_read", e = e));
                     return;
                 }
             }
@@ -3092,10 +3243,10 @@ impl Ide {
         let mut split: Option<bool> = None;
         let mut drop: Option<(u64, bool, bool)> = None;
         let hide = self.tool_header(ui, "Terminal", |ide, ui| {
-            if ui::icon_button(ui, "rerun", "Redémarrer le shell").clicked() {
+            if ui::icon_button(ui, "rerun", tr!("restart_shell")).clicked() {
                 restart = true;
             }
-            if ui::icon_button(ui, "stop", "Interrompre (Ctrl+C)").clicked()
+            if ui::icon_button(ui, "stop", tr!("interrupt_ctrl_c")).clicked()
                 && let Some(pane) = ide
                     .terminals
                     .get_mut(ide.active_terminal)
@@ -3104,18 +3255,18 @@ impl Ide {
                 let result = pane.term.write(&[3]);
                 ide.report(result);
             }
-            if ui::icon_button(ui, "unified", "Fractionner vers le bas").clicked() {
+            if ui::icon_button(ui, "unified", tr!("split_down")).clicked() {
                 split = Some(true);
             }
-            if ui::icon_button(ui, "sideBySide", "Fractionner à droite").clicked() {
+            if ui::icon_button(ui, "sideBySide", tr!("split_right")).clicked() {
                 split = Some(false);
             }
-            let plus = ui::icon_button(ui, "add", "Nouveau terminal");
+            let plus = ui::icon_button(ui, "add", tr!("new_terminal"));
             egui::Popup::menu(&plus)
                 .id(egui::Id::new("terminal_shells"))
                 .show(|ui| {
                     ui::menu_begin(ui);
-                    ui::menu_title(ui, "Nouveau terminal");
+                    ui::menu_title(ui, tr!("new_terminal"));
                     let shells = ide.shells.get_or_insert_with(Shell::available);
                     for shell in shells.iter() {
                         if ui::menu_item(ui, Some("terminal"), &shell.name, None, false).clicked() {
@@ -3223,26 +3374,23 @@ impl Ide {
             response.context_menu(|ui| {
                 ui::menu_begin(ui);
                 select = Some(index);
-                if ui::menu_item(ui, Some("sideBySide"), "Fractionner à droite", None, false)
-                    .clicked()
+                if ui::menu_item(ui, Some("sideBySide"), tr!("split_right"), None, false).clicked()
                 {
                     split = Some(false);
                     ui.close();
                 }
-                if ui::menu_item(ui, Some("unified"), "Fractionner vers le bas", None, false)
-                    .clicked()
-                {
+                if ui::menu_item(ui, Some("unified"), tr!("split_down"), None, false).clicked() {
                     split = Some(true);
                     ui.close();
                 }
                 ui::menu_separator(ui);
                 if tab.count() > 1
-                    && ui::menu_item(ui, None, "Fermer le volet", None, false).clicked()
+                    && ui::menu_item(ui, None, tr!("close_pane"), None, false).clicked()
                 {
                     close_pane = true;
                     ui.close();
                 }
-                if ui::menu_item(ui, Some("closeSmall"), "Fermer l'onglet", None, false).clicked() {
+                if ui::menu_item(ui, Some("closeSmall"), tr!("close_tab"), None, false).clicked() {
                     close = Some(index);
                     ui.close();
                 }
@@ -3272,6 +3420,9 @@ impl Ide {
         }
         // AIs started in the panes, to be offered the MCP server once the panes are drawn.
         let mut mcp_offers: Vec<(u64, crate::plugins::builtins::mcp::agents::Agent)> = Vec::new();
+        // Files clicked in the output, opened once the panes are drawn.
+        let mut file_links: Vec<(PathBuf, Option<usize>, Option<usize>)> = Vec::new();
+        let root = self.root.clone();
         let ai_watch = self.builtin_enabled("mcp");
         // The menu of the terminal area (right click): applied once the panes are drawn.
         let mut menu_split: Option<bool> = None;
@@ -3292,10 +3443,7 @@ impl Ide {
                     return;
                 };
                 if tab.count() == 1 && tab.root.leaves().first().is_some_and(|p| p.term.exited) {
-                    ui.colored_label(
-                        t.warning,
-                        "Session terminée · Redémarrer pour ouvrir un nouveau shell",
-                    );
+                    ui.colored_label(t.warning, tr!("session_ended_restart_open_new"));
                 }
                 const GAP: f32 = 6.0;
                 let full = ui.available_rect_before_wrap();
@@ -3365,47 +3513,39 @@ impl Ide {
                         &mut pane.term,
                         &mut pane.selection,
                         &t,
+                        &root,
                     );
                     if let Some(agent) = pane.term.pending_ai.take() {
                         mcp_offers.push((pane.id, agent));
+                    }
+                    if let Some(place) = pane.term.open_file.take() {
+                        file_links.push(place);
                     }
                     if area.secondary_clicked() {
                         focused = Some(pane.id);
                     }
                     area.context_menu(|ui| {
                         ui::menu_begin(ui);
-                        if ui::menu_item(
-                            ui,
-                            Some("sideBySide"),
-                            "Fractionner à droite",
-                            None,
-                            false,
-                        )
-                        .clicked()
+                        if ui::menu_item(ui, Some("sideBySide"), tr!("split_right"), None, false)
+                            .clicked()
                         {
                             menu_split = Some(false);
                             ui.close();
                         }
-                        if ui::menu_item(
-                            ui,
-                            Some("unified"),
-                            "Fractionner vers le bas",
-                            None,
-                            false,
-                        )
-                        .clicked()
+                        if ui::menu_item(ui, Some("unified"), tr!("split_down"), None, false)
+                            .clicked()
                         {
                             menu_split = Some(true);
                             ui.close();
                         }
                         ui::menu_separator(ui);
                         if split_view
-                            && ui::menu_item(ui, None, "Fermer le volet", None, false).clicked()
+                            && ui::menu_item(ui, None, tr!("close_pane"), None, false).clicked()
                         {
                             menu_close_pane = true;
                             ui.close();
                         }
-                        if ui::menu_item(ui, Some("closeSmall"), "Fermer l'onglet", None, false)
+                        if ui::menu_item(ui, Some("closeSmall"), tr!("close_tab"), None, false)
                             .clicked()
                         {
                             menu_close_tab = true;
@@ -3508,6 +3648,10 @@ impl Ide {
             });
         for (pane, agent) in mcp_offers {
             self.offer_mcp(pane, agent);
+        }
+        for (path, line, column) in file_links {
+            let (line, column) = (line.unwrap_or(1).max(1) - 1, column.unwrap_or(1).max(1) - 1);
+            builtin::Host::open_at(self, path, line, column, 0);
         }
         if let Some(stacked) = menu_split {
             self.split_terminal(stacked);
@@ -3693,6 +3837,16 @@ impl Ide {
     }
 
     fn right_panel(&mut self, ctx: &egui::Context) {
+        if let Some(tool) = self.right_tool {
+            let response = egui::SidePanel::right("tool_right")
+                .default_width(340.0)
+                .width_range(220.0..=760.0)
+                .frame(self.island(ctx))
+                .show_separator_line(false)
+                .show(ctx, |ui| self.tool_panel(ui, tool));
+            self.panel_focus(Some(tool.id), response.response.rect);
+            return;
+        }
         if !self.show_notifications {
             return;
         }
@@ -3703,7 +3857,7 @@ impl Ide {
             .show_separator_line(false)
             .show(ctx, |ui| {
                 let hide = self.tool_header(ui, "Notifications", |ide, ui| {
-                    if ui::icon_button(ui, "delete", "Tout effacer").clicked() {
+                    if ui::icon_button(ui, "delete", tr!("clear_all")).clicked() {
                         ide.notes.clear();
                         ide.balloons.clear();
                     }
@@ -3719,7 +3873,7 @@ impl Ide {
                             ui.add_space(30.0);
                             ui.vertical_centered(|ui| {
                                 ui.label(
-                                    RichText::new("Aucune notification").color(t.text_secondary),
+                                    RichText::new(tr!("no_notifications")).color(t.text_secondary),
                                 );
                             });
                         }
@@ -3787,7 +3941,8 @@ impl Ide {
                                 ui.with_layout(
                                     egui::Layout::right_to_left(egui::Align::Center),
                                     |ui| {
-                                        if ui::icon_button(ui, "closeSmall", "Fermer").clicked() {
+                                        if ui::icon_button(ui, "closeSmall", tr!("close")).clicked()
+                                        {
                                             close = Some(index);
                                         }
                                     },
@@ -3795,7 +3950,7 @@ impl Ide {
                             });
                             let text: String = note.text.chars().take(600).collect();
                             ui.label(text);
-                            if note.error && ui.link("Afficher les notifications").clicked() {
+                            if note.error && ui.link(tr!("show_notifications")).clicked() {
                                 open_log = true;
                             }
                         });
@@ -3891,16 +4046,20 @@ impl Ide {
                                         ui.horizontal(|ui| {
                                             ui.spacing_mut().item_spacing.x = 0.0;
                                             for (choice, icon, tooltip) in [
-                                                (EditorLayout::Text, "editorOnly", "Éditeur seul"),
+                                                (
+                                                    EditorLayout::Text,
+                                                    "editorOnly",
+                                                    tr!("editor_only"),
+                                                ),
                                                 (
                                                     EditorLayout::Split,
                                                     "editorPreview",
-                                                    "Éditeur et aperçu",
+                                                    tr!("editor_preview"),
                                                 ),
                                                 (
                                                     EditorLayout::Preview,
                                                     "previewOnly",
-                                                    "Aperçu seul",
+                                                    tr!("preview_only"),
                                                 ),
                                             ] {
                                                 if ui::icon_toggle(
@@ -3998,7 +4157,7 @@ impl Ide {
                 let annotations = gutter.annotations.as_deref();
                 let assist = self
                     .languages
-                    .handles(&doc.language)
+                    .formats(&doc.language)
                     .then(|| crate::editor::Assist {
                         service: &self.languages,
                         doc: crate::languages::DocRef {
@@ -4029,6 +4188,9 @@ impl Ide {
                     navigate = Some((target, doc.path.clone(), doc.view.cursor));
                 }
                 file_edits = output.file_edits;
+                if let Some(message) = output.message {
+                    self.status = message;
+                }
                 if output.command.is_some() {
                     gutter_command = output.command;
                 }
@@ -4079,7 +4241,7 @@ impl Ide {
                                 if new != doc.text {
                                     let count = self.find.matches().len();
                                     doc.view.replace_text(&mut doc.text, &new);
-                                    self.status = format!("{count} remplacement(s)");
+                                    self.status = trf!("replacement_s", count = count);
                                 }
                             }
                         }
@@ -4125,18 +4287,18 @@ impl Ide {
         );
         child.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
-            let more = ui::icon_button(ui, "moreVertical", "Options des onglets");
+            let more = ui::icon_button(ui, "moreVertical", tr!("tab_options"));
             egui::Popup::menu(&more)
                 .id(egui::Id::new("tabs_more"))
                 .show(|ui| {
                     ui::menu_begin(ui);
-                    if ui::menu_item(ui, Some("closeSmall"), "Fermer l'onglet", None, false)
+                    if ui::menu_item(ui, Some("closeSmall"), tr!("close_tab"), None, false)
                         .clicked()
                     {
                         close = Some(self.active);
                         ui.close();
                     }
-                    if ui::menu_item(ui, None, "Fermer les autres onglets", None, false).clicked() {
+                    if ui::menu_item(ui, None, tr!("close_other_tabs"), None, false).clicked() {
                         // Modified documents stay open, like the active one.
                         let keep = self.active;
                         // The active tab moves left by the number of closed tabs before it.
@@ -4149,13 +4311,13 @@ impl Ide {
                         });
                         ui.close();
                     }
-                    if ui::menu_item(ui, None, "Tout fermer", None, false).clicked() {
+                    if ui::menu_item(ui, None, tr!("close_all"), None, false).clicked() {
                         self.documents.retain(Document::dirty);
                         self.active = 0;
                         ui.close();
                     }
                 });
-            let list = ui::icon_button(ui, "chevronDown", "Onglets ouverts");
+            let list = ui::icon_button(ui, "chevronDown", tr!("open_tabs"));
             egui::Popup::menu(&list)
                 .id(egui::Id::new("tabs_list"))
                 .show(|ui| {
@@ -4247,7 +4409,7 @@ impl Ide {
                             } else if response.clicked() {
                                 select = Some(i);
                             }
-                            let tooltip = doc.path.as_deref().map_or("Sans titre".into(), |p| {
+                            let tooltip = doc.path.as_deref().map_or(tr!("untitled").into(), |p| {
                                 project::simplify(p).display().to_string()
                             });
                             let has_path = doc.path.is_some();
@@ -4256,7 +4418,7 @@ impl Ide {
                                 if ui::menu_item(
                                     ui,
                                     Some("closeSmall"),
-                                    "Fermer",
+                                    tr!("close"),
                                     Some("Ctrl+W"),
                                     false,
                                 )
@@ -4265,25 +4427,20 @@ impl Ide {
                                     close = Some(i);
                                     ui.close();
                                 }
-                                if ui::menu_item(ui, None, "Fermer les autres", None, false)
+                                if ui::menu_item(ui, None, tr!("close_others"), None, false)
                                     .clicked()
                                 {
                                     action = Some(TabAction::CloseOthers(i));
                                     ui.close();
                                 }
-                                if ui::menu_item(
-                                    ui,
-                                    None,
-                                    "Fermer les onglets à droite",
-                                    None,
-                                    false,
-                                )
-                                .clicked()
+                                if ui::menu_item(ui, None, tr!("close_tabs_right"), None, false)
+                                    .clicked()
                                 {
                                     action = Some(TabAction::CloseRight(i));
                                     ui.close();
                                 }
-                                if ui::menu_item(ui, None, "Tout fermer", None, false).clicked() {
+                                if ui::menu_item(ui, None, tr!("close_all"), None, false).clicked()
+                                {
                                     action = Some(TabAction::CloseAll);
                                     ui.close();
                                 }
@@ -4292,7 +4449,7 @@ impl Ide {
                                     if ui::menu_item(
                                         ui,
                                         Some("copy"),
-                                        "Copier le chemin",
+                                        tr!("copy_path"),
                                         None,
                                         false,
                                     )
@@ -4304,7 +4461,7 @@ impl Ide {
                                     if ui::menu_item(
                                         ui,
                                         Some("project"),
-                                        "Afficher dans le projet",
+                                        tr!("show_project"),
                                         None,
                                         false,
                                     )
@@ -4316,7 +4473,7 @@ impl Ide {
                                     if ui::menu_item(
                                         ui,
                                         Some("locate"),
-                                        "Afficher dans l'explorateur",
+                                        tr!("show_explorer"),
                                         None,
                                         false,
                                     )
@@ -4441,10 +4598,10 @@ impl Ide {
         let t = self.theme(ui.ctx());
         let rect = ui.max_rect();
         let lines = [
-            ("Rechercher partout", "Double Maj"),
-            ("Aller au fichier", "Ctrl+Maj+N"),
-            ("Ouvrir un fichier", "Ctrl+O"),
-            ("Nouveau fichier", "Ctrl+N"),
+            (tr!("search_everywhere"), tr!("double_shift")),
+            (tr!("go_file"), tr!("ctrl_shift_n")),
+            (tr!("open_file"), "Ctrl+O"),
+            (tr!("new_file"), "Ctrl+N"),
             ("Terminal", "Ctrl+`"),
             ("Commit", "Ctrl+K"),
         ];
@@ -4469,7 +4626,7 @@ impl Ide {
         ui.painter().text(
             pos2(rect.center().x, top + lines.len() as f32 * 30.0 + 16.0),
             Align2::CENTER_CENTER,
-            "Déposez des fichiers ici pour les ouvrir",
+            tr!("drop_files_here_open_them"),
             FontId::proportional(13.5),
             t.text_secondary,
         );
@@ -4539,12 +4696,12 @@ impl Ide {
                         ui.spacing_mut().item_spacing.x = 2.0;
                         // Memory and processor use of the IDE, in the corner.
                         if let Some(summary) = crate::stats::summary() {
-                            ui::status_text_fixed(ui, &summary, "RAM 9999 Mo · CPU 99,9 %")
-                                .on_hover_text(format!(
-                                    "Mémoire (RAM) et processeur utilisés par Atelier
-{} · {:.1} % de la capacité totale du processeur",
-                                    crate::stats::format_memory(crate::stats::memory_bytes()),
-                                    crate::stats::cpu_percent()
+                            ui::status_text_fixed(ui, &summary, tr!("ram_9999_mb_cpu_99"))
+                                .on_hover_text(trf!(
+                                    "memory_ram_processor_used_by",
+                                    memory_bytes =
+                                        crate::stats::format_memory(crate::stats::memory_bytes()),
+                                    cpu_percent = format!("{:.1}", crate::stats::cpu_percent())
                                 ));
                             ui.add_space(8.0);
                             ctx.request_repaint_after(Duration::from_secs(1));
@@ -4580,21 +4737,23 @@ impl Ide {
                         if self.graph.enabled() {
                             let state = self.graph.status();
                             let text = if state.updated == 0 {
-                                "Graphe de contexte en préparation".to_string()
+                                tr!("context_graph_being_prepared").to_string()
                             } else {
-                                format!(
-                                    "Graphe de contexte : {} fichiers · {} éléments · {} groupes",
-                                    state.files, state.symbols, state.groups
+                                trf!(
+                                    "context_graph_files_symbols_groups",
+                                    files = state.files,
+                                    symbols = state.symbols,
+                                    groups = state.groups
                                 )
                             };
-                            ui::status_text(ui, "Graphe").on_hover_text(text);
+                            ui::status_text(ui, tr!("graph")).on_hover_text(text);
                         }
                         self.each_builtin(|plugin, ide| plugin.status_bar(ui, ide));
                         if let Some(doc) = self.documents.get(self.active) {
                             // Sampled: a full scan on every frame freezes big files.
                             let sample = doc.text.lines().take(2000).collect::<Vec<_>>().join("\n");
                             let indent = if sample.contains("\n\t") {
-                                "Tabulation".to_string()
+                                tr!("tab").to_string()
                             } else {
                                 let width = sample
                                     .lines()
@@ -4604,7 +4763,7 @@ impl Ide {
                                     })
                                     .min()
                                     .unwrap_or(4);
-                                format!("{width} espaces")
+                                trf!("spaces", width = width)
                             };
                             ui::status_text(ui, &indent);
                             ui::status_text(ui, "UTF-8");
@@ -4621,15 +4780,17 @@ impl Ide {
                             if errors + warnings > 0 {
                                 let mut parts = Vec::new();
                                 if errors > 0 {
-                                    parts.push(format!(
-                                        "{errors} erreur{}",
-                                        if errors > 1 { "s" } else { "" }
+                                    parts.push(trf!(
+                                        "errors_count",
+                                        errors = errors,
+                                        plural = if errors > 1 { "s" } else { "" }
                                     ));
                                 }
                                 if warnings > 0 {
-                                    parts.push(format!(
-                                        "{warnings} avertissement{}",
-                                        if warnings > 1 { "s" } else { "" }
+                                    parts.push(trf!(
+                                        "warning",
+                                        warnings = warnings,
+                                        plural = if warnings > 1 { "s" } else { "" }
                                     ));
                                 }
                                 ui.add_space(10.0);
@@ -4646,7 +4807,7 @@ impl Ide {
                                         )
                                         .sense(Sense::click()),
                                     )
-                                    .on_hover_text("Afficher les problèmes · Alt+6")
+                                    .on_hover_text(tr!("show_problems_alt_6"))
                                     .on_hover_cursor(egui::CursorIcon::PointingHand);
                                 if label.clicked() {
                                     open_problems = true;
@@ -4669,11 +4830,13 @@ impl Ide {
 
     fn dialogs(&mut self, ctx: &egui::Context) {
         self.settings_dialog(ctx);
+        self.projects_dialog(ctx);
+        self.reformat_dialog(ctx);
         self.tree_dialogs(ctx);
         if self.show_new_file {
             let modal = egui::Modal::new(egui::Id::new("new_file")).show(ctx, |ui| {
                 ui.set_width(420.0);
-                ui::dialog_title(ui, "Nouveau fichier");
+                ui::dialog_title(ui, tr!("new_file"));
                 let field = ui.add(
                     egui::TextEdit::singleline(&mut self.new_name)
                         .hint_text("src/main.rs")
@@ -4681,11 +4844,11 @@ impl Ide {
                 );
                 field.request_focus();
                 ui.label(
-                    RichText::new("Chemin relatif au projet · les dossiers manquants seront créés")
+                    RichText::new(tr!("path_relative_project_missing_folders"))
                         .small()
                         .color(self.theme(ui.ctx()).text_secondary),
                 );
-                ui::dialog_buttons(ui, "Créer")
+                ui::dialog_buttons(ui, tr!("create"))
             });
             let (ok, cancel) = modal.inner;
             if ok {
@@ -4707,7 +4870,7 @@ impl Ide {
                         self.show_new_file = false;
                         self.new_name.clear();
                     }
-                    Err(e) => self.status = format!("Erreur : {e:#}"),
+                    Err(e) => self.status = trf!("error_detail", e = format!("{:#}", e)),
                 }
             } else if cancel || modal.should_close() {
                 self.show_new_file = false;
@@ -4718,33 +4881,31 @@ impl Ide {
         if let Some((pane, agent)) = self.mcp_offer {
             let modal = egui::Modal::new(egui::Id::new("mcp_offer")).show(ctx, |ui| {
                 ui.set_width(500.0);
-                ui::dialog_title(ui, &format!("Connecter {} à Atelier ?", agent.name()));
-                ui.label(format!(
-                    "Atelier peut donner à {} l'accès à ses outils : fichiers ouverts, éditeur actif, problèmes du code, \
-                     recherche dans le projet, ouverture d'un fichier à une ligne.",
-                    agent.name()
-                ));
+                ui::dialog_title(ui, &trf!("connect_atelier", agent = agent.name()));
+                ui.label(trf!("atelier_can_give_access_tools", agent = agent.name()));
                 ui.add_space(6.0);
                 ui.label(
                     RichText::new(match agent {
                         crate::plugins::builtins::mcp::agents::Agent::Codex => {
-                            "La connexion s'écrit dans .codex/config.toml du projet (sans secret). Codex doit faire confiance au projet."
+                            tr!("connection_written_codex_config_toml")
                         }
-                        _ => "La connexion s'écrit dans les fichiers de configuration du projet, sans y mettre de secret.",
+                        _ => tr!("connection_written_configuration_files_project"),
                     })
-                        .small()
-                        .color(self.theme(ui.ctx()).text_secondary),
+                    .small()
+                    .color(self.theme(ui.ctx()).text_secondary),
                 );
                 ui.add_space(12.0);
                 let mut choice = None;
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui::primary_button(ui, "Connecter").clicked() {
+                    if ui::primary_button(ui, tr!("connect")).clicked() {
                         choice = Some(1);
                     }
-                    if ui::button(ui, "Pas maintenant").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    if ui::button(ui, tr!("not_now")).clicked()
+                        || ui.input(|i| i.key_pressed(egui::Key::Escape))
+                    {
                         choice = Some(0);
                     }
-                    if ui::button(ui, "Ne plus proposer").clicked() {
+                    if ui::button(ui, tr!("don_t_ask_again")).clicked() {
                         choice = Some(2);
                     }
                 });
@@ -4770,23 +4931,23 @@ impl Ide {
         if let Some(path) = self.project_choice.clone() {
             let modal = egui::Modal::new(egui::Id::new("project_choice")).show(ctx, |ui| {
                 ui.set_width(460.0);
-                ui::dialog_title(ui, "Ouvrir le projet");
-                ui.label(format!(
-                    "Ouvrir « {} » dans cette fenêtre ou dans une nouvelle fenêtre ?",
-                    path.file_name().unwrap_or_default().to_string_lossy()
+                ui::dialog_title(ui, tr!("open_project"));
+                ui.label(trf!(
+                    "open_window_new_window",
+                    path = path.file_name().unwrap_or_default().to_string_lossy()
                 ));
                 ui.add_space(12.0);
                 let mut choice = None;
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui::button(ui, "Annuler").clicked()
+                    if ui::button(ui, tr!("cancel")).clicked()
                         || ui.input(|i| i.key_pressed(egui::Key::Escape))
                     {
                         choice = Some(0);
                     }
-                    if ui::button(ui, "Cette fenêtre").clicked() {
+                    if ui::button(ui, tr!("this_window")).clicked() {
                         choice = Some(1);
                     }
-                    if ui::primary_button(ui, "Nouvelle fenêtre").clicked() {
+                    if ui::primary_button(ui, tr!("new_window")).clicked() {
                         choice = Some(2);
                     }
                 });
@@ -4809,8 +4970,8 @@ impl Ide {
         if let Some(action) = self.pending.clone() {
             egui::Modal::new(egui::Id::new("unsaved")).show(ctx, |ui| {
                 ui.set_width(460.0);
-                ui::dialog_title(ui, "Modifications non enregistrées");
-                ui.label("Enregistrer les fichiers modifiés avant de continuer ?");
+                ui::dialog_title(ui, tr!("unsaved_changes"));
+                ui.label(tr!("save_modified_files_before_continuing"));
                 ui.add_space(4.0);
                 for (i, doc) in self.documents.iter().enumerate() {
                     if doc.dirty() && (!matches!(action, Pending::Close(index) if index != i)) {
@@ -4828,16 +4989,16 @@ impl Ide {
                 }
                 ui.add_space(12.0);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui::button(ui, "Annuler").clicked()
+                    if ui::button(ui, tr!("cancel")).clicked()
                         || ui.input(|i| i.key_pressed(egui::Key::Escape))
                     {
                         self.pending = None;
                     }
-                    if ui::button(ui, "Ne pas enregistrer").clicked() {
+                    if ui::button(ui, tr!("don_t_save")).clicked() {
                         self.pending = None;
                         self.perform(action.clone());
                     }
-                    if ui::primary_button(ui, "Enregistrer").clicked() {
+                    if ui::primary_button(ui, tr!("save")).clicked() {
                         let saved = match action {
                             Pending::Close(i) => self.save_document(i, false),
                             _ => self.save_all(),
@@ -4849,88 +5010,6 @@ impl Ide {
                     }
                 });
             });
-        }
-    }
-
-    fn settings_dialog(&mut self, ctx: &egui::Context) {
-        if !self.show_settings {
-            return;
-        }
-        let t = self.theme(ctx);
-        let mut close = false;
-        let mut command = None;
-        let modal = egui::Modal::new(egui::Id::new("settings")).show(ctx, |ui| {
-            ui.set_width(920.0);
-            ui.set_height(640.0);
-            ui::dialog_title(ui, "Paramètres");
-            ui.horizontal_top(|ui| {
-                ui.vertical(|ui| {
-                    ui.set_width(180.0);
-                    for (index, page) in ["Apparence", "Éditeur", "Raccourcis clavier", "Plugins"].iter().enumerate() {
-                        let (rect, response) = ui::row(ui, self.settings_page == index);
-                        ui::paint_text(ui, rect, rect.left() + 14.0, page, t.text, FontId::proportional(13.0));
-                        if response.clicked() {
-                            self.settings_page = index;
-                        }
-                    }
-                });
-                ui.separator();
-                ui.vertical(|ui| {
-                    ui.set_width(700.0);
-                    ui.set_min_height(550.0);
-                    egui::ScrollArea::vertical().max_height(550.0).show(ui, |ui| match self.settings_page {
-                        0 => {
-                            ui::section(ui, "Thème");
-                            for (index, name) in ui::THEMES.iter().enumerate() {
-                                if ui::radio_value(ui, &mut self.settings.theme, index, name).changed() {
-                                    self.apply_theme(ctx);
-                                }
-                            }
-                        }
-                        1 => {
-                            ui::section(ui, "Police de l'éditeur");
-                            ui.label("JetBrains Mono");
-                            if ui
-                                .add(
-                                    egui::Slider::new(&mut self.settings.font_size, 8.0..=36.0)
-                                        .max_decimals(0)
-                                        .text("Taille"),
-                                )
-                                .changed()
-                            {
-                                self.apply_theme(ctx);
-                            }
-                            let mut wheel_zoom = !self.settings.wheel_zoom_off;
-                            if ui::checkbox(ui, &mut wheel_zoom, "Changer la taille de la police avec Ctrl + molette").changed() {
-                                self.settings.wheel_zoom_off = !wheel_zoom;
-                            }
-                            ui.add_space(10.0);
-                            ui::section(ui, "Outils d'exécution");
-                            ui.label("Les commandes cargo, python, java, node et tsx doivent être installées et dans le PATH.");
-                        }
-                        2 => {
-                            egui::Grid::new("shortcut_list").num_columns(2).spacing([24.0, 8.0]).show(ui, |ui| {
-                                for (key, action) in SHORTCUTS {
-                                    ui.label(action);
-                                    ui.label(RichText::new(key).color(t.text_secondary));
-                                    ui.end_row();
-                                }
-                            });
-                        }
-                        _ => self.plugins_page(ui, t, &mut command),
-                    });
-                });
-            });
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                close |= ui::primary_button(ui, "Fermer").clicked();
-            });
-        });
-        if close || modal.should_close() {
-            self.show_settings = false;
-        }
-        if let Some(cmd) = command {
-            self.show_settings = false;
-            self.execute(&cmd);
         }
     }
 
@@ -5011,7 +5090,7 @@ impl Ide {
             if doc.title().to_lowercase().contains(&query) {
                 hits.push(Hit {
                     label: doc.title(),
-                    hint: "Onglet ouvert".into(),
+                    hint: tr!("open_tab").into(),
                     icon: None,
                     file: Some(doc.path.clone().unwrap_or_default()),
                     target: Target::Tab(i),
@@ -5019,9 +5098,9 @@ impl Ide {
             }
         }
         for (i, (label, shortcut, icon)) in ACTIONS.iter().enumerate() {
-            if label.to_lowercase().contains(&query) {
+            if label.get().to_lowercase().contains(&query) {
                 hits.push(Hit {
-                    label: label.to_string(),
+                    label: label.get().to_string(),
                     hint: shortcut.to_string(),
                     icon: Some(*icon),
                     file: None,
@@ -5030,7 +5109,7 @@ impl Ide {
             }
         }
         for plugin in &self.builtins {
-            if !self.builtin_enabled(plugin.id()) {
+            if !self.builtin_enabled(plugin.id()) || !plugin.applies() {
                 continue;
             }
             for command in plugin.commands() {
@@ -5133,13 +5212,13 @@ impl Ide {
                                 ui.horizontal(|ui| {
                                     let (title, subtitle) = match self.palette_mode {
                                         PaletteMode::Everywhere => {
-                                            ("Rechercher partout", "Fichiers, actions, onglets")
+                                            (tr!("search_everywhere"), tr!("files_actions_tabs"))
                                         }
                                         PaletteMode::Recent => {
-                                            ("Fichiers récents", "Dans l'ordre d'utilisation")
+                                            (tr!("recent_files"), tr!("order_use"))
                                         }
                                         PaletteMode::Line => {
-                                            ("Aller à la ligne", "ligne ou ligne:colonne")
+                                            (tr!("go_line"), tr!("line_line_column"))
                                         }
                                     };
                                     ui.label(RichText::new(title).font(ui::semibold(13.0)));
@@ -5152,9 +5231,9 @@ impl Ide {
                                     ui,
                                     &mut self.palette_query,
                                     if self.palette_mode == PaletteMode::Line {
-                                        "Numéro de ligne…"
+                                        tr!("line_number")
                                     } else {
-                                        "Tapez pour rechercher…"
+                                        tr!("type_search")
                                     },
                                     width - 28.0,
                                 );
@@ -5174,7 +5253,8 @@ impl Ide {
                                     ui.add_space(12.0);
                                     ui.vertical_centered(|ui| {
                                         ui.label(
-                                            RichText::new("Aucun résultat").color(t.text_secondary),
+                                            RichText::new(tr!("no_results"))
+                                                .color(t.text_secondary),
                                         );
                                     });
                                     ui.add_space(12.0);
@@ -5288,6 +5368,9 @@ impl Ide {
         if owned(self.left_tool) {
             self.left_tool = None;
         }
+        if owned(self.right_tool) {
+            self.right_tool = None;
+        }
         if owned(self.bottom_tool) {
             self.bottom_tool = None;
         }
@@ -5308,16 +5391,33 @@ impl Ide {
     fn tool_windows(&self) -> Vec<&'static ToolWindow> {
         self.builtins
             .iter()
-            .filter(|p| self.builtin_enabled(p.id()))
+            .filter(|p| self.builtin_enabled(p.id()) && p.applies())
             .flat_map(|p| p.tool_windows())
             .collect()
+    }
+
+    /// Closes the tool windows of plugins that no longer apply (another project was opened).
+    fn close_missing_tools(&mut self) {
+        let tools = self.tool_windows();
+        let gone = |tool: Option<&'static ToolWindow>| {
+            tool.is_some_and(|t| !tools.iter().any(|w| w.id == t.id))
+        };
+        if gone(self.left_tool) {
+            self.left_tool = None;
+        }
+        if gone(self.right_tool) {
+            self.right_tool = None;
+        }
+        if gone(self.bottom_tool) {
+            self.bottom_tool = None;
+        }
     }
 
     fn tool_open(&self, tool: &ToolWindow) -> bool {
         let open = match tool.dock {
             Dock::Left => self.left_tool,
             Dock::Bottom => self.bottom_tool,
-            Dock::Right => None,
+            Dock::Right => self.right_tool,
         };
         open.is_some_and(|t| t.id == tool.id)
     }
@@ -5329,6 +5429,7 @@ impl Ide {
                 "terminal" => self.show_terminal = false,
                 "notifications" => self.show_notifications = false,
                 _ if tool.dock == Dock::Left => self.left_tool = None,
+                _ if tool.dock == Dock::Right => self.right_tool = None,
                 _ => self.bottom_tool = None,
             }
         } else {
@@ -5343,13 +5444,19 @@ impl Ide {
                 self.left_tool = None;
             }
             ("terminal", _) => self.set_terminal(true),
-            ("notifications", _) => self.show_notifications = true,
+            ("notifications", _) => {
+                self.show_notifications = true;
+                self.right_tool = None;
+            }
             (_, Dock::Left) => self.left_tool = Some(tool),
             (_, Dock::Bottom) => {
                 self.bottom_tool = Some(tool);
                 self.show_terminal = false;
             }
-            (_, Dock::Right) => {}
+            (_, Dock::Right) => {
+                self.right_tool = Some(tool);
+                self.show_notifications = false;
+            }
         }
         self.focus = Some(tool.id);
     }
@@ -5634,7 +5741,7 @@ impl Host for Ide {
             }
         }
         if let Some(error) = errors.first() {
-            self.status = format!("Erreur : rechargement de {error}");
+            self.status = trf!("error_reloading", error = error);
         }
         self.tree.clear();
         self.project_files = None;
@@ -5664,8 +5771,8 @@ impl Ide {
                 .ok()
                 .and_then(|p| p.parse().ok())
         {
-            self.show_settings = true;
-            self.settings_page = page;
+            let page: usize = page;
+            self.open_settings(Page::TREE[page.min(Page::TREE.len() - 1)].0);
         }
         if pass == 5
             && let Some(file) = std::env::var_os("ATELIER_SHOT_OPEN")
@@ -5687,6 +5794,15 @@ impl Ide {
             }
             if std::env::var_os("ATELIER_SHOT_PROBLEMS").is_some() {
                 self.open_tool(&crate::features::problems::TOOL_WINDOWS[0]);
+            }
+            if std::env::var_os("ATELIER_SHOT_PROJECTS").is_some() {
+                self.open_projects_page();
+            }
+            // Any tool window, by its id.
+            if let Ok(id) = std::env::var("ATELIER_SHOT_TOOL")
+                && let Some(tool) = self.all_tools().into_iter().find(|t| t.id == id)
+            {
+                self.open_tool(tool);
             }
             if let Ok(query) = std::env::var("ATELIER_SHOT_FIND") {
                 self.find.show(
@@ -5833,6 +5949,7 @@ impl eframe::App for Ide {
             && self.project_choice.is_none()
             && !self.show_palette
             && !self.show_settings
+            && !self.show_projects
             && !self.terminals.get(self.active_terminal).is_some_and(|tab| {
                 tab.root.leaves().iter().any(|p| p.term.focused) && self.show_terminal
             })
@@ -5857,11 +5974,11 @@ impl eframe::App for Ide {
                     break;
                 };
                 tab.root.remove(&|p: &Pane| p.id == id);
-                if let Some(first) = tab.root.leaves_mut().into_iter().next() {
-                    if tab.active == id {
-                        first.term.want_focus = true;
-                        tab.active = first.id;
-                    }
+                if let Some(first) = tab.root.leaves_mut().into_iter().next()
+                    && tab.active == id
+                {
+                    first.term.want_focus = true;
+                    tab.active = first.id;
                 }
             }
         }
@@ -5876,6 +5993,7 @@ impl eframe::App for Ide {
         self.track_focus(ctx);
         self.dropped_files(ctx);
         Self::resize_edges(ctx);
+        self.close_missing_tools();
         self.toolbar(ctx);
         self.status_bar(ctx);
         self.stripe(ctx, Dock::Left);
@@ -5893,660 +6011,18 @@ impl eframe::App for Ide {
             .frame
             .to_normalized_gamma_f32()
     }
-    fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        eframe::set_value(storage, "settings", &self.settings);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn ide() -> Ide {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .canonicalize()
-            .unwrap();
-        Ide::blank(
-            root,
-            Settings {
-                font_size: 14.0,
-                ..Default::default()
-            },
-            None,
-        )
-    }
-
-    fn frame_with(ctx: &egui::Context, ide: &mut Ide, time: f64, events: Vec<egui::Event>) {
-        frame_mod(ctx, ide, time, events, Default::default());
-    }
-
-    fn frame_mod(
-        ctx: &egui::Context,
-        ide: &mut Ide,
-        time: f64,
-        events: Vec<egui::Event>,
-        modifiers: egui::Modifiers,
-    ) {
-        let _ = ctx.run(
-            egui::RawInput {
-                modifiers,
-                screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, vec2(1440.0, 920.0))),
-                time: Some(time),
-                events,
-                ..Default::default()
-            },
-            |ctx| {
-                ide.track_focus(ctx);
-                ide.left_panel(ctx);
-                ide.editor(ctx);
-                ide.dialogs(ctx);
-            },
-        );
-    }
-
-    #[test]
-    fn ctrl_and_shift_select_several_entries_in_the_tree() {
-        use egui::{Event, Modifiers, PointerButton};
-        let base = std::env::temp_dir().join(format!("atelier-multi-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&base);
-        fs::create_dir_all(base.join("dest")).unwrap();
-        for name in ["a.txt", "b.txt", "c.txt", "d.txt"] {
-            fs::write(base.join(name), "x").unwrap();
-        }
-        let base = base.canonicalize().unwrap();
-        let ctx = egui::Context::default();
-        ui::install(&ctx, ui::theme_by_index(0), 14.0);
-        let mut ide = Ide::blank(
-            base.clone(),
-            Settings {
-                font_size: 14.0,
-                ..Default::default()
-            },
-            None,
-        );
-        ide.show_project = true;
-        let mut time = 0.0;
-        let mut step = |ide: &mut Ide, events: Vec<Event>, modifiers: Modifiers| {
-            time += 0.05;
-            frame_mod(&ctx, ide, time, events, modifiers);
-        };
-        step(&mut ide, vec![], Modifiers::NONE);
-        step(&mut ide, vec![], Modifiers::NONE);
-        let click = |ide: &mut Ide,
-                     name: &str,
-                     modifiers: Modifiers,
-                     step: &mut dyn FnMut(&mut Ide, Vec<Event>, Modifiers)| {
-            let at = ide
-                .row_rects
-                .iter()
-                .rev()
-                .find(|(p, _)| p.ends_with(name))
-                .unwrap()
-                .1
-                .center();
-            let button = |pressed| Event::PointerButton {
-                pos: at,
-                button: PointerButton::Primary,
-                pressed,
-                modifiers,
-            };
-            step(ide, vec![Event::PointerMoved(at)], modifiers);
-            step(ide, vec![button(true)], modifiers);
-            step(ide, vec![button(false)], modifiers);
-            step(ide, vec![], modifiers);
-        };
-        click(&mut ide, "a.txt", Modifiers::NONE, &mut step);
-        click(&mut ide, "c.txt", Modifiers::CTRL, &mut step);
-        click(&mut ide, "d.txt", Modifiers::CTRL, &mut step);
-        let want: BTreeSet<_> = ["a.txt", "c.txt", "d.txt"]
-            .iter()
-            .map(|n| base.join(n))
-            .collect();
-        assert_eq!(ide.tree_multi, want);
-        // Ctrl on a selected row takes it out of the selection.
-        click(&mut ide, "c.txt", Modifiers::CTRL, &mut step);
-        assert!(!ide.tree_multi.contains(&base.join("c.txt")) && ide.tree_multi.len() == 2);
-        // Shift selects the rows between the anchor and the click.
-        click(&mut ide, "b.txt", Modifiers::NONE, &mut step);
-        assert!(ide.tree_multi.is_empty());
-        click(&mut ide, "d.txt", Modifiers::SHIFT, &mut step);
-        let want: BTreeSet<_> = ["b.txt", "c.txt", "d.txt"]
-            .iter()
-            .map(|n| base.join(n))
-            .collect();
-        assert_eq!(ide.tree_multi, want);
-        assert_eq!(ide.tree_selection().len(), 3);
-        // Several documents are not opened by these clicks.
-        assert!(
-            ide.documents
-                .iter()
-                .all(|d| d.path.as_deref() != Some(&base.join("c.txt")))
-        );
-        // Dragging one of them onto the folder moves them all.
-        let from = ide
-            .row_rects
-            .iter()
-            .rev()
-            .find(|(p, _)| p.ends_with("c.txt"))
-            .unwrap()
-            .1
-            .center();
-        let to = ide
-            .row_rects
-            .iter()
-            .rev()
-            .find(|(p, _)| p.ends_with("dest"))
-            .unwrap()
-            .1
-            .center();
-        let button = |pos, pressed| Event::PointerButton {
-            pos,
-            button: PointerButton::Primary,
-            pressed,
-            modifiers: Modifiers::NONE,
-        };
-        step(&mut ide, vec![Event::PointerMoved(from)], Modifiers::NONE);
-        step(&mut ide, vec![button(from, true)], Modifiers::NONE);
-        for i in 1..=6 {
-            let pos = from + (to - from) * (i as f32 / 6.0);
-            step(&mut ide, vec![Event::PointerMoved(pos)], Modifiers::NONE);
-        }
-        step(&mut ide, vec![button(to, false)], Modifiers::NONE);
-        step(&mut ide, vec![], Modifiers::NONE);
-        for name in ["b.txt", "c.txt", "d.txt"] {
-            assert!(base.join("dest").join(name).exists(), "{name} moved");
-            assert!(!base.join(name).exists());
-        }
-        assert!(base.join("a.txt").exists());
-        fs::remove_dir_all(&base).unwrap();
-    }
-
-    #[test]
-    fn the_tree_follows_changes_made_outside() {
-        let base = std::env::temp_dir().join(format!("atelier-refresh-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&base);
-        fs::create_dir_all(base.join("sub")).unwrap();
-        fs::write(base.join("a.txt"), "x").unwrap();
-        let base = base.canonicalize().unwrap();
-        let ctx = egui::Context::default();
-        ui::install(&ctx, ui::theme_by_index(0), 14.0);
-        let mut ide = Ide::blank(
-            base.clone(),
-            Settings {
-                font_size: 14.0,
-                ..Default::default()
-            },
-            None,
-        );
-        ide.show_project = true;
-        ide.expanded.insert(base.join("sub"));
-        let mut time = 0.0;
-        let mut step = |ide: &mut Ide| {
-            time += 0.05;
-            frame_with(&ctx, ide, time, vec![]);
-        };
-        step(&mut ide);
-        step(&mut ide);
-        let names = |ide: &Ide, dir: &Path| -> Vec<String> {
-            ide.tree[dir]
-                .iter()
-                .map(|(p, _)| p.file_name().unwrap().to_string_lossy().into_owned())
-                .collect()
-        };
-        assert_eq!(names(&ide, &base), ["sub", "a.txt"]);
-        std::thread::sleep(Duration::from_millis(30));
-        fs::write(base.join("new.txt"), "x").unwrap();
-        fs::write(base.join("sub/inner.txt"), "x").unwrap();
-        fs::remove_file(base.join("a.txt")).unwrap();
-        ide.last_watch = Instant::now() - Duration::from_secs(2);
-        ide.watch_files(&ctx);
-        step(&mut ide);
-        step(&mut ide);
-        assert_eq!(names(&ide, &base), ["sub", "new.txt"]);
-        assert_eq!(names(&ide, &base.join("sub")), ["inner.txt"]);
-        fs::remove_dir_all(&base).unwrap();
-    }
-
-    #[test]
-    fn arrow_keys_move_the_selection_in_the_tree() {
-        use egui::{Event, PointerButton};
-        let base = std::env::temp_dir().join(format!("atelier-keys-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&base);
-        fs::create_dir_all(base.join("dest")).unwrap();
-        fs::write(base.join("a.txt"), "x").unwrap();
-        fs::write(base.join("b.txt"), "x").unwrap();
-        let base = base.canonicalize().unwrap();
-        let ctx = egui::Context::default();
-        ui::install(&ctx, ui::theme_by_index(0), 14.0);
-        let mut ide = Ide::blank(
-            base.clone(),
-            Settings {
-                font_size: 14.0,
-                ..Default::default()
-            },
-            None,
-        );
-        ide.show_project = true;
-        let mut time = 0.0;
-        let mut step = |ide: &mut Ide, events: Vec<Event>| {
-            time += 0.05;
-            frame_with(&ctx, ide, time, events);
-        };
-        step(&mut ide, vec![]);
-        step(&mut ide, vec![]);
-        let at = ide
-            .row_rects
-            .iter()
-            .rev()
-            .find(|(p, _)| p.ends_with("dest"))
-            .unwrap()
-            .1
-            .center();
-        let button = |pressed| Event::PointerButton {
-            pos: at,
-            button: PointerButton::Primary,
-            pressed,
-            modifiers: Default::default(),
-        };
-        step(&mut ide, vec![Event::PointerMoved(at)]);
-        step(&mut ide, vec![button(true)]);
-        step(&mut ide, vec![button(false)]);
-        step(&mut ide, vec![]);
-        assert_eq!(ide.tree_selected, Some(base.join("dest")));
-        let key = |key| Event::Key {
-            key,
-            physical_key: Some(key),
-            pressed: true,
-            repeat: false,
-            modifiers: Default::default(),
-        };
-        step(&mut ide, vec![key(egui::Key::ArrowDown)]);
-        assert_eq!(
-            ide.tree_selected,
-            Some(base.join("a.txt")),
-            "focus: {:?}",
-            ide.focus
-        );
-        step(&mut ide, vec![key(egui::Key::ArrowDown)]);
-        assert_eq!(ide.tree_selected, Some(base.join("b.txt")));
-        step(&mut ide, vec![key(egui::Key::ArrowUp)]);
-        assert_eq!(ide.tree_selected, Some(base.join("a.txt")));
-        fs::remove_dir_all(&base).unwrap();
-    }
-
-    #[test]
-    fn dragging_a_file_onto_a_folder_moves_it() {
-        use egui::{Event, PointerButton};
-        let base = std::env::temp_dir().join(format!("atelier-dnd-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&base);
-        fs::create_dir_all(base.join("dest")).unwrap();
-        fs::write(base.join("a.txt"), "x").unwrap();
-        let base = base.canonicalize().unwrap();
-        let ctx = egui::Context::default();
-        ui::install(&ctx, ui::theme_by_index(0), 14.0);
-        let mut ide = Ide::blank(
-            base.clone(),
-            Settings {
-                font_size: 14.0,
-                ..Default::default()
-            },
-            None,
-        );
-        ide.show_project = true;
-        let mut time = 0.0;
-        let mut step = |ide: &mut Ide, events: Vec<Event>| {
-            time += 0.05;
-            frame_with(&ctx, ide, time, events);
-        };
-        step(&mut ide, vec![]);
-        step(&mut ide, vec![]);
-        let center = |ide: &Ide, name: &str| {
-            ide.row_rects
-                .iter()
-                .rev()
-                .find(|(p, _)| p.file_name().is_some_and(|n| n == name))
-                .unwrap()
-                .1
-                .center()
-        };
-        let (from, to) = (center(&ide, "a.txt"), center(&ide, "dest"));
-        let button = |pos, pressed| Event::PointerButton {
-            pos,
-            button: PointerButton::Primary,
-            pressed,
-            modifiers: Default::default(),
-        };
-        step(&mut ide, vec![Event::PointerMoved(from)]);
-        step(&mut ide, vec![button(from, true)]);
-        for i in 1..=8 {
-            let at = from + (to - from) * (i as f32 / 8.0);
-            step(&mut ide, vec![Event::PointerMoved(at)]);
-        }
-        assert!(ide.tree_drag.is_some(), "the drag started");
-        assert_eq!(
-            ide.tree_drop.as_deref(),
-            Some(base.join("dest").as_path()),
-            "the folder is the target"
-        );
-        step(&mut ide, vec![button(to, false)]);
-        step(&mut ide, vec![]);
-        assert!(base.join("dest/a.txt").exists(), "{}", ide.status);
-        assert!(!base.join("a.txt").exists());
-        fs::remove_dir_all(&base).unwrap();
-    }
-
-    fn frame(ctx: &egui::Context, ide: &mut Ide) {
-        let output = ctx.run(
-            egui::RawInput {
-                screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, vec2(1440.0, 920.0))),
-                ..Default::default()
-            },
-            |ctx| {
-                ide.each_builtin(|plugin, ide| plugin.update(ctx, ide));
-                ide.toolbar(ctx);
-                ide.status_bar(ctx);
-                ide.stripe(ctx, Dock::Left);
-                ide.stripe(ctx, Dock::Right);
-                ide.left_panel(ctx);
-                ide.right_panel(ctx);
-                ide.bottom_panel(ctx);
-                ide.editor(ctx);
-                ide.dialogs(ctx);
-                ide.log_status();
-                ide.balloons(ctx);
-            },
-        );
-        assert!(
-            !ctx.tessellate(output.shapes, output.pixels_per_point)
-                .is_empty()
-        );
-    }
-
-    #[test]
-    fn dirty_documents_block_close_project_switch_and_exit() {
-        let mut ide = ide();
-        let mut doc = Document::untitled();
-        doc.text = "unsaved".into();
-        ide.documents.push(doc);
-        ide.request(Pending::Close(0));
-        assert!(matches!(ide.pending, Some(Pending::Close(0))));
-        assert_eq!(ide.documents.len(), 1);
-        let original = ide.root.clone();
-        ide.request(Pending::Project(original.join("examples/demo")));
-        assert!(matches!(ide.pending, Some(Pending::Project(_))));
-        assert_eq!(ide.root, original);
-        ide.request(Pending::Quit);
-        assert!(matches!(ide.pending, Some(Pending::Quit)));
-        assert!(!ide.can_quit);
-    }
-
-    #[test]
-    fn opening_another_project_asks_for_the_window() {
-        let mut ide = ide();
-        let demo = ide.root.join("examples/demo");
-        ide.open_project(demo.clone());
-        assert_eq!(ide.project_choice, Some(demo.canonicalize().unwrap()));
-        let original = ide.root.clone();
-        ide.open_project(original);
-        assert_eq!(
-            ide.project_choice.as_ref().map(|p| p.ends_with("demo")),
-            Some(true)
-        );
-    }
-
-    #[test]
-    fn dev_reload_keeps_project_tabs_and_unsaved_text() {
-        let mut ide = ide();
-        ide.open_file(ide.root.join("examples/demo/hello.py"));
-        ide.open_file(ide.root.join("examples/demo/app.js"));
-        ide.wait_loaded();
-        ide.documents[0].text.push_str("# pas encore enregistré\n");
-        ide.documents.push(Document::untitled());
-        ide.documents[2].text = "brouillon".into();
-        ide.active = 1;
-        ide.show_terminal = true;
-        let path =
-            std::env::temp_dir().join(format!("atelier-session-{}.json", std::process::id()));
-        ide.save_session(&path).unwrap();
-
-        let mut restored = super::tests::ide();
-        restored.root = std::env::temp_dir();
-        restored.restore_session(&path);
-        assert_eq!(restored.root, ide.root);
-        assert_eq!(restored.documents.len(), 3);
-        assert!(restored.documents[0].dirty());
-        assert!(
-            restored.documents[0]
-                .text
-                .ends_with("# pas encore enregistré\n")
-        );
-        assert!(!restored.documents[1].dirty());
-        assert_eq!(restored.documents[2].text, "brouillon");
-        assert_eq!(restored.active, 1);
-        assert!(restored.show_terminal);
-        assert!(!path.exists(), "the session file is consumed on restore");
-
-        // Built-in tool windows survive the reload too.
-        let commit = restored.tool_windows()[0];
-        restored.open_tool(commit);
-        restored.save_session(&path).unwrap();
-        let mut again = super::tests::ide();
-        again.restore_session(&path);
-        assert!(again.tool_visible(commit));
-    }
-
-    #[test]
-    fn dropped_tabs_split_the_pane_on_the_side_they_land() {
-        let r = Rect::from_min_size(pos2(0.0, 0.0), vec2(100.0, 100.0));
-        assert_eq!(drop_zone(r, pos2(10.0, 50.0)).0, false);
-        assert!(drop_zone(r, pos2(10.0, 50.0)).1, "left of the pane");
-        assert!(!drop_zone(r, pos2(90.0, 50.0)).1, "right of the pane");
-        let (stacked, before, zone) = drop_zone(r, pos2(50.0, 20.0));
-        assert!(stacked && before, "top half");
-        assert_eq!(zone.height(), 50.0);
-        assert!(!drop_zone(r, pos2(50.0, 80.0)).1, "bottom half");
-    }
-
-    #[test]
-    fn opening_the_same_file_reuses_its_tab() {
-        let mut ide = ide();
-        let path = ide.root.join("examples/demo/src/main.rs");
-        ide.open_file(path.clone());
-        ide.open_file(path);
-        ide.wait_loaded();
-        assert_eq!(ide.documents.len(), 1);
-        assert_eq!(ide.documents[0].language, "rs");
-        ide.request(Pending::Close(0));
-        assert!(ide.documents.is_empty());
-        assert_eq!(ide.active, 0);
-    }
-
-    #[test]
-    fn errors_become_balloons_and_notes() {
-        let mut ide = ide();
-        ide.status = "Erreur : disque plein".into();
-        ide.log_status();
-        assert_eq!(ide.notes.len(), 1);
-        assert!(ide.notes[0].error);
-        assert_eq!(ide.balloons, [0]);
-        ide.status = "Enregistré".into();
-        ide.log_status();
-        assert_eq!(ide.notes.len(), 2);
-        assert_eq!(
-            ide.balloons,
-            [0],
-            "plain status messages only go to the log"
-        );
-    }
-
-    #[test]
-    fn search_everywhere_finds_project_files() {
-        let mut ide = ide();
-        ide.open_palette();
-        ide.palette_query = "cargo.tom".into();
-        let hits = ide.palette_hits();
-        assert!(
-            hits.iter()
-                .any(|h| matches!(&h.target, Target::File(p) if p.ends_with("Cargo.toml")))
-        );
-    }
-
-    #[test]
-    fn initials_follow_intellij() {
-        assert_eq!(initials("integration-rfe"), "IR");
-        assert_eq!(initials("rust"), "RU");
-    }
-
-    #[test]
-    fn all_languages_and_themes_render_without_panicking() {
-        let mut ide = ide();
-        let ctx = egui::Context::default();
-        for file in [
-            "index.html",
-            "style.css",
-            "app.js",
-            "hello.ts",
-            "Main.java",
-            "hello.py",
-            "src/main.rs",
-        ] {
-            ide.open_file(ide.root.join("examples/demo").join(file));
-            ide.wait_loaded();
-        }
-        assert_eq!(ide.documents.len(), 7);
-        ide.show_terminal = false;
-        ide.show_notifications = true;
-        for theme in 0..ui::THEMES.len() {
-            ide.settings.theme = theme;
-            ide.apply_theme(&ctx);
-            for active in 0..7 {
-                ide.active = active;
-                frame(&ctx, &mut ide);
-            }
-        }
-        ide.show_settings = true;
-        for page in 0..4 {
-            ide.settings_page = page;
-            frame(&ctx, &mut ide);
-        }
-        ide.show_settings = false;
-        ide.open_palette();
-        ide.palette_query = "main".into();
-        frame(&ctx, &mut ide);
-    }
-
-    /// Drives the frames of a real session on this repository with the Git tool windows open.
-    #[test]
-    fn git_plugin_windows_render_on_this_repository() {
-        let mut ide = ide();
-        ide.open_file(ide.root.join("src/main.rs"));
-        ide.wait_loaded();
-        let ctx = egui::Context::default();
-        ide.apply_theme(&ctx);
-        let tools = ide.tool_windows();
-        assert_eq!(
-            tools.len(),
-            6,
-            "Commit, Git, Kubernetes, Search, Problems and AI sessions tool windows"
-        );
-        for tool in tools {
-            ide.open_tool(tool);
-        }
-        frame(&ctx, &mut ide);
-        ide.run_builtin_command("git", "git.annotate");
-        // Status, log and blame load in the background.
-        for _ in 0..100 {
-            frame(&ctx, &mut ide);
-            if ide.gutter().annotations.is_some_and(|a| a != "Chargement…") {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(50));
-        }
-        let annotations = ide.gutter().annotations.unwrap();
-        assert_eq!(
-            annotations.lines().count(),
-            ide.documents[0].text.lines().count(),
-            "one blame annotation per line"
-        );
-        for command in [
-            "git.file_diff",
-            "git.push",
-            "git.branch",
-            "git.stash",
-            "git.remotes",
-        ] {
-            ide.run_builtin_command("git", command);
-            frame(&ctx, &mut ide);
+    /// eframe calls it every 30 seconds and on exit; the window's own state stays with eframe.
+    fn save(&mut self, _storage: &mut dyn eframe::Storage) {
+        if let Err(e) = save_settings(&settings_path(), &self.settings) {
+            eprintln!("settings: {e:#}");
         }
     }
 }
 
 #[cfg(test)]
-mod perf_probe {
-    use super::*;
-    #[test]
-    #[ignore]
-    fn probe_big_file() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .canonicalize()
-            .unwrap();
-        let mut ide = Ide::blank(
-            root,
-            Settings {
-                font_size: 14.0,
-                ..Default::default()
-            },
-            None,
-        );
-        let ctx = egui::Context::default();
-        ide.apply_theme(&ctx);
-        let lines: usize = std::env::var("LINES")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(40_000);
-        let text: String = (0..lines)
-            .map(|i| format!("    let value_{i} = compute(\"chaine {i}\", {i}); // commentaire\n"))
-            .collect();
-        let path =
-            std::env::temp_dir().join(std::env::var("NAME").unwrap_or("atelier-big.rs".into()));
-        fs::write(&path, &text).unwrap();
-        println!("taille {} Ko, {} lignes", text.len() / 1024, lines);
-        ide.open_file(path);
-        ide.wait_loaded();
-        for i in 0..4 {
-            let t0 = Instant::now();
-            let output = ctx.run(
-                egui::RawInput {
-                    screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, vec2(1440.0, 920.0))),
-                    ..Default::default()
-                },
-                |ctx| {
-                    let t = Instant::now();
-                    ide.status_bar(ctx);
-                    let a = t.elapsed();
-                    let t = Instant::now();
-                    ide.left_panel(ctx);
-                    let b = t.elapsed();
-                    let t = Instant::now();
-                    ide.editor(ctx);
-                    let c = t.elapsed();
-                    println!("  frame {i}: status {a:?} tree {b:?} editor {c:?}");
-                },
-            );
-            let t = Instant::now();
-            let prims = ctx.tessellate(output.shapes, output.pixels_per_point);
-            let verts: usize = prims
-                .iter()
-                .map(|p| match &p.primitive {
-                    egui::epaint::Primitive::Mesh(m) => m.vertices.len(),
-                    _ => 0,
-                })
-                .sum();
-            println!(
-                "  frame {i}: total run {:?}, tessellate {:?}, vertices {verts}",
-                t0.elapsed() - t.elapsed(),
-                t.elapsed()
-            );
-        }
-    }
-}
+#[path = "../test/app/tests.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "../test/app/perf_probe.rs"]
+mod perf_probe;

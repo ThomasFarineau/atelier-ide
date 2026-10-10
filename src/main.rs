@@ -1,4 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// First: its `tr!` and `trf!` macros are used by every module after it.
+#[macro_use]
+mod i18n;
 mod app;
 mod atelier;
 mod cli;
@@ -18,11 +21,13 @@ mod stats;
 mod tasks;
 mod terminal;
 mod terminal_layout;
+mod terminal_links;
 mod terminal_ui;
 mod ui;
 mod wsl;
 
 fn main() -> eframe::Result {
+    i18n::set(i18n::system());
     if std::env::args_os().any(|a| a == dev::FLAG) {
         if let Err(e) = dev::supervise() {
             eprintln!("[dev] {e:#}");

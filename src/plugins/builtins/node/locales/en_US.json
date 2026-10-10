@@ -1,0 +1,20 @@
+{
+  "node.command_install": "Node.js: Install Dependencies",
+  "node.command_scripts": "Node.js: npm Scripts",
+  "node.description": "The package.json files of the project and their scripts, with their package manager (npm, pnpm, Yarn or Bun, from the packageManager field or the lockfile): run a script, install or update the dependencies, see the outdated packages.",
+  "node.install_dependencies": "Install Dependencies",
+  "node.jump_to_source": "Jump to Source",
+  "node.modules_missing": "The dependencies of {package} are not installed: run '{manager} install' from the npm window.",
+  "node.no_package": "No package.json in this project",
+  "node.no_scripts": "No scripts",
+  "node.node_not_found": "Node.js not found",
+  "node.not_installed": "not installed",
+  "node.open_package_json": "Open package.json",
+  "node.outdated": "Show Outdated Packages",
+  "node.refresh": "Refresh",
+  "node.run_script": "Run '{script}'",
+  "node.run_selected": "Run the Selected Script",
+  "node.scanning": "Looking for package.json files…",
+  "node.title": "npm",
+  "node.update_dependencies": "Update Dependencies"
+}

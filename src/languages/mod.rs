@@ -5,8 +5,12 @@
 //! (analysis done in Rust) or later (a language server answering in the background), through
 //! a [`Oneshot`] the editor polls.
 
+pub mod format;
+pub mod java;
 pub mod javascript;
 pub mod lsp;
+pub mod rust;
+pub mod syntax;
 pub mod typescript;
 
 use std::{
@@ -30,7 +34,7 @@ pub struct Diagnostic {
     pub range: Range<usize>,
     pub severity: Severity,
     pub message: String,
-    /// Where it comes from: "syntaxe", "tsserver"…
+    /// Where it comes from: "syntaxe", "tsserver", "rust-analyzer"…
     pub source: String,
 }
 
@@ -285,9 +289,7 @@ pub trait Provider: Send {
         _offset: usize,
         _new_name: &str,
     ) -> Oneshot<Result<Vec<FileEdit>, String>> {
-        Oneshot::ready(Err(
-            "Renommer n'est pas pris en charge pour ce langage".into()
-        ))
+        Oneshot::ready(Err(tr!("rename_not_supported_language").into()))
     }
     /// The actions offered at `offset`.
     fn quick_fixes(
@@ -297,6 +299,19 @@ pub trait Provider: Send {
         _offset: usize,
     ) -> Oneshot<Vec<QuickFix>> {
         Oneshot::ready(Vec::new())
+    }
+    /// The edits that reformat the document (Reformat Code, Ctrl+Alt+L).
+    fn format(&mut self, _doc: &DocRef, _text: &str) -> Oneshot<Result<Vec<TextEdit>, String>> {
+        Oneshot::ready(Err(tr!("no_formatter_language").into()))
+    }
+    /// The edits that sort the imports and remove the unused ones (Optimize Imports). None
+    /// when the language cannot.
+    fn organize_imports(
+        &mut self,
+        _doc: &DocRef,
+        _text: &str,
+    ) -> Oneshot<Result<Vec<TextEdit>, String>> {
+        Oneshot::ready(Ok(Vec::new()))
     }
     /// The detail and documentation of an item that came without them.
     fn resolve(
@@ -338,7 +353,9 @@ impl Service {
     /// The service with the providers of the supported languages, for a project folder.
     pub fn new(root: &Path, repaint: Arc<dyn Fn() + Send + Sync>) -> Self {
         let service = Self::default();
-        service.add(Box::new(javascript::JavaScript::new(root, repaint)));
+        service.add(Box::new(javascript::JavaScript::new(root, repaint.clone())));
+        service.add(Box::new(rust::provider(root, repaint.clone())));
+        service.add(Box::new(java::provider(root, repaint)));
         service
     }
 
@@ -463,11 +480,7 @@ impl Service {
         new_name: &str,
     ) -> Oneshot<Result<Vec<FileEdit>, String>> {
         self.with(&doc.language, |p, _| p.rename(doc, text, offset, new_name))
-            .unwrap_or_else(|| {
-                Oneshot::ready(Err(
-                    "Renommer n'est pas pris en charge pour ce langage".into()
-                ))
-            })
+            .unwrap_or_else(|| Oneshot::ready(Err(tr!("rename_not_supported_language").into())))
     }
 
     pub fn quick_fixes(&self, doc: &DocRef, text: &str, offset: usize) -> Oneshot<Vec<QuickFix>> {
@@ -485,6 +498,31 @@ impl Service {
             .unwrap_or_else(|| Oneshot::ready(Vec::new()))
     }
 
+    /// Whether Reformat Code works for a language: with its provider, or by the IDE itself.
+    pub fn formats(&self, language: &str) -> bool {
+        self.handles(language) || language == "json"
+    }
+
+    /// The edits that reformat the document: its provider's, else the IDE's own for JSON.
+    pub fn format(&self, doc: &DocRef, text: &str) -> Oneshot<Result<Vec<TextEdit>, String>> {
+        if let Some(answer) = self.with(&doc.language, |p, _| p.format(doc, text)) {
+            return answer;
+        }
+        Oneshot::ready(match doc.language.as_str() {
+            "json" => format::json(text).map(|new| format::edits_between(text, &new)),
+            _ => Err(tr!("no_formatter_language").into()),
+        })
+    }
+
+    pub fn organize_imports(
+        &self,
+        doc: &DocRef,
+        text: &str,
+    ) -> Oneshot<Result<Vec<TextEdit>, String>> {
+        self.with(&doc.language, |p, _| p.organize_imports(doc, text))
+            .unwrap_or_else(|| Oneshot::ready(Ok(Vec::new())))
+    }
+
     pub fn resolve(&self, doc: &DocRef, item: &CompletionItem) -> Oneshot<Option<CompletionItem>> {
         self.with(&doc.language, |p, _| p.resolve(doc, item))
             .unwrap_or_else(|| Oneshot::ready(None))
@@ -498,6 +536,7 @@ impl Service {
 /// Fuzzy match of `query` in `label`, case-insensitive: all the characters of the query in
 /// order, preferring the start of the label and of the words (camelCase, snake_case). None
 /// when it does not match; a higher score is a better match.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn fuzzy_score(query: &str, label: &str) -> Option<i32> {
     fuzzy_match(query, label).map(|(score, _)| score)
 }
@@ -544,28 +583,5 @@ pub fn fuzzy_match(query: &str, label: &str) -> Option<(i32, Vec<usize>)> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fuzzy_matching_prefers_prefixes_and_word_starts() {
-        let score = |q, l| fuzzy_score(q, l);
-        assert!(score("con", "console").unwrap() > score("con", "decon").unwrap_or(i32::MIN));
-        assert!(score("gEBI", "getElementById").is_some());
-        assert!(score("gebi", "getElementById").is_some());
-        assert!(score("xyz", "console").is_none());
-        assert!(score("log", "console.log").is_some());
-        assert_eq!(score("", "anything"), Some(0));
-        assert!(score("fe", "forEach").unwrap() > score("fe", "buffer").unwrap());
-    }
-
-    #[test]
-    fn oneshot_is_read_once() {
-        let slot = Oneshot::pending();
-        assert!(slot.take().is_none());
-        slot.clone().fulfill(3);
-        assert_eq!(slot.take(), Some(3));
-        assert_eq!(slot.take(), None);
-        assert_eq!(Oneshot::ready("x").take(), Some("x"));
-    }
-}
+#[path = "../../test/languages/mod/tests.rs"]
+mod tests;

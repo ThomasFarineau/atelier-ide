@@ -117,10 +117,10 @@ impl Find {
             } else {
                 "chevronRight"
             };
-            if ui::icon_toggle(ui, chevron, self.show_replace, "Remplacer · Ctrl+R").clicked() {
+            if ui::icon_toggle(ui, chevron, self.show_replace, tr!("replace_ctrl_r")).clicked() {
                 self.show_replace = !self.show_replace;
             }
-            let field = ui::search_field(ui, &mut self.query, "Rechercher", 280.0);
+            let field = ui::search_field(ui, &mut self.query, tr!("find"), 280.0);
             if self.focus {
                 field.request_focus();
                 self.focus = false;
@@ -138,23 +138,17 @@ impl Find {
             let alt = |key| ui.input(|i| i.modifiers.alt && i.key_pressed(key));
             let (case, word, regex) = (alt(Key::C), alt(Key::W), alt(Key::X));
             self.options.case ^=
-                toggle(ui, t, "Aa", self.options.case, "Respecter la casse · Alt+C") | case;
-            self.options.word ^=
-                toggle(ui, t, "W", self.options.word, "Mots entiers · Alt+W") | word;
-            self.options.regex ^= toggle(
-                ui,
-                t,
-                ".*",
-                self.options.regex,
-                "Expression régulière · Alt+X",
-            ) | regex;
+                toggle(ui, t, "Aa", self.options.case, tr!("match_case_alt_c")) | case;
+            self.options.word ^= toggle(ui, t, "W", self.options.word, tr!("words_alt_w")) | word;
+            self.options.regex ^=
+                toggle(ui, t, ".*", self.options.regex, tr!("regex_alt_x")) | regex;
             let count = self.matches.len();
             let (text, color) = if let Some(error) = &self.error {
                 (error.clone(), t.error)
             } else if self.query.is_empty() {
                 (String::new(), t.text_secondary)
             } else if count == 0 {
-                ("Aucun résultat".to_string(), t.error)
+                (tr!("no_results").to_string(), t.error)
             } else {
                 let shown = if count >= MAX_MATCHES {
                     format!("{count}+")
@@ -162,19 +156,19 @@ impl Find {
                     count.to_string()
                 };
                 match self.position(selection) {
-                    Some(i) => (format!("{} sur {shown}", i + 1), t.text_secondary),
-                    None => (format!("{shown} résultats"), t.text_secondary),
+                    Some(i) => (trf!("of", i = i + 1, shown = shown), t.text_secondary),
+                    None => (trf!("results", shown = shown), t.text_secondary),
                 }
             };
             ui.label(RichText::new(text).size(12.5).color(color));
-            if ui::icon_button(ui, "up", "Occurrence précédente · Maj+Entrée").clicked() {
+            if ui::icon_button(ui, "up", tr!("previous_occurrence_shift_enter")).clicked() {
                 action = Action::Previous;
             }
-            if ui::icon_button(ui, "down", "Occurrence suivante · Entrée").clicked() {
+            if ui::icon_button(ui, "down", tr!("next_occurrence_enter")).clicked() {
                 action = Action::Next;
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui::icon_button(ui, "close", "Fermer · Échap").clicked() {
+                if ui::icon_button(ui, "close", tr!("close_esc")).clicked() {
                     action = Action::Close;
                 }
             });
@@ -183,16 +177,16 @@ impl Find {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 ui.add_space(ui::BUTTON + 4.0);
-                let field = ui::search_field(ui, &mut self.replace, "Remplacer par", 280.0);
+                let field = ui::search_field(ui, &mut self.replace, tr!("replace_with"), 280.0);
                 if field.has_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                     action = Action::Replace;
                 }
                 let usable = self.regex.is_some() && !self.matches.is_empty();
                 ui.add_enabled_ui(usable, |ui| {
-                    if ui::button(ui, "Remplacer").clicked() {
+                    if ui::button(ui, tr!("replace")).clicked() {
                         action = Action::Replace;
                     }
-                    if ui::button(ui, "Tout remplacer").clicked() {
+                    if ui::button(ui, tr!("replace_all")).clicked() {
                         action = Action::ReplaceAll;
                     }
                 });
@@ -238,38 +232,5 @@ fn toggle(ui: &mut Ui, t: &Theme, label: &str, on: bool, tooltip: &str) -> bool 
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn matches_follow_the_query_the_options_and_the_text() {
-        let mut find = Find::default();
-        find.query = "cat".into();
-        find.refresh(0, 1, "Cat cat concat");
-        assert_eq!(find.matches().len(), 3);
-        find.options.word = true;
-        find.refresh(0, 1, "Cat cat concat");
-        assert_eq!(find.matches().len(), 2);
-        // The same key is not computed again; a new revision is.
-        find.refresh(0, 2, "cat");
-        assert_eq!(find.matches().len(), 1);
-        find.query = "(".into();
-        find.options.regex = true;
-        find.refresh(0, 2, "cat");
-        assert!(find.matches().is_empty() && find.error.is_some());
-    }
-
-    #[test]
-    fn next_and_previous_wrap_around_the_selection() {
-        let mut find = Find::default();
-        find.query = "a".into();
-        find.refresh(0, 1, "a_a_a");
-        assert_eq!(find.matches(), [0..1, 2..3, 4..5]);
-        assert_eq!(find.neighbor(&(0..1), true), Some(2..3));
-        assert_eq!(find.neighbor(&(4..5), true), Some(0..1), "wraps");
-        assert_eq!(find.neighbor(&(1..1), true), Some(2..3), "from a caret");
-        assert_eq!(find.neighbor(&(2..3), false), Some(0..1));
-        assert_eq!(find.neighbor(&(0..1), false), Some(4..5), "wraps backwards");
-        assert_eq!(find.position(&(2..3)), Some(1));
-    }
-}
+#[path = "../test/find/tests.rs"]
+mod tests;

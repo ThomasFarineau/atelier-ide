@@ -22,10 +22,11 @@ pub enum Dock {
 pub struct ToolWindow {
     /// Unique across all built-in plugins.
     pub id: &'static str,
-    pub title: &'static str,
+    pub title: crate::i18n::Text,
     /// Name of an icon of the IntelliJ set (`ui::icon_source`).
     pub icon: &'static str,
     pub dock: Dock,
+    /// With the English names of the keys: `i18n::shortcut` shows it.
     pub shortcut: &'static str,
 }
 
@@ -137,13 +138,17 @@ pub trait Host {
     /// Reloads unmodified documents changed on disk and refreshes the project tree.
     fn reload_files(&mut self);
     fn show_tool_window(&mut self, tool: &'static ToolWindow);
-    /// Status message, kept in the notification log. Messages starting with "Erreur" also
-    /// show an error balloon.
+    /// Status message, kept in the notification log. Messages starting with "Erreur : " (or
+    /// "Error: ", see `i18n::error_message`) also show an error balloon.
     fn notify(&mut self, message: String);
     /// Balloon notification at the bottom right, as IntelliJ shows after a push or a failure.
     fn balloon(&mut self, title: &str, text: String, error: bool) {
-        let prefix = if error { "Erreur : " } else { "" };
-        self.notify(format!("{prefix}{title} : {text}"));
+        let prefix = match error {
+            true => tr!("error_prefix"),
+            false => "",
+        };
+        let colon = tr!("text");
+        self.notify(format!("{prefix}{title}{colon}{text}"));
     }
 }
 
@@ -157,6 +162,12 @@ pub trait BuiltinPlugin {
     }
     fn name(&self) -> &'static str;
     fn description(&self) -> &'static str;
+    /// Whether the plugin has something to do in the open project (a `pom.xml` for Maven…).
+    /// When it has not, its tool windows and its commands are hidden, as in IntelliJ; it still
+    /// gets `update`, to notice when the project changes.
+    fn applies(&self) -> bool {
+        true
+    }
     fn version(&self) -> &'static str {
         "0.0.1"
     }
@@ -241,46 +252,20 @@ pub fn all() -> Vec<Box<dyn BuiltinPlugin>> {
         Box::new(crate::plugins::builtins::svg::SvgPlugin::default()),
         Box::new(crate::plugins::builtins::csv::CsvPlugin::default()),
         Box::new(crate::languages::javascript::JavaScriptPlugin),
+        Box::new(crate::languages::rust::RustPlugin),
+        Box::new(crate::languages::java::JavaPlugin),
         Box::new(crate::features::search::SearchPlugin::default()),
         Box::new(crate::features::problems::ProblemsPlugin::default()),
         Box::new(crate::plugins::builtins::msoffice::MsOfficeViewerPlugin::default()),
         Box::new(crate::plugins::builtins::image::ImagePlugin::default()),
         Box::new(crate::plugins::builtins::k8s::K8sPlugin::default()),
+        Box::new(crate::plugins::builtins::node::NodePlugin::default()),
+        Box::new(crate::plugins::builtins::maven::MavenPlugin::default()),
+        Box::new(crate::plugins::builtins::gradle::GradlePlugin::default()),
+        Box::new(crate::plugins::builtins::translations::TranslationsPlugin::default()),
     ]
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Each plugin has its own `icon` files: they must not end up as one image.
-    #[test]
-    fn plugin_file_icons_have_distinct_uris() {
-        let samples = [
-            "a.md",
-            "a.svg",
-            "a.png",
-            "a.csv",
-            "a.docx",
-            "a.xlsx",
-            "a.pptx",
-            "a.mmd",
-            "kustomization.yaml",
-            ".gitignore",
-        ];
-        let mut seen = std::collections::HashMap::new();
-        for plugin in all() {
-            for sample in samples {
-                if let Some(key) = plugin.file_icon_for(Path::new(sample)) {
-                    let icon =
-                        crate::icon_set::source(key, true).unwrap_or_else(|| panic!("{key}"));
-                    let uri = icon.uri().unwrap_or_default().to_string();
-                    if let Some(other) = seen.insert(uri.clone(), plugin.id()) {
-                        assert_eq!(other, plugin.id(), "{uri} is used by two plugins");
-                    }
-                }
-            }
-        }
-        assert!(seen.len() >= 7, "{seen:?}");
-    }
-}
+#[path = "../../test/plugins/builtin/tests.rs"]
+mod tests;

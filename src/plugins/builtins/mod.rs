@@ -2,10 +2,14 @@
 
 pub mod csv;
 pub mod git;
+pub mod gradle;
 pub mod image;
 pub mod k8s;
 pub mod markdown;
+pub mod maven;
 pub mod mcp;
 pub mod mermaid;
 pub mod msoffice;
+pub mod node;
 pub mod svg;
+pub mod translations;
