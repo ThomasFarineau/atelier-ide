@@ -159,6 +159,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn a_windows_path_keeps_its_drive() {
         let found = find(r"error at C:\work\shop\main.rs:7", Path::new("/p"), |_| {
             true

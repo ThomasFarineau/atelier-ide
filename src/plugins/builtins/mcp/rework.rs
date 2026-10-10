@@ -131,9 +131,10 @@ fn select(repo: &Repo, range: &str) -> Result<Vec<Info>, String> {
             &MAX_COMMITS.to_string(),
         ])?
     } else if let Some(rev) = text
-        .to_lowercase()
-        .strip_prefix("since ")
-        .map(str::trim)
+        .get(..6)
+        .filter(|start| start.eq_ignore_ascii_case("since "))
+        // The revision keeps its case: refs are case-sensitive outside Windows.
+        .map(|_| text[6..].trim())
         .filter(|r| !r.is_empty())
     {
         log(&[&format!("{rev}..HEAD"), "-n", &MAX_COMMITS.to_string()])?

@@ -13,6 +13,8 @@ fn markdown_files_get_a_split_layout_by_default() {
 
 #[test]
 fn relative_images_resolve_from_the_document_folder() {
+    // A Windows path is only one on Windows.
+    #[cfg(windows)]
     assert_eq!(
         base_uri(Path::new(r"\\?\C:\projet\docs\guide.md")),
         "file:///C:/projet/docs/"
