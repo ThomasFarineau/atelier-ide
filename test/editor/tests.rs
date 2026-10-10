@@ -173,3 +173,37 @@ fn lines_join_move_and_change_case() {
     ));
     assert_eq!(text, "last\nlet A = foo(1, 2);\n");
 }
+
+#[test]
+fn f2_goes_to_the_next_error_round_the_end() {
+    use crate::languages::{Diagnostic, Severity};
+    let text = "a\nb\nc\nd\n";
+    let mut s = state(text);
+    let problem = |at: usize, severity| Diagnostic {
+        range: at..at + 1,
+        severity,
+        message: format!("at {at}"),
+        source: String::new(),
+    };
+    s.assist.diagnostics = std::sync::Arc::new(vec![
+        problem(6, Severity::Error),
+        problem(2, Severity::Warning),
+        problem(4, Severity::Error),
+    ]);
+    s.select(0, 0);
+    s.next_problem(true);
+    assert_eq!(s.cursor, 4, "errors first: the warning is skipped");
+    assert_eq!(s.assist.message.as_deref(), Some("at 4"));
+    s.next_problem(true);
+    assert_eq!(s.cursor, 6);
+    s.next_problem(true);
+    assert_eq!(s.cursor, 4, "round the end");
+    s.next_problem(false);
+    assert_eq!(s.cursor, 6, "Shift+F2 goes back, round the start");
+    s.assist.diagnostics = std::sync::Arc::new(vec![problem(2, Severity::Warning)]);
+    s.next_problem(true);
+    assert_eq!(s.cursor, 2, "no error: the warnings");
+    s.assist.diagnostics = std::sync::Arc::default();
+    s.next_problem(true);
+    assert_eq!(s.cursor, 2);
+}

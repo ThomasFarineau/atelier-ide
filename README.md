@@ -179,6 +179,7 @@ Les arguments sont transmis comme des valeurs littérales, avec l'échappement d
 | Ctrl+F4 | Fermer l'onglet |
 | Ctrl+W / Ctrl+Maj+W | Étendre / réduire la sélection (mot, chaîne, contenu des parenthèses, parenthèses, ligne, fichier) |
 | Ctrl+Maj+J | Joindre les lignes |
+| F2 / Maj+F2 | Problème suivant / précédent du fichier (les erreurs d'abord) |
 | Ctrl+Maj+U | Basculer majuscules / minuscules |
 | Alt+Maj+Haut / Bas (ou Ctrl+Maj) | Déplacer la ligne ou les lignes sélectionnées |
 | Ctrl+D / Ctrl+Y | Dupliquer / supprimer la ligne (Ctrl+Y rétablit juste après une annulation) |

@@ -554,6 +554,10 @@ impl EditorState {
             self.assist.want_symbols = true;
             return Some(false);
         }
+        if key == Key::F2 && !m.command && !m.alt {
+            self.next_problem(!m.shift);
+            return Some(false);
+        }
         if key == Key::F7 && m.alt {
             self.assist_goto_kind(self.cursor, Nav::Usages);
             return Some(false);
@@ -1227,6 +1231,45 @@ impl EditorState {
     }
 
     /// Problems under a byte offset.
+    /// F2 / Shift+F2: the caret to the next or previous problem of the file, the errors first
+    /// when there are, round the end; its message goes to the status bar.
+    pub(super) fn next_problem(&mut self, forward: bool) {
+        let errors = self
+            .assist
+            .diagnostics
+            .iter()
+            .any(|d| d.severity == Severity::Error);
+        let mut problems: Vec<&Diagnostic> = self
+            .assist
+            .diagnostics
+            .iter()
+            .filter(|d| !errors || d.severity == Severity::Error)
+            .filter(|d| matches!(d.severity, Severity::Error | Severity::Warning))
+            .collect();
+        problems.sort_by_key(|d| d.range.start);
+        problems.dedup_by_key(|d| d.range.start);
+        let at = self.cursor;
+        let found = if forward {
+            problems
+                .iter()
+                .find(|d| d.range.start > at)
+                .or(problems.first())
+        } else {
+            problems
+                .iter()
+                .rev()
+                .find(|d| d.range.start < at)
+                .or(problems.last())
+        };
+        let Some(problem) = found else {
+            self.assist.message = Some(tr!("no_problems_file").into());
+            return;
+        };
+        let (start, message) = (problem.range.start, problem.message.clone());
+        self.select(start, start);
+        self.assist.message = Some(message);
+    }
+
     fn diagnostics_at(&self, offset: usize) -> Vec<&Diagnostic> {
         self.assist
             .diagnostics

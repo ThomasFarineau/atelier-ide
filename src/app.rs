@@ -84,7 +84,7 @@ const ACTIONS: [(Text, &str, &str); 14] = [
     (Text("projects.all"), "", "project"),
 ];
 
-const SHORTCUTS: [(Text, Text); 45] = [
+const SHORTCUTS: [(Text, Text); 46] = [
     (Text("ctrl_o"), Text("open_file")),
     (Text("ctrl_n"), Text("go_symbol")),
     (Text("alt_insert"), Text("new_file")),
@@ -93,6 +93,7 @@ const SHORTCUTS: [(Text, Text); 45] = [
     (Text("ctrl_f4"), Text("close_tab")),
     (Text("ctrl_w_ctrl_shift_w"), Text("extend_shrink_selection")),
     (Text("ctrl_shift_j"), Text("join_lines")),
+    (Text("f2_shift_f2"), Text("next_previous_problem")),
     (Text("ctrl_shift_u"), Text("toggle_case")),
     (Text("alt_shift_up_down"), Text("move_line")),
     (Text("ctrl_f"), Text("find_file")),
