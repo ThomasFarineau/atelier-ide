@@ -644,13 +644,13 @@ fn parse_refs(decoration: &str) -> Vec<Ref> {
                 (tag, RefKind::Tag)
             } else if let Some(local) = d.strip_prefix("refs/heads/") {
                 (local, RefKind::Local)
-            } else if let Some(remote) = d.strip_prefix("refs/remotes/") {
+            } else {
+                // A remote branch; its `HEAD` is only a pointer to one of them.
+                let remote = d.strip_prefix("refs/remotes/")?;
                 if remote.ends_with("/HEAD") {
                     return None;
                 }
                 (remote, RefKind::Remote)
-            } else {
-                return None;
             };
             Some(Ref {
                 name: name.into(),
