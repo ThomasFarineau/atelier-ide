@@ -41,9 +41,15 @@ fn the_graph_is_made_kept_up_to_date_and_dropped_when_turned_off() {
     service.enable(wake.clone());
     let status = wait_for(&service, |s| s.files == 2 && !s.busy);
     assert_eq!(status.symbols, 2);
-    assert!(current().is_some_and(|g| g.nodes.iter().any(|n| n.label == "first")));
+    // The graph of the IDE is global, and other tests start services of their own: the file
+    // tells what this one made.
     let dir = folder(&root);
-    assert!(dir.join("graph.json").exists() && dir.join("cache.json").exists());
+    assert!(
+        fs::read_to_string(dir.join("graph.json"))
+            .unwrap()
+            .contains("\"first\"")
+    );
+    assert!(dir.join("cache.json").exists());
     assert!(
         fs::read_to_string(dir.join("GRAPH_REPORT.md"))
             .unwrap()
@@ -63,14 +69,15 @@ fn the_graph_is_made_kept_up_to_date_and_dropped_when_turned_off() {
     fs::remove_file(root.join("src/b.js")).unwrap();
     service.file_changed();
     // The status and the published graph are read apart: wait until they agree.
-    let status = wait_for(&service, |s| {
-        s.symbols == 3 && s.files == 2 && current().is_some_and(|g| g.communities.len() == s.groups)
+    wait_for(&service, |s| {
+        s.symbols == 3
+            && s.files == 2
+            && current().is_some_and(|g| {
+                g.communities.len() == s.groups
+                    && g.nodes.iter().any(|n| n.label == "fourth")
+                    && !g.nodes.iter().any(|n| n.label == "second")
+            })
     });
-    assert_eq!(status.groups, current().map_or(0, |g| g.communities.len()));
-    assert!(
-        current().is_some_and(|g| g.nodes.iter().any(|n| n.label == "fourth")
-            && !g.nodes.iter().any(|n| n.label == "second"))
-    );
     // A restart reads nothing again: the cache answers for the files that did not change.
     let cached = load_cache(&root);
     assert_eq!(cached.files.len(), 2);

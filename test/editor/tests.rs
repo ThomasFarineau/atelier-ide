@@ -105,3 +105,71 @@ fn columns_expand_tabs() {
     assert_eq!(offset_of("abc", 10), 3);
     assert_eq!(display("\tx"), "    x");
 }
+
+#[test]
+fn extend_selection_steps_out_and_shrink_comes_back() {
+    let text = "call(alpha, \"two words\", [x + 1]);\nnext();\n";
+    let mut s = state(text);
+    let at = text.find("words").unwrap() + 1;
+    s.select(at, at);
+    s.extend_selection(text);
+    assert_eq!(&text[s.selection()], "words");
+    s.extend_selection(text);
+    assert_eq!(&text[s.selection()], "two words");
+    s.extend_selection(text);
+    assert_eq!(&text[s.selection()], "\"two words\"");
+    s.extend_selection(text);
+    assert_eq!(&text[s.selection()], "alpha, \"two words\", [x + 1]");
+    s.extend_selection(text);
+    assert_eq!(&text[s.selection()], "(alpha, \"two words\", [x + 1])");
+    s.extend_selection(text);
+    assert_eq!(
+        &text[s.selection()],
+        "call(alpha, \"two words\", [x + 1])",
+        "the call"
+    );
+    s.extend_selection(text);
+    assert_eq!(&text[s.selection()], "call(alpha, \"two words\", [x + 1]);");
+    s.shrink_selection();
+    s.shrink_selection();
+    s.shrink_selection();
+    assert_eq!(&text[s.selection()], "alpha, \"two words\", [x + 1]");
+    s.select(at, at);
+    s.shrink_selection();
+    assert_eq!(s.selection(), at..at, "nothing to shrink to");
+}
+
+#[test]
+fn lines_join_move_and_change_case() {
+    let mut text = "let a = foo(\n    1,\n    2\n);\nlast\n".to_string();
+    let mut s = state(&text);
+    s.select(0, 0);
+    s.join_lines(&mut text);
+    assert_eq!(text, "let a = foo(1,\n    2\n);\nlast\n");
+    s.select(0, text.find("2\n);").unwrap() + 4);
+    s.join_lines(&mut text);
+    assert_eq!(text, "let a = foo(1, 2);\nlast\n");
+    s.select(0, 0);
+    s.move_lines(&mut text, false);
+    assert_eq!(text, "last\nlet a = foo(1, 2);\n");
+    assert_eq!(s.line_of(s.cursor), 1, "the caret moves with its line");
+    s.move_lines(&mut text, true);
+    assert_eq!(text, "let a = foo(1, 2);\nlast\n");
+    s.move_lines(&mut text, true);
+    assert_eq!(text, "let a = foo(1, 2);\nlast\n", "the first line stays");
+    s.select(4, 4);
+    s.toggle_case(&mut text);
+    assert_eq!(text, "let A = foo(1, 2);\nlast\n");
+    s.select(8, 11);
+    s.toggle_case(&mut text);
+    s.toggle_case(&mut text);
+    assert_eq!(&text[8..11], "foo", "upper case, then back");
+    assert!(s.key(
+        &mut text,
+        "rs",
+        Key::ArrowDown,
+        Modifiers::ALT | Modifiers::SHIFT,
+        10
+    ));
+    assert_eq!(text, "last\nlet A = foo(1, 2);\n");
+}

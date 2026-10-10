@@ -5,6 +5,7 @@
 //! it: the index of line starts, caret and selection, undo history and incremental
 //! highlighting. Positions are byte offsets on char boundaries.
 
+mod actions;
 mod assist;
 mod fold;
 
@@ -73,6 +74,8 @@ pub struct EditorState {
     visible: Vec<usize>,
     /// The mouse press that is on a fold marker: it does not select.
     fold_press: bool,
+    /// The selections Extend Selection went from, and to, for Shrink Selection.
+    expanded: Vec<((usize, usize), Range<usize>)>,
 }
 
 impl Default for EditorState {
@@ -99,6 +102,7 @@ impl Default for EditorState {
             fold_language: String::new(),
             visible: Vec::new(),
             fold_press: false,
+            expanded: Vec::new(),
         }
     }
 }
@@ -991,6 +995,10 @@ impl EditorState {
                 self.move_to(pos, extend);
                 self.preferred_column = None;
             }
+            Key::ArrowUp | Key::ArrowDown if m.shift && (m.alt || m.command) => {
+                self.move_lines(text, key == Key::ArrowUp);
+                return true;
+            }
             Key::ArrowUp => self.vertical(text, -1, extend),
             Key::ArrowDown => self.vertical(text, 1, extend),
             Key::PageUp => self.vertical(text, -page, extend),
@@ -1029,6 +1037,16 @@ impl EditorState {
                     };
                     self.move_to(target + 1, extend);
                 }
+            }
+            Key::W if m.command && m.shift => self.shrink_selection(),
+            Key::W if m.command => self.extend_selection(text),
+            Key::J if m.command && m.shift => {
+                self.join_lines(text);
+                return true;
+            }
+            Key::U if m.command && m.shift => {
+                self.toggle_case(text);
+                return true;
             }
             Key::Z if m.command && m.shift => return self.redo(text),
             Key::Z if m.command => return self.undo(text),

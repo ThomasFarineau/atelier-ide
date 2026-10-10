@@ -31,6 +31,7 @@ mod plugins_page;
 mod projects_page;
 mod reformat;
 mod settings_page;
+mod symbols;
 use crate::editor::FormatRequest;
 use settings_page::{Draft, Page, RunTool};
 
@@ -69,10 +70,10 @@ const ACTIONS: [(Text, &str, &str); 14] = [
     (Text("open_project_dialog"), "", "project"),
     (Text("open_file_dialog"), "Ctrl+O", "openNewTab"),
     (Text("save_all"), "Ctrl+S", "save"),
-    (Text("terminal"), "Ctrl+`", "terminal"),
+    (Text("terminal"), "Alt+F12", "terminal"),
     (Text("settings_dialog"), "Ctrl+Alt+S", "settings"),
     (Text("plugins_dialog"), "", "settings"),
-    (Text("run_current_file"), "F5", "run"),
+    (Text("run_current_file"), "Shift+F10", "run"),
     (Text("refresh_project"), "", "refresh"),
     (Text("open_project_new_window"), "", "openNewTab"),
     (Text("new_file_project"), "", "add"),
@@ -82,19 +83,25 @@ const ACTIONS: [(Text, &str, &str); 14] = [
     (Text("projects.all"), "", "project"),
 ];
 
-const SHORTCUTS: [(Text, Text); 39] = [
+const SHORTCUTS: [(Text, Text); 45] = [
     (Text("ctrl_o"), Text("open_file")),
-    (Text("ctrl_n"), Text("new_file")),
+    (Text("ctrl_n"), Text("go_symbol")),
+    (Text("alt_insert"), Text("new_file")),
     (Text("ctrl_s"), Text("save")),
     (Text("ctrl_shift_s"), Text("save_as")),
-    (Text("ctrl_w"), Text("close_tab")),
+    (Text("ctrl_f4"), Text("close_tab")),
+    (Text("ctrl_w_ctrl_shift_w"), Text("extend_shrink_selection")),
+    (Text("ctrl_shift_j"), Text("join_lines")),
+    (Text("ctrl_shift_u"), Text("toggle_case")),
+    (Text("alt_shift_up_down"), Text("move_line")),
     (Text("ctrl_f"), Text("find_file")),
     (Text("double_shift_ctrl_p"), Text("search_everywhere")),
     (Text("ctrl_shift_n"), Text("go_file")),
     (Text("ctrl_alt_s"), Text("settings")),
     (Text("alt_1"), Text("project_window")),
-    (Text("ctrl"), Text("terminal")),
-    (Text("f5"), Text("run_current_file")),
+    (Text("alt_f12_ctrl"), Text("terminal")),
+    (Text("shift_f10_f5"), Text("run_current_file")),
+    (Text("ctrl_f2"), Text("stop_run")),
     (Text("ctrl_space"), Text("code_completion")),
     (Text("shift_f6"), Text("rename")),
     (Text("ctrl_alt_l"), Text("reformat_code")),
@@ -253,6 +260,8 @@ enum Target {
     Builtin(&'static str, &'static str),
     Tab(usize),
     File(PathBuf),
+    /// A 0-based line of a file: a symbol.
+    Place(PathBuf, usize),
 }
 
 /// What the Search Everywhere popup is asked.
@@ -261,6 +270,8 @@ enum PaletteMode {
     Everywhere,
     Recent,
     Line,
+    /// Go to Symbol (Ctrl+N).
+    Symbols,
 }
 
 struct Hit {
@@ -329,6 +340,7 @@ pub struct Ide {
     /// The context graph of the project: kept in `.atelier/graph` while the user leaves it on.
     graph: crate::graph::Service,
     palette_mode: PaletteMode,
+    symbol_index: symbols::Index,
     /// Files in the order they were last used, the most recent first.
     recent_files: Vec<PathBuf>,
     show_new_file: bool,
@@ -520,6 +532,7 @@ impl Ide {
             cli: None,
             graph: crate::graph::Service::default(),
             palette_mode: PaletteMode::Everywhere,
+            symbol_index: symbols::Index::default(),
             recent_files: Vec::new(),
             show_new_file: false,
             find: crate::find::Find::default(),
@@ -1475,9 +1488,12 @@ impl Ide {
             self.open_palette();
         }
         if pressed(command, Key::N) {
+            self.open_palette_as(PaletteMode::Symbols);
+        }
+        if pressed(Modifiers::ALT, Key::Insert) {
             self.new_document();
         }
-        if pressed(command, Key::W) && !self.documents.is_empty() {
+        if pressed(command, Key::F4) && !self.documents.is_empty() {
             self.request(Pending::Close(self.active));
         }
         if pressed(command, Key::F) {
@@ -1503,14 +1519,17 @@ impl Ide {
         if pressed(command, Key::G) && !self.documents.is_empty() {
             self.open_palette_as(PaletteMode::Line);
         }
-        if pressed(command, Key::Backtick) {
+        if pressed(command, Key::Backtick) || pressed(Modifiers::ALT, Key::F12) {
             self.set_terminal(!self.show_terminal);
         }
         if pressed(Modifiers::ALT, Key::Num1) {
             self.toggle_tool(&PROJECT_TOOL);
         }
-        if pressed(Modifiers::NONE, Key::F5) {
+        if pressed(Modifiers::SHIFT, Key::F10) || pressed(Modifiers::NONE, Key::F5) {
             self.run_file();
+        }
+        if pressed(command, Key::F2) {
+            self.stop_run();
         }
         // Double Shift opens Search Everywhere.
         let (shift, other) = ctx.input(|i| {
@@ -1638,7 +1657,7 @@ impl Ide {
                         .clicked()
                 };
                 ui.menu_button(tr!("file"), |ui| {
-                    if item(ui, tr!("new_file"), "Ctrl+N") {
+                    if item(ui, tr!("new_file"), "Alt+Insert") {
                         self.new_document();
                         ui.close();
                     }
@@ -1754,7 +1773,7 @@ impl Ide {
                     });
                 });
                 ui.menu_button(tr!("run"), |ui| {
-                    if item(ui, tr!("run_current_file"), "F5") {
+                    if item(ui, tr!("run_current_file"), "Shift+F10") {
                         self.run_file();
                         ui.close();
                     }
@@ -1957,7 +1976,10 @@ impl Ide {
             .show(|ui| {
                 ui.set_min_width(220.0);
                 if ui
-                    .add(egui::Button::new(trf!("run_label", label = label)).shortcut_text("F5"))
+                    .add(
+                        egui::Button::new(trf!("run_label", label = label))
+                            .shortcut_text("Shift+F10"),
+                    )
                     .clicked()
                 {
                     self.run_file();
@@ -2465,7 +2487,7 @@ impl Ide {
                 ui,
                 Some("add"),
                 tr!("new_file_dialog"),
-                Some("Ctrl+N"),
+                Some("Alt+Insert"),
                 false,
             )
             .clicked()
@@ -4419,7 +4441,7 @@ impl Ide {
                                     ui,
                                     Some("closeSmall"),
                                     tr!("close"),
-                                    Some("Ctrl+W"),
+                                    Some("Ctrl+F4"),
                                     false,
                                 )
                                 .clicked()
@@ -4601,8 +4623,9 @@ impl Ide {
             (tr!("search_everywhere"), tr!("double_shift")),
             (tr!("go_file"), tr!("ctrl_shift_n")),
             (tr!("open_file"), "Ctrl+O"),
-            (tr!("new_file"), "Ctrl+N"),
-            ("Terminal", "Ctrl+`"),
+            (tr!("go_symbol"), "Ctrl+N"),
+            (tr!("new_file"), "Alt+Insert"),
+            ("Terminal", "Alt+F12"),
             ("Commit", "Ctrl+K"),
         ];
         let top = rect.center().y - lines.len() as f32 * 15.0 - 20.0;
@@ -5017,6 +5040,54 @@ impl Ide {
         format!("{}::{id}", self.root.display())
     }
 
+    /// Go to Symbol: the definitions of the project matching what is typed.
+    fn symbol_hits(&mut self) -> Vec<Hit> {
+        self.symbol_index.poll();
+        let root = self.root.clone();
+        let repaint = self.repaint.clone();
+        let listed = root.clone();
+        self.symbol_index
+            .refresh(&root, move || list_files(&listed), move || repaint());
+        let query = self.palette_query.trim();
+        if query.is_empty() {
+            return Vec::new();
+        }
+        symbols::search(&self.symbol_index.symbols, query)
+            .into_iter()
+            .map(|symbol| {
+                let relative = symbol
+                    .path
+                    .strip_prefix(&self.root)
+                    .unwrap_or(&symbol.path)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                Hit {
+                    label: symbol.name.clone(),
+                    hint: format!("{} · {relative}:{}", symbol.kind, symbol.line + 1),
+                    icon: None,
+                    file: Some(symbol.path.clone()),
+                    target: Target::Place(symbol.path.clone(), symbol.line),
+                }
+            })
+            .collect()
+    }
+
+    /// Ctrl+F2: stops what runs in the active terminal, as Ctrl+C there would.
+    fn stop_run(&mut self) {
+        let pane = self
+            .terminals
+            .get_mut(self.active_terminal)
+            .and_then(|tab| tab.pane())
+            .filter(|pane| !pane.term.exited);
+        match pane {
+            Some(pane) => {
+                let result = pane.term.write(b"\x03");
+                self.report(result);
+            }
+            None => self.status = tr!("nothing_running").into(),
+        }
+    }
+
     /// The files used, most recent first: the open ones and the ones closed since.
     fn recent_hits(&self, query: &str) -> Vec<Hit> {
         self.recent_files
@@ -5083,6 +5154,7 @@ impl Ide {
         match self.palette_mode {
             PaletteMode::Recent => return self.recent_hits(&query),
             PaletteMode::Line => return line_hit(&query).into_iter().collect(),
+            PaletteMode::Symbols => return self.symbol_hits(),
             PaletteMode::Everywhere => {}
         }
         let mut hits = Vec::new();
@@ -5220,6 +5292,12 @@ impl Ide {
                                         PaletteMode::Line => {
                                             (tr!("go_line"), tr!("line_line_column"))
                                         }
+                                        PaletteMode::Symbols if self.symbol_index.busy() => {
+                                            (tr!("go_symbol"), tr!("reading_symbols"))
+                                        }
+                                        PaletteMode::Symbols => {
+                                            (tr!("go_symbol"), tr!("classes_functions_project"))
+                                        }
                                     };
                                     ui.label(RichText::new(title).font(ui::semibold(13.0)));
                                     ui.label(
@@ -5321,6 +5399,7 @@ impl Ide {
                 Target::Tab(index) => self.active = index,
                 Target::File(path) => self.open_file(path),
                 Target::Line(line, column) => self.go_to_line(line, column),
+                Target::Place(path, line) => Host::open_at(self, path, line, 0, 0),
             }
         }
     }
@@ -5785,6 +5864,10 @@ impl Ide {
             }
             if std::env::var_os("ATELIER_SHOT_MCP").is_some() {
                 self.mcp_offer = Some((0, crate::plugins::builtins::mcp::agents::Agent::Claude));
+            }
+            if let Ok(query) = std::env::var("ATELIER_SHOT_SYMBOLS") {
+                self.open_palette_as(PaletteMode::Symbols);
+                self.palette_query = query;
             }
             if std::env::var_os("ATELIER_SHOT_SESSIONS").is_some() {
                 self.open_tool(&crate::plugins::builtins::mcp::TOOL_WINDOWS[0]);

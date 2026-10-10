@@ -44,7 +44,7 @@ Les textes sont dans des fichiers `locales/<identifiant>.json` : celui de la rac
 
 ## Exécution
 
-F5 enregistre le fichier actif si nécessaire puis envoie une commande au shell du projet. Les outils doivent être installés et accessibles dans le `PATH`.
+Maj+F10 (ou F5) enregistre le fichier actif si nécessaire puis envoie une commande au shell du projet. Les outils doivent être installés et accessibles dans le `PATH`.
 
 | Langage | Action |
 | --- | --- |
@@ -168,17 +168,24 @@ Les arguments sont transmis comme des valeurs littérales, avec l'échappement d
 | Raccourci | Action |
 | --- | --- |
 | Ctrl+O | Ouvrir un fichier |
-| Ctrl+N | Nouveau document |
+| Ctrl+N | Aller au symbole (classes, fonctions et types du projet) |
+| Alt+Inser | Nouveau document |
 | Ctrl+S | Enregistrer |
 | Ctrl+Shift+S | Enregistrer sous |
-| Ctrl+W | Fermer l'onglet |
+| Ctrl+F4 | Fermer l'onglet |
+| Ctrl+W / Ctrl+Maj+W | Étendre / réduire la sélection (mot, chaîne, contenu des parenthèses, parenthèses, ligne, fichier) |
+| Ctrl+Maj+J | Joindre les lignes |
+| Ctrl+Maj+U | Basculer majuscules / minuscules |
+| Alt+Maj+Haut / Bas (ou Ctrl+Maj) | Déplacer la ligne ou les lignes sélectionnées |
+| Ctrl+D / Ctrl+Y | Dupliquer / supprimer la ligne (Ctrl+Y rétablit juste après une annulation) |
 | Ctrl+F | Rechercher dans le fichier |
 | Double Maj / Ctrl+P | Rechercher partout |
 | Ctrl+Shift+N | Aller au fichier |
 | Ctrl+Alt+S | Paramètres |
 | Alt+1 | Fenêtre Projet |
-| Ctrl+` | Afficher/masquer le terminal |
-| F5 | Exécuter |
+| Alt+F12 / Ctrl+` | Afficher/masquer le terminal |
+| Maj+F10 / F5 | Exécuter |
+| Ctrl+F2 | Arrêter (Ctrl+C dans le terminal actif) |
 | Ctrl+Espace | Complétion du code |
 | Alt+Entrée | Actions rapides (importer…) |
 | Ctrl+F12 | Structure du fichier |
