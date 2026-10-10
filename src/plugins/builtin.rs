@@ -111,6 +111,11 @@ pub trait Host {
     fn open_file(&mut self, path: PathBuf);
     /// Runs a command in a terminal of its own (a new tab), e.g. to start an AI.
     fn run_in_new_terminal(&mut self, _command: String) {}
+    /// Runs a command of the project as a run configuration named `name`: a temporary one the
+    /// run widget offers again, in a terminal tab of its own.
+    fn run_configuration(&mut self, _name: String, command: String) {
+        self.run_in_new_terminal(command);
+    }
     /// The tabs of the editor.
     fn open_documents(&self) -> Vec<OpenDocument> {
         Vec::new()

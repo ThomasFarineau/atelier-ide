@@ -30,6 +30,7 @@ use std::{
 mod plugins_page;
 mod projects_page;
 mod reformat;
+mod run_configs;
 mod settings_page;
 mod symbols;
 use crate::editor::FormatRequest;
@@ -340,6 +341,11 @@ pub struct Ide {
     /// The context graph of the project: kept in `.atelier/graph` while the user leaves it on.
     graph: crate::graph::Service,
     palette_mode: PaletteMode,
+    /// The run configurations, and the project they were read for.
+    run_configs: (PathBuf, run_configs::RunConfigs),
+    /// The terminal pane each configuration last ran in.
+    run_panes: std::collections::HashMap<String, u64>,
+    run_dialog: Option<run_configs::Dialog>,
     symbol_index: symbols::Index,
     /// Files in the order they were last used, the most recent first.
     recent_files: Vec<PathBuf>,
@@ -532,6 +538,9 @@ impl Ide {
             cli: None,
             graph: crate::graph::Service::default(),
             palette_mode: PaletteMode::Everywhere,
+            run_configs: Default::default(),
+            run_panes: std::collections::HashMap::new(),
+            run_dialog: None,
             symbol_index: symbols::Index::default(),
             recent_files: Vec::new(),
             show_new_file: false,
@@ -1056,6 +1065,7 @@ impl Ide {
             self.terminals.push(TerminalTab {
                 active: pane.id,
                 root: Node::Leaf(pane),
+                title: None,
             });
             self.active_terminal = self.terminals.len() - 1;
         }
@@ -1526,7 +1536,7 @@ impl Ide {
             self.toggle_tool(&PROJECT_TOOL);
         }
         if pressed(Modifiers::SHIFT, Key::F10) || pressed(Modifiers::NONE, Key::F5) {
-            self.run_file();
+            self.run_selected();
         }
         if pressed(command, Key::F2) {
             self.stop_run();
@@ -1637,8 +1647,14 @@ impl Ide {
                         ui.add_enabled_ui(false, |ui| {
                             ui::icon_button(ui, "debug", tr!("debugger_not_available"));
                         });
-                        if ui::icon_button(ui, "run", tr!("run_current_file_f5")).clicked() {
-                            self.run_file();
+                        if self.run_pane().is_some()
+                            && ui::icon_button(ui, "stop", tr!("stop_run")).clicked()
+                        {
+                            self.stop_run();
+                        }
+                        let label = self.run_label();
+                        if ui::icon_button(ui, "run", &trf!("run_label", label = label)).clicked() {
+                            self.run_selected();
                         }
                         self.run_widget(ui);
                     });
@@ -1966,10 +1982,7 @@ impl Ide {
 
     /// Run configuration widget: IntelliJ's "Current File".
     fn run_widget(&mut self, ui: &mut egui::Ui) {
-        let label = match self.documents.get(self.active) {
-            Some(doc) => doc.title(),
-            None => tr!("current_file").into(),
-        };
+        let label = self.run_label();
         let response = ui::icon_text_button(ui, None, &label, true);
         egui::Popup::menu(&response)
             .id(egui::Id::new("run_menu"))
@@ -1982,9 +1995,19 @@ impl Ide {
                     )
                     .clicked()
                 {
-                    self.run_file();
+                    self.run_selected();
                     ui.close();
                 }
+                if self.run_pane().is_some()
+                    && ui
+                        .add(egui::Button::new(tr!("stop_run")).shortcut_text("Ctrl+F2"))
+                        .clicked()
+                {
+                    self.stop_run();
+                    ui.close();
+                }
+                ui.separator();
+                self.run_configs_menu(ui);
                 self.external_commands_menu(ui);
             });
     }
@@ -3833,6 +3856,7 @@ impl Ide {
         self.terminals.push(TerminalTab {
             active: pane.id,
             root: Node::Leaf(pane),
+            title: None,
         });
         self.active_terminal = self.terminals.len() - 1;
     }
@@ -4855,6 +4879,7 @@ impl Ide {
         self.settings_dialog(ctx);
         self.projects_dialog(ctx);
         self.reformat_dialog(ctx);
+        self.run_dialog(ctx);
         self.tree_dialogs(ctx);
         if self.show_new_file {
             let modal = egui::Modal::new(egui::Id::new("new_file")).show(ctx, |ui| {
@@ -5074,11 +5099,20 @@ impl Ide {
 
     /// Ctrl+F2: stops what runs in the active terminal, as Ctrl+C there would.
     fn stop_run(&mut self) {
-        let pane = self
-            .terminals
-            .get_mut(self.active_terminal)
-            .and_then(|tab| tab.pane())
-            .filter(|pane| !pane.term.exited);
+        // The terminal of the selected configuration, else the active one.
+        let run = self.run_pane();
+        let pane = match run {
+            Some(id) => self
+                .terminals
+                .iter_mut()
+                .flat_map(|tab| tab.root.leaves_mut())
+                .find(|p| p.id == id),
+            None => self
+                .terminals
+                .get_mut(self.active_terminal)
+                .and_then(|tab| tab.pane()),
+        }
+        .filter(|pane| !pane.term.exited);
         match pane {
             Some(pane) => {
                 let result = pane.term.write(b"\x03");
@@ -5630,6 +5664,8 @@ struct Pane {
 /// A terminal tab: shells split side by side or stacked, nested as in IntelliJ.
 struct TerminalTab {
     root: Node<Pane>,
+    /// The run configuration the tab is for, shown in place of the shell.
+    title: Option<String>,
     /// Id of the pane that has the keyboard.
     active: u64,
 }
@@ -5640,6 +5676,9 @@ impl TerminalTab {
         self.root.leaves_mut().into_iter().find(|p| p.id == active)
     }
     fn name(&self) -> &str {
+        if let Some(title) = &self.title {
+            return title;
+        }
         self.root
             .leaves()
             .first()
@@ -5708,6 +5747,9 @@ impl Host for Ide {
     }
     fn selected_text(&self) -> Option<String> {
         Ide::selected_text(self)
+    }
+    fn run_configuration(&mut self, name: String, command: String) {
+        self.run_temporary(&name, &command);
     }
     fn run_in_new_terminal(&mut self, command: String) {
         self.set_terminal(true);
@@ -5864,6 +5906,10 @@ impl Ide {
             }
             if std::env::var_os("ATELIER_SHOT_MCP").is_some() {
                 self.mcp_offer = Some((0, crate::plugins::builtins::mcp::agents::Agent::Claude));
+            }
+            if std::env::var_os("ATELIER_SHOT_RUN").is_some() {
+                self.run_configs().temporary("gradle build", "gradle build");
+                self.open_run_dialog();
             }
             if let Ok(query) = std::env::var("ATELIER_SHOT_SYMBOLS") {
                 self.open_palette_as(PaletteMode::Symbols);

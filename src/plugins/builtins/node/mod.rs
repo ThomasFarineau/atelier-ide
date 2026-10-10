@@ -245,7 +245,8 @@ impl NodePlugin {
     fn run(&self, host: &mut dyn Host, package: &Package, args: Vec<String>) {
         let command =
             crate::plugins::command_in(&package.dir, &self.root, &package.manager.program(), &args);
-        host.run_in_new_terminal(command);
+        let name = format!("{} {}", package.manager.program(), args.join(" "));
+        host.run_configuration(name, command);
     }
 
     fn install(&self, host: &mut dyn Host, package: &Package) {

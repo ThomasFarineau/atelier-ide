@@ -330,7 +330,8 @@ impl MavenPlugin {
             &program(&project.dir, &self.root),
             &args,
         );
-        host.run_in_new_terminal(command);
+        let name = format!("{} [{}]", project.name, goals.join(" "));
+        host.run_configuration(name, command);
     }
 
     /// A node of the tree: its chevron and label. Returns (response, open).

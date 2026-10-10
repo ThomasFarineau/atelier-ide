@@ -46,6 +46,10 @@ Les textes sont dans des fichiers `locales/<identifiant>.json` : celui de la rac
 
 Maj+F10 (ou F5) enregistre le fichier actif si nécessaire puis envoie une commande au shell du projet. Les outils doivent être installés et accessibles dans le `PATH`.
 
+Le widget d'exécution de la barre de titre choisit ce que Maj+F10 lance, comme dans IntelliJ : le **fichier actif** (tableau ci-dessous) ou une **configuration d'exécution**. Une configuration est un nom, une commande tapée telle quelle dans le terminal et un dossier de travail relatif au projet ; elle tourne dans un onglet de terminal à son nom, que l'exécution suivante reprend, et Ctrl+F2 (ou le bouton stop) l'arrête. « Modifier les configurations… » ouvre la liste : on y ajoute une commande shell ou une configuration proposée par le projet (`cargo run/test/build/clippy`, les scripts de `package.json` avec le gestionnaire de son fichier de verrou, `mvn package/test/clean install`, `gradle build/test/run`, avec `mvnw` / `gradlew` s'ils sont là), on la copie, la renomme ou la supprime. Elles sont enregistrées dans `.atelier/run.json`, à partager avec le projet.
+
+Ce que lancent les fenêtres Node.js, Maven et Gradle devient une configuration **temporaire** (en italique dans le widget, les 5 dernières) : relancée par Maj+F10, elle s'enregistre d'un clic (« Enregistrer la configuration »).
+
 | Langage | Action |
 | --- | --- |
 | HTML | Ouvrir le fichier dans le navigateur par défaut |

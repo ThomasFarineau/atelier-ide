@@ -449,13 +449,14 @@ impl GradlePlugin {
     }
 
     fn run(&self, host: &mut dyn Host, tasks: Vec<String>) {
+        let name = format!("gradle {}", tasks.join(" "));
         let mut args = tasks;
         if self.offline {
             args.push("--offline".into());
         }
         let command =
             crate::plugins::command_in(&self.root, &self.root, &program(&self.root), &args);
-        host.run_in_new_terminal(command);
+        host.run_configuration(name, command);
     }
 
     #[allow(clippy::too_many_arguments)]

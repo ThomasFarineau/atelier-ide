@@ -68,21 +68,29 @@ fn the_graph_is_made_kept_up_to_date_and_dropped_when_turned_off() {
     fs::write(root.join("src/c.rs"), "pub fn fourth() {}\n").unwrap();
     fs::remove_file(root.join("src/b.js")).unwrap();
     service.file_changed();
-    // The status and the published graph are read apart: wait until they agree.
+    // The graph the IDE shows is global and other tests replace it: the file is this service's.
+    let labels = || -> Vec<String> {
+        let text = fs::read_to_string(dir.join("graph.json")).unwrap_or_default();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+        value["nodes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|n| n["label"].as_str().map(str::to_string))
+            .collect()
+    };
     wait_for(&service, |s| {
+        let labels = labels();
         s.symbols == 3
             && s.files == 2
-            && current().is_some_and(|g| {
-                g.communities.len() == s.groups
-                    && g.nodes.iter().any(|n| n.label == "fourth")
-                    && !g.nodes.iter().any(|n| n.label == "second")
-            })
+            && labels.iter().any(|l| l == "fourth")
+            && !labels.iter().any(|l| l == "second")
     });
     // A restart reads nothing again: the cache answers for the files that did not change.
     let cached = load_cache(&root);
     assert_eq!(cached.files.len(), 2);
     service.disable();
-    assert!(current().is_none() && !service.enabled());
+    assert!(!service.enabled());
     assert_eq!(crate::atelier::graph_setting(&root), Some(false));
     let _ = fs::remove_dir_all(&root);
 }
