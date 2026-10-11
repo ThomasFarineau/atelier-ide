@@ -1,0 +1,87 @@
+name: Build
+
+# Builds the IDE and its bootstrap for Windows, Linux and macOS and keeps the files as artifacts.
+# `prepare-release.yml` calls it on the release branch (a preview, and the cache of the release),
+# `release.yml` before publishing a release; started by hand, it only builds.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to build
+        type: string
+        required: false
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build (${{ matrix.os_name }}-${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: windows-latest, target: x86_64-pc-windows-msvc, os_name: windows, arch: x86_64 }
+          - { runner: ubuntu-latest, target: x86_64-unknown-linux-gnu, os_name: linux, arch: x86_64 }
+          - { runner: macos-latest, target: aarch64-apple-darwin, os_name: macos, arch: aarch64 }
+          - { runner: macos-latest, target: x86_64-apple-darwin, os_name: macos, arch: x86_64 }
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libxkbcommon-dev libxcb-render0-dev \
+            libxcb-shape0-dev libxcb-xfixes0-dev libssl-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      # Only the compiled dependencies are worth keeping: downloading them takes seconds, compiling
+      # them takes minutes, and each target compiles its own. A release (pull_request event)
+      # restores the cache that `prepare-release.yml` saved on `main` but saves none: the cache of
+      # a pull request is visible only to that pull request.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+          save-if: ${{ github.event_name != 'pull_request' }}
+
+      - name: Build
+        run: cargo build --release --locked --bins --target ${{ matrix.target }}
+
+      - name: Package
+        run: |
+          ext=""
+          if [ "${{ matrix.os_name }}" = "windows" ]; then ext=".exe"; fi
+          out="target/${{ matrix.target }}/release"
+          mkdir -p dist/stage
+          cp "$out/atelier-ide$ext" "$out/atelier$ext" dist/stage/
+          name="atelier-ide-${{ matrix.os_name }}-${{ matrix.arch }}"
+          # The archive the bootstrap installs from: the IDE and the next bootstrap.
+          if [ "${{ matrix.os_name }}" = "windows" ]; then
+            (cd dist/stage && 7z a -tzip "../$name.zip" atelier-ide.exe atelier.exe)
+          else
+            tar -czf "dist/$name.tar.gz" -C dist/stage atelier-ide atelier
+          fi
+          # The program users download once.
+          cp "$out/atelier$ext" "dist/atelier-${{ matrix.os_name }}-${{ matrix.arch }}$ext"
+          rm -r dist/stage
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: atelier-${{ matrix.os_name }}-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
