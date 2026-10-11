@@ -34,7 +34,7 @@ fn available_shells_start_with_the_default_one() {
 fn real_shell_executes_and_keeps_its_working_directory() {
     let root = std::env::current_dir().unwrap();
     let mut terminal =
-        Terminal::start(&root, &Shell::default_shell()).expect("A native shell is required");
+        Terminal::start(&root, &Shell::default_shell(), &[]).expect("A native shell is required");
     let command = if cfg!(windows) {
         "Write-Output ('ATELIER_' + 'PTY_OK'); Write-Output ((Get-Location).Path)"
     } else {
@@ -79,7 +79,7 @@ fn wsl_terminal_starts_in_the_project_folder() {
     }
     let verbatim = std::path::PathBuf::from(format!(r"\\?\UNC\{}", &folder.to_string_lossy()[2..]));
     for root in [folder, verbatim] {
-        let mut terminal = Terminal::start(&root, &shell).expect("wsl.exe starts");
+        let mut terminal = Terminal::start(&root, &shell, &[]).expect("wsl.exe starts");
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
         while terminal.screen().trim().is_empty() {
             terminal.poll();
