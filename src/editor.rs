@@ -1430,8 +1430,10 @@ impl EditorState {
                 {
                     let in_gutter = pos.x - origin.x - viewport.min.x < gutter;
                     let at = self.hit(ui, text, origin, row, text_x, pos, opt);
-                    let extend = ui.input(|i| i.modifiers.shift)
-                        || !response.drag_started() && response.dragged();
+                    // The anchor is set where the button went down: a drag is only known once
+                    // the pointer has moved, a few pixels further.
+                    let pressed = ui.input(|i| i.pointer.primary_pressed());
+                    let extend = ui.input(|i| i.modifiers.shift) || !pressed;
                     if in_gutter {
                         let line = self.line_of(at);
                         let end = self.lines.get(line + 1).copied().unwrap_or(text.len());
@@ -1439,7 +1441,7 @@ impl EditorState {
                             self.anchor = self.lines[line];
                         }
                         self.cursor = end;
-                    } else if response.drag_started() || ui.input(|i| i.pointer.primary_pressed()) {
+                    } else if pressed {
                         self.move_to(at, ui.input(|i| i.modifiers.shift));
                     } else {
                         self.cursor = at;

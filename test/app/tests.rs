@@ -775,3 +775,45 @@ fn shift_f6_then_enter_renames_the_name_at_the_caret() {
     assert!(!text.contains("message"), "{text}");
     assert_eq!(text.matches("greeting").count(), 3);
 }
+
+/// Dragging the mouse selects from the character the button went down on, not from where the
+/// drag was noticed a few pixels further.
+#[test]
+fn a_mouse_drag_selects_from_where_the_button_went_down() {
+    use egui::{Event, Modifiers, PointerButton, pos2};
+    let ctx = egui::Context::default();
+    let mut ide = ide();
+    ide.apply_theme(&ctx);
+    ide.open_file(ide.root.join("examples/demo/app.js"));
+    ide.wait_loaded();
+    let mut time = 0.0;
+    let mut step = |ide: &mut Ide, events: Vec<Event>| {
+        time += 0.05;
+        frame_with(&ctx, ide, time, events);
+    };
+    step(&mut ide, vec![]);
+    step(&mut ide, vec![]);
+    let button = |pos, pressed| Event::PointerButton {
+        pos,
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+    let from = pos2(400.0, 100.0);
+    step(
+        &mut ide,
+        vec![Event::PointerMoved(from), button(from, true)],
+    );
+    let pressed_at = ide.documents[0].view.cursor;
+    let to = pos2(600.0, 100.0);
+    for i in 1..=8 {
+        step(
+            &mut ide,
+            vec![Event::PointerMoved(from + (to - from) * (i as f32 / 8.0))],
+        );
+    }
+    step(&mut ide, vec![button(to, false)]);
+    let view = &ide.documents[0].view;
+    assert_eq!(view.anchor, pressed_at);
+    assert!(view.cursor > pressed_at, "{} {}", view.anchor, view.cursor);
+}
