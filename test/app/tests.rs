@@ -728,7 +728,11 @@ fn shift_f6_then_enter_renames_the_name_at_the_caret() {
         pressed,
         modifiers: Modifiers::NONE,
     };
-    step(&mut ide, vec![Event::PointerMoved(at), button(true)], Modifiers::NONE);
+    step(
+        &mut ide,
+        vec![Event::PointerMoved(at), button(true)],
+        Modifiers::NONE,
+    );
     step(&mut ide, vec![button(false)], Modifiers::NONE);
     let caret = ide.documents[0].text.find("message").unwrap() + 1;
     ide.documents[0].view.cursor = caret;
@@ -740,14 +744,26 @@ fn shift_f6_then_enter_renames_the_name_at_the_caret() {
         repeat: false,
         modifiers,
     };
-    step(&mut ide, vec![key(Key::F6, Modifiers::SHIFT)], Modifiers::SHIFT);
+    step(
+        &mut ide,
+        vec![key(Key::F6, Modifiers::SHIFT)],
+        Modifiers::SHIFT,
+    );
     step(&mut ide, vec![], Modifiers::NONE);
     assert_eq!(
         ctx.memory(|m| m.focused()),
         Some(egui::Id::new("rename_field"))
     );
-    step(&mut ide, vec![Event::Text("greeting".into())], Modifiers::NONE);
-    step(&mut ide, vec![key(Key::Enter, Modifiers::NONE)], Modifiers::NONE);
+    step(
+        &mut ide,
+        vec![Event::Text("greeting".into())],
+        Modifiers::NONE,
+    );
+    step(
+        &mut ide,
+        vec![key(Key::Enter, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
     for _ in 0..40 {
         step(&mut ide, vec![], Modifiers::NONE);
         if !ide.documents[0].text.contains("message") {
