@@ -662,3 +662,43 @@ fn settings_are_saved_in_a_file_and_read_back() {
     assert!(!dir.join("settings.json.tmp").exists());
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// A Ctrl + click that opens another file leaves the button down over the new editor: moving
+/// the mouse before releasing it must not select in that file.
+#[test]
+fn a_press_begun_in_another_file_does_not_select() {
+    use egui::{Event, PointerButton, pos2};
+    let ctx = egui::Context::default();
+    let mut ide = ide();
+    ide.apply_theme(&ctx);
+    ide.open_file(ide.root.join("examples/demo/hello.py"));
+    ide.open_file(ide.root.join("examples/demo/app.js"));
+    ide.wait_loaded();
+    ide.active = 0;
+    let mut time = 0.0;
+    let mut step = |ide: &mut Ide, events: Vec<Event>| {
+        time += 0.05;
+        frame_with(&ctx, ide, time, events);
+    };
+    step(&mut ide, vec![]);
+    step(&mut ide, vec![]);
+    let button = |pos, pressed| Event::PointerButton {
+        pos,
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: Default::default(),
+    };
+    let from = pos2(400.0, 100.0);
+    step(&mut ide, vec![Event::PointerMoved(from)]);
+    step(&mut ide, vec![button(from, true)]);
+    // The jump to the declaration opens the other file while the button is still down.
+    ide.active = 1;
+    step(&mut ide, vec![]);
+    let to = pos2(700.0, 300.0);
+    for i in 1..=6 {
+        let pos = from + (to - from) * (i as f32 / 6.0);
+        step(&mut ide, vec![Event::PointerMoved(pos)]);
+    }
+    step(&mut ide, vec![button(to, false)]);
+    assert!(ide.documents[1].view.selection().is_empty());
+}
