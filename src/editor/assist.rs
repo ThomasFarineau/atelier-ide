@@ -201,7 +201,7 @@ fn place_entries(locations: Vec<Location>) -> Vec<Entry> {
                         .unwrap_or_default(),
                     location.line + 1
                 ),
-                None => format!("ligne {}", location.line + 1),
+                None => trf!("line", line = location.line + 1),
             },
             label: location.preview.clone(),
             kind: None,
@@ -220,6 +220,27 @@ struct GotoHover {
     link: bool,
     /// Where it leads, for the preview.
     places: Vec<Location>,
+}
+
+/// The edits of a step of Reformat Code, or why there are none.
+type FormatAnswer = Oneshot<Result<Vec<TextEdit>, String>>;
+
+/// What Reformat Code does, in order.
+#[derive(Clone, Debug, PartialEq)]
+enum FormatStep {
+    Imports,
+    /// The code, in these lines only (0-based, end excluded) or in the whole file.
+    Code(Option<Vec<Range<usize>>>),
+}
+
+/// Reformat Code, as asked from the shortcut or from the Reformat File dialog.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FormatRequest {
+    pub organize_imports: bool,
+    /// Only these lines (0-based, end excluded); the whole file when None.
+    pub lines: Option<Vec<Range<usize>>>,
+    /// Only the imports, not the code (Optimize Imports).
+    pub imports_only: bool,
 }
 
 #[derive(Default)]
@@ -251,6 +272,11 @@ pub struct AssistState {
     /// Ctrl+F12 was pressed: show the structure of the file.
     want_symbols: bool,
     symbols: Option<Oneshot<Vec<Symbol>>>,
+    /// Reformat Code: the steps left, and the answer awaited with the version it was asked for.
+    format_steps: Vec<FormatStep>,
+    format_answer: Option<(FormatStep, u64, FormatAnswer)>,
+    /// A message for the status bar, taken by the editor's caller.
+    pub message: Option<String>,
     had_focus: bool,
     pub diagnostics: Arc<Vec<Diagnostic>>,
 }
@@ -367,6 +393,7 @@ impl EditorState {
                 ui.ctx().request_repaint_after(Duration::from_millis(30));
             }
         }
+        self.format_frame(ui, text, assist);
         self.usage_frame(ui, text, opt);
         if let Some(answer) = &self.assist.fixes {
             if let Some(fixes) = answer.take() {
@@ -382,7 +409,7 @@ impl EditorState {
                             choice: Choice::Fix(fix),
                         })
                         .collect();
-                    self.assist.chooser = Some(Chooser::new("Corrections rapides", entries, true));
+                    self.assist.chooser = Some(Chooser::new(tr!("quick_fixes"), entries, true));
                 }
             } else {
                 ui.ctx().request_repaint_after(Duration::from_millis(30));
@@ -525,6 +552,10 @@ impl EditorState {
         }
         if key == Key::F12 && m.command {
             self.assist.want_symbols = true;
+            return Some(false);
+        }
+        if key == Key::F2 && !m.command && !m.alt {
+            self.next_problem(!m.shift);
             return Some(false);
         }
         if key == Key::F7 && m.alt {
@@ -770,6 +801,74 @@ impl EditorState {
         self.anchor = pos;
     }
 
+    /// Starts Reformat Code: the imports first when asked, then the code.
+    pub fn request_format(&mut self, request: FormatRequest) {
+        let mut steps = Vec::new();
+        if request.organize_imports || request.imports_only {
+            steps.push(FormatStep::Imports);
+        }
+        if !request.imports_only {
+            steps.push(FormatStep::Code(request.lines));
+        }
+        self.assist.format_steps = steps;
+        self.assist.format_answer = None;
+    }
+
+    /// Asks for the next step of a reformat, and applies its answer.
+    fn format_frame(&mut self, ui: &Ui, text: &str, assist: &Assist) {
+        if self.assist.format_answer.is_none()
+            && self.assist.apply.is_none()
+            && !self.assist.format_steps.is_empty()
+        {
+            let step = self.assist.format_steps.remove(0);
+            let answer = match step {
+                FormatStep::Imports => assist.service.organize_imports(&assist.doc, text),
+                FormatStep::Code(_) => assist.service.format(&assist.doc, text),
+            };
+            self.assist.format_answer = Some((step, self.rev, answer));
+        }
+        let Some((step, rev, answer)) = &self.assist.format_answer else {
+            return;
+        };
+        let Some(result) = answer.take() else {
+            ui.ctx().request_repaint_after(Duration::from_millis(30));
+            return;
+        };
+        let (step, rev) = (step.clone(), *rev);
+        self.assist.format_answer = None;
+        // The text changed while the formatter worked: its edits are for another text.
+        if rev != self.rev {
+            self.assist.format_steps.clear();
+            return;
+        }
+        match result {
+            Ok(edits) => {
+                let edits = match &step {
+                    FormatStep::Code(Some(lines)) => {
+                        crate::languages::format::within_lines(edits, text, lines)
+                    }
+                    _ => edits,
+                };
+                if let FormatStep::Code(_) = step {
+                    let count = crate::languages::format::changed_lines(text, &edits);
+                    self.assist.message = Some(if edits.is_empty() {
+                        tr!("no_lines_changed_content_already").to_string()
+                    } else {
+                        trf!("reformatted_line_s", count = count)
+                    });
+                }
+                if !edits.is_empty() {
+                    self.assist.apply = Some(edits);
+                    ui.ctx().request_repaint();
+                }
+            }
+            Err(error) => {
+                self.assist.format_steps.clear();
+                self.assist.message = Some(format!("{}{error}", tr!("error_prefix")));
+            }
+        }
+    }
+
     /// Starts renaming the name at the caret (Shift+F6).
     pub fn request_rename(&mut self, text: &str) {
         let word = self.word_at(text, self.cursor);
@@ -863,16 +962,14 @@ impl EditorState {
             return;
         }
         // The usages are always listed, as IntelliJ does; one declaration is simply gone to.
-        if places.len() == 1 && kind != Nav::Usages && !usages {
-            self.assist.navigate = places.into_iter().next();
-        } else if places.len() == 1 {
+        if places.len() == 1 {
             self.assist.navigate = places.into_iter().next();
         } else {
             let title = match (kind, usages) {
-                (_, true) | (Nav::Usages, _) => "Utilisations",
-                (Nav::Type, _) => "Types",
-                (Nav::Implementation, _) => "Implémentations",
-                _ => "Déclarations",
+                (_, true) | (Nav::Usages, _) => tr!("usages"),
+                (Nav::Type, _) => tr!("types"),
+                (Nav::Implementation, _) => tr!("implementations"),
+                _ => tr!("declarations"),
             };
             self.assist.chooser = Some(Chooser::new(title, place_entries(places), false));
         }
@@ -900,7 +997,7 @@ impl EditorState {
                 choice: Choice::Go(Location::in_text(None, text, s.range)),
             })
             .collect();
-        let mut chooser = Chooser::new("Structure du fichier", entries, false);
+        let mut chooser = Chooser::new(tr!("file_structure"), entries, false);
         chooser.filter = Some(String::new());
         chooser.centered = true;
         chooser.selected = current;
@@ -1061,11 +1158,6 @@ impl EditorState {
         }
     }
 
-    /// Whether the pointer is over a word that Ctrl+click leads somewhere from.
-    pub(super) fn link_active(&self) -> bool {
-        self.assist.goto_hover.link
-    }
-
     /// Underlines the word that Ctrl+click would follow.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn link_underline(
@@ -1112,10 +1204,7 @@ impl EditorState {
     ) {
         for diagnostic in self.assist.diagnostics.iter() {
             let range = &diagnostic.range;
-            if range.start > line.end
-                || range.end < line.start
-                || (range.end == range.start && range.start > line.end)
-            {
+            if range.start > line.end || range.end < line.start {
                 continue;
             }
             let start = range.start.max(line.start);
@@ -1142,6 +1231,45 @@ impl EditorState {
     }
 
     /// Problems under a byte offset.
+    /// F2 / Shift+F2: the caret to the next or previous problem of the file, the errors first
+    /// when there are, round the end; its message goes to the status bar.
+    pub(super) fn next_problem(&mut self, forward: bool) {
+        let errors = self
+            .assist
+            .diagnostics
+            .iter()
+            .any(|d| d.severity == Severity::Error);
+        let mut problems: Vec<&Diagnostic> = self
+            .assist
+            .diagnostics
+            .iter()
+            .filter(|d| !errors || d.severity == Severity::Error)
+            .filter(|d| matches!(d.severity, Severity::Error | Severity::Warning))
+            .collect();
+        problems.sort_by_key(|d| d.range.start);
+        problems.dedup_by_key(|d| d.range.start);
+        let at = self.cursor;
+        let found = if forward {
+            problems
+                .iter()
+                .find(|d| d.range.start > at)
+                .or(problems.first())
+        } else {
+            problems
+                .iter()
+                .rev()
+                .find(|d| d.range.start < at)
+                .or(problems.last())
+        };
+        let Some(problem) = found else {
+            self.assist.message = Some(tr!("no_problems_file").into());
+            return;
+        };
+        let (start, message) = (problem.range.start, problem.message.clone());
+        self.select(start, start);
+        self.assist.message = Some(message);
+    }
+
     fn diagnostics_at(&self, offset: usize) -> Vec<&Diagnostic> {
         self.assist
             .diagnostics
@@ -1207,7 +1335,7 @@ impl EditorState {
             return;
         };
         let word = self.word_at(text, offset);
-        let on_word = !word.is_empty() || self.diagnostics_at(offset).len() > 0;
+        let on_word = !word.is_empty() || !self.diagnostics_at(offset).is_empty();
         let same = self.assist.hover.word.as_ref().is_some_and(|w| *w == word);
         if !same || !on_word {
             self.assist.hover = HoverState {
@@ -1262,7 +1390,7 @@ impl EditorState {
             .diagnostics
             .iter()
             .filter(|d| d.severity != Severity::Hint)
-            .map(|d| (self.line_of(d.range.start.min(usize::MAX)), d.severity))
+            .map(|d| (self.line_of(d.range.start), d.severity))
             .collect();
         marks.sort_by_key(|(_, s)| std::cmp::Reverse(*s));
         let painter = ui.painter();
@@ -1354,7 +1482,11 @@ impl EditorState {
                     .inner_margin(egui::Margin::same(10))
                     .show(ui, |ui| {
                         ui.set_width(320.0);
-                        ui.label(RichText::new("Renommer").font(crate::ui::semibold(12.5)).color(t.text_secondary));
+                        ui.label(
+                            RichText::new(tr!("rename"))
+                                .font(crate::ui::semibold(12.5))
+                                .color(t.text_secondary),
+                        );
                         let id = egui::Id::new("rename_field");
                         let mut output = egui::TextEdit::singleline(&mut rename.name)
                             .id(id)
@@ -1366,7 +1498,9 @@ impl EditorState {
                             rename.focus = false;
                             output.response.request_focus();
                             let end = egui::text::CCursor::new(rename.name.chars().count());
-                            output.state.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(0), end)));
+                            output.state.cursor.set_char_range(Some(
+                                egui::text::CCursorRange::two(egui::text::CCursor::new(0), end),
+                            ));
                             output.state.store(ui.ctx(), id);
                         }
                         let enter = ui.input(|i| i.key_pressed(Key::Enter));
@@ -1377,11 +1511,14 @@ impl EditorState {
                             cancel = true;
                         }
                         let hint = if busy {
-                            "Renommage…".to_string()
+                            tr!("renaming").to_string()
                         } else if occurrences > 1 {
-                            format!("{occurrences} occurrences dans ce fichier, et les fichiers qui l'importent · Entrée pour valider")
+                            trf!(
+                                "occurrences_file_files_import_enter",
+                                occurrences = occurrences
+                            )
                         } else {
-                            "Entrée pour valider, Échap pour annuler".to_string()
+                            tr!("enter_apply_esc_cancel").to_string()
                         };
                         ui.label(RichText::new(hint).small().color(t.text_secondary));
                         if let Some(error) = &rename.error {
@@ -1472,7 +1609,7 @@ impl EditorState {
                         .unwrap_or_default(),
                     place.line + 1
                 ),
-                None => format!("ligne {}", place.line + 1),
+                None => trf!("line", line = place.line + 1),
             };
             let hover = Hover {
                 range: 0..0,
@@ -1619,7 +1756,7 @@ fn draw_popup(
         Stroke::new(1.0_f32, t.border),
         StrokeKind::Inside,
     );
-    let mono = FontId::proportional(font.size.min(14.0).max(12.0));
+    let mono = FontId::proportional(font.size.clamp(12.0, 14.0));
     for (visible, (index, positions)) in popup
         .filtered
         .iter()
@@ -1780,7 +1917,7 @@ fn draw_chooser(
                 rect.top() + title_height + 4.0 + ROW_HEIGHT / 2.0,
             ),
             Align2::LEFT_CENTER,
-            "Aucun résultat",
+            tr!("no_results"),
             FontId::proportional(13.0),
             t.text_secondary,
         );
@@ -1929,642 +2066,5 @@ fn draw_hover(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::languages::Provider;
-
-    /// A provider that answers with a fixed list, fixed places and one problem.
-    struct Fixed(
-        Vec<CompletionItem>,
-        Vec<Location>,
-        Vec<Location>,
-        Vec<QuickFix>,
-        Vec<Symbol>,
-    );
-
-    impl Provider for Fixed {
-        fn handles(&self, language: &str) -> bool {
-            language == "js"
-        }
-        fn update(&mut self, _: &DocRef, _: &str, _: u64) {}
-        fn close(&mut self, _: u64) {}
-        fn diagnostics(&mut self, _: u64) -> Arc<Vec<Diagnostic>> {
-            Arc::new(vec![Diagnostic {
-                range: 0..3,
-                severity: Severity::Error,
-                message: "bad".into(),
-                source: "test".into(),
-            }])
-        }
-        fn complete(
-            &mut self,
-            _: &DocRef,
-            text: &str,
-            offset: usize,
-            _: bool,
-        ) -> Oneshot<Option<Completion>> {
-            let from = text[..offset]
-                .rfind(|c: char| !is_word(c))
-                .map_or(0, |i| i + 1);
-            Oneshot::ready(Some(Completion {
-                from,
-                items: self.0.clone(),
-            }))
-        }
-        fn hover(&mut self, _: &DocRef, _: &str, _: usize) -> Oneshot<Option<Hover>> {
-            Oneshot::ready(None)
-        }
-        fn definition(&mut self, _: &DocRef, _: &str, _: usize) -> Oneshot<Vec<Location>> {
-            Oneshot::ready(self.1.clone())
-        }
-        fn references(&mut self, _: &DocRef, _: &str, _: usize) -> Oneshot<Vec<Location>> {
-            Oneshot::ready(self.2.clone())
-        }
-        fn quick_fixes(&mut self, _: &DocRef, _: &str, _: usize) -> Oneshot<Vec<QuickFix>> {
-            Oneshot::ready(self.3.clone())
-        }
-        fn symbols(&mut self, _: &DocRef, _: &str) -> Oneshot<Vec<Symbol>> {
-            Oneshot::ready(self.4.clone())
-        }
-        fn highlights(&mut self, _: &DocRef, _: &str, _: usize) -> Oneshot<Vec<Range<usize>>> {
-            Oneshot::ready(vec![0..3, 10..13])
-        }
-    }
-
-    fn setup(items: Vec<CompletionItem>) -> (Service, DocRef) {
-        setup_places(items, Vec::new(), Vec::new())
-    }
-
-    fn setup_places(
-        items: Vec<CompletionItem>,
-        definition: Vec<Location>,
-        references: Vec<Location>,
-    ) -> (Service, DocRef) {
-        let service = Service::default();
-        service.add(Box::new(Fixed(
-            items,
-            definition,
-            references,
-            Vec::new(),
-            Vec::new(),
-        )));
-        (
-            service,
-            DocRef {
-                key: 1,
-                path: None,
-                language: "js".into(),
-            },
-        )
-    }
-
-    fn setup_extras(fixes: Vec<QuickFix>, symbols: Vec<Symbol>) -> (Service, DocRef) {
-        let service = Service::default();
-        service.add(Box::new(Fixed(
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            fixes,
-            symbols,
-        )));
-        (
-            service,
-            DocRef {
-                key: 1,
-                path: None,
-                language: "js".into(),
-            },
-        )
-    }
-
-    fn place(line: usize, column: usize, end: usize) -> Location {
-        Location {
-            path: None,
-            line,
-            column,
-            end_line: line,
-            end_column: end,
-            preview: format!("line {line}"),
-        }
-    }
-
-    fn frame(state: &mut EditorState, service: &Service, doc: &DocRef, text: &str) {
-        let ctx = egui::Context::default();
-        let options = Options {
-            language: "js",
-            font: FontId::monospace(14.0),
-            theme: crate::ui::theme_by_index(0),
-            marks: &[],
-            annotations: None,
-            gutter_commands: &[],
-            assist: Some(Assist {
-                service,
-                doc: doc.clone(),
-            }),
-            search: &[],
-        };
-        let _ = ctx.run(Default::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| state.assist_frame(ui, text, &options));
-        });
-    }
-
-    fn state_for(text: &str) -> EditorState {
-        let mut state = EditorState::default();
-        state.sync(text);
-        state.cursor = text.len();
-        state.anchor = text.len();
-        state
-    }
-
-    #[test]
-    fn typing_opens_the_popup_filters_it_and_enter_inserts() {
-        let items = vec![
-            CompletionItem::new("console", ItemKind::Class),
-            CompletionItem::new("const", ItemKind::Keyword).rank(70),
-            CompletionItem::new("continue", ItemKind::Keyword).rank(70),
-            CompletionItem::new("alert", ItemKind::Function),
-        ];
-        let (service, doc) = setup(items);
-        let mut text = "co".to_string();
-        let mut state = state_for(&text);
-        state.assist_after_edit(&text, Some('o'), false);
-        assert_eq!(
-            state.assist.want,
-            Some(false),
-            "a letter typed after one starts completion"
-        );
-        frame(&mut state, &service, &doc, &text);
-        let popup = state.assist.popup.as_ref().expect("the popup opens");
-        let shown: Vec<&str> = popup
-            .filtered
-            .iter()
-            .map(|(i, _)| popup.items[*i].label.as_str())
-            .collect();
-        assert_eq!(
-            shown,
-            ["console", "const", "continue"],
-            "alert does not match, best first"
-        );
-        // One more letter narrows the list.
-        text.push('n');
-        state.cursor = text.len();
-        state.assist_after_edit(&text, Some('n'), false);
-        assert_eq!(state.assist.popup.as_ref().unwrap().filtered.len(), 3);
-        text.push('s');
-        state.cursor = text.len();
-        state.assist_after_edit(&text, Some('s'), false);
-        let popup = state.assist.popup.as_ref().unwrap();
-        assert_eq!(popup.filtered.len(), 2, "console and const");
-        // Down then Enter takes the second one.
-        assert_eq!(
-            state.assist_key(&mut text, Key::ArrowDown, Modifiers::NONE),
-            Some(false)
-        );
-        assert_eq!(
-            state.assist_key(&mut text, Key::Enter, Modifiers::NONE),
-            Some(true)
-        );
-        assert_eq!(text, "const");
-        assert_eq!(state.cursor, 5);
-        assert!(state.assist.popup.is_none());
-        // Leaving the word closes nothing that is not open; a space after a word does not reopen it.
-        text.push(' ');
-        state.cursor = text.len();
-        state.assist_after_edit(&text, Some(' '), false);
-        assert!(state.assist.want.is_none() && state.assist.popup.is_none());
-    }
-
-    #[test]
-    fn items_place_the_caret_and_keep_the_indentation() {
-        let snippet =
-            CompletionItem::new("if", ItemKind::Snippet).insert("if () {\n    \n}", Some(4));
-        let call = CompletionItem::new("log", ItemKind::Method).insert("log()", Some(4));
-        let (service, doc) = setup(vec![snippet, call]);
-
-        let mut text = "function f() {\n    if".to_string();
-        let mut state = state_for(&text);
-        state.assist.want = Some(true);
-        frame(&mut state, &service, &doc, &text);
-        assert_eq!(
-            state.assist_key(&mut text, Key::Tab, Modifiers::NONE),
-            Some(true)
-        );
-        assert_eq!(text, "function f() {\n    if () {\n        \n    }");
-        assert_eq!(
-            &text[state.cursor - 4..state.cursor],
-            "if (",
-            "the caret is between the parentheses"
-        );
-
-        let mut text = "console.lo".to_string();
-        let mut state = state_for(&text);
-        state.assist.want = Some(true);
-        frame(&mut state, &service, &doc, &text);
-        assert_eq!(
-            state.assist_key(&mut text, Key::Enter, Modifiers::NONE),
-            Some(true)
-        );
-        assert_eq!(text, "console.log()");
-        assert_eq!(state.cursor, "console.log(".len());
-    }
-
-    #[test]
-    fn tab_replaces_the_rest_of_the_word_and_escape_closes() {
-        let (service, doc) = setup(vec![CompletionItem::new("length", ItemKind::Property)]);
-        let mut text = "arr.le_old".to_string();
-        let mut state = state_for(&text);
-        state.cursor = "arr.le".len();
-        state.anchor = state.cursor;
-        state.assist.want = Some(true);
-        frame(&mut state, &service, &doc, &text);
-        assert!(state.assist.popup.is_some());
-        assert_eq!(
-            state.assist_key(&mut text, Key::Tab, Modifiers::NONE),
-            Some(true)
-        );
-        assert_eq!(text, "arr.length");
-
-        let mut text = "arr.le".to_string();
-        let mut state = state_for(&text);
-        state.assist.want = Some(true);
-        frame(&mut state, &service, &doc, &text);
-        assert_eq!(
-            state.assist_key(&mut text, Key::Escape, Modifiers::NONE),
-            Some(false)
-        );
-        assert!(state.assist.popup.is_none());
-        assert_eq!(text, "arr.le");
-    }
-
-    #[test]
-    fn going_to_a_declaration_jumps_to_the_only_place() {
-        let (service, doc) = setup_places(Vec::new(), vec![place(0, 9, 12)], Vec::new());
-        let text = "function add() {}\nadd();\n";
-        let mut state = state_for(text);
-        state.cursor = text.find("add();").unwrap() + 1;
-        state.assist_goto(state.cursor);
-        frame(&mut state, &service, &doc, text);
-        assert_eq!(state.assist.navigate, Some(place(0, 9, 12)));
-        assert!(state.assist.chooser.is_none());
-    }
-
-    #[test]
-    fn a_declaration_leads_to_its_usages_and_several_places_are_chosen_from() {
-        // The definition is the word itself: the usages are asked for.
-        let text = "function add() {}\nadd();\nadd();\n";
-        let (service, doc) = setup_places(
-            Vec::new(),
-            vec![place(0, 9, 12)],
-            vec![place(1, 0, 3), place(2, 0, 3)],
-        );
-        let mut state = state_for(text);
-        state.cursor = 10;
-        state.assist_goto(10);
-        frame(&mut state, &service, &doc, text);
-        frame(&mut state, &service, &doc, text);
-        assert!(state.assist.navigate.is_none());
-        let chooser = state
-            .assist
-            .chooser
-            .as_ref()
-            .expect("two usages to choose from");
-        assert_eq!(chooser.title, "Utilisations");
-        assert_eq!(chooser.entries.len(), 2);
-        // Down and Enter go to the second.
-        let mut text = text.to_string();
-        assert_eq!(
-            state.assist_key(&mut text, Key::ArrowDown, Modifiers::NONE),
-            Some(false)
-        );
-        assert_eq!(
-            state.assist_key(&mut text, Key::Enter, Modifiers::NONE),
-            Some(false)
-        );
-        assert_eq!(state.assist.navigate, Some(place(2, 0, 3)));
-        assert!(state.assist.chooser.is_none());
-    }
-
-    #[test]
-    fn alt_enter_offers_actions_and_applies_the_chosen_one() {
-        use crate::languages::TextEdit;
-        let fix = QuickFix {
-            title: "Importer « helper »".into(),
-            edits: vec![TextEdit {
-                range: 0..0,
-                new_text: "import { helper } from './u.js';\n".into(),
-            }],
-        };
-        let other = QuickFix {
-            title: "Autre".into(),
-            edits: vec![TextEdit {
-                range: 0..0,
-                new_text: "x".into(),
-            }],
-        };
-        let (service, doc) = setup_extras(vec![fix, other], Vec::new());
-        let mut text = "helper();\n".to_string();
-        let mut state = state_for(&text);
-        state.cursor = 3;
-        state.anchor = 3;
-        assert_eq!(
-            state.assist_key(&mut text, Key::Enter, Modifiers::ALT),
-            Some(false)
-        );
-        frame(&mut state, &service, &doc, &text);
-        let chooser = state
-            .assist
-            .chooser
-            .as_ref()
-            .expect("the actions are listed");
-        assert_eq!(chooser.title, "Corrections rapides");
-        assert_eq!(chooser.entries.len(), 2);
-        assert_eq!(
-            state.assist_key(&mut text, Key::Enter, Modifiers::NONE),
-            Some(true)
-        );
-        assert_eq!(text, "import { helper } from './u.js';\nhelper();\n");
-        assert_eq!(
-            state.cursor,
-            3 + "import { helper } from './u.js';\n".len(),
-            "the caret stays on the same code"
-        );
-    }
-
-    #[test]
-    fn the_file_structure_is_filtered_by_typing_and_goes_to_the_symbol() {
-        let text = "function alpha() {}\nclass Beta {\n  gamma() {}\n}\n";
-        let symbols = vec![
-            Symbol {
-                name: "alpha".into(),
-                kind: ItemKind::Function,
-                detail: "()".into(),
-                range: 9..14,
-                depth: 0,
-            },
-            Symbol {
-                name: "Beta".into(),
-                kind: ItemKind::Class,
-                detail: String::new(),
-                range: 26..30,
-                depth: 0,
-            },
-            Symbol {
-                name: "gamma".into(),
-                kind: ItemKind::Method,
-                detail: "()".into(),
-                range: 35..40,
-                depth: 1,
-            },
-        ];
-        let (service, doc) = setup_extras(Vec::new(), symbols);
-        let mut state = state_for(text);
-        state.cursor = 36;
-        state.anchor = 36;
-        assert_eq!(
-            state.assist_key(&mut text.to_string(), Key::F12, Modifiers::COMMAND),
-            Some(false)
-        );
-        frame(&mut state, &service, &doc, text);
-        let chooser = state.assist.chooser.as_ref().expect("the structure opens");
-        assert_eq!(chooser.shown.len(), 3);
-        assert_eq!(
-            chooser.selected, 2,
-            "the symbol the caret is in comes pre-selected"
-        );
-        // Typing filters, in no document: the text stays as it was.
-        assert!(state.assist_text("be"));
-        let chooser = state.assist.chooser.as_ref().unwrap();
-        assert_eq!(chooser.shown.len(), 1);
-        assert_eq!(chooser.entries[chooser.shown[0]].label, "Beta");
-        let mut owned = text.to_string();
-        assert_eq!(
-            state.assist_key(&mut owned, Key::Backspace, Modifiers::NONE),
-            Some(false)
-        );
-        assert_eq!(
-            state.assist.chooser.as_ref().unwrap().shown.len(),
-            1,
-            "one letter left: still `b`"
-        );
-        assert_eq!(
-            state.assist_key(&mut owned, Key::Enter, Modifiers::NONE),
-            Some(false)
-        );
-        let target = state.assist.navigate.clone().expect("a place to go to");
-        assert_eq!(target.range_in(text), 26..30);
-        assert_eq!(target.preview, "class Beta {");
-        assert!(!state.assist_text("x"), "no list is open any more");
-    }
-
-    #[test]
-    fn the_name_under_the_caret_is_highlighted_after_a_pause() {
-        let (service, doc) = setup(Vec::new());
-        let text = "abc = 1;\nabc;\n";
-        let mut state = state_for(text);
-        state.cursor = 1;
-        state.anchor = 1;
-        frame(&mut state, &service, &doc, text);
-        assert!(
-            state.assist.usages.ranges.is_empty(),
-            "not before the pause"
-        );
-        std::thread::sleep(Duration::from_millis(200));
-        frame(&mut state, &service, &doc, text);
-        frame(&mut state, &service, &doc, text);
-        assert_eq!(state.assist.usages.ranges, [0..3, 10..13]);
-        // An edit forgets them.
-        state.assist_after_edit(text, Some('x'), false);
-        assert!(state.assist.usages.ranges.is_empty());
-    }
-
-    #[test]
-    fn brackets_are_paired_around_the_caret() {
-        let text = "f(a[1], {b: (2)})";
-        let mut state = state_for(text);
-        let pair = |state: &mut EditorState, at: usize| {
-            state.cursor = at;
-            state.matching_bracket(text)
-        };
-        assert_eq!(pair(&mut state, 2), Some((1, 16)), "after the opening one");
-        assert_eq!(pair(&mut state, 17), Some((1, 16)), "after the closing one");
-        assert_eq!(
-            pair(&mut state, 5),
-            Some((3, 5)),
-            "before the closing bracket of `a[1]`"
-        );
-        assert_eq!(pair(&mut state, 0), None, "no bracket next to the caret");
-    }
-
-    #[test]
-    fn a_usage_can_be_clicked_in_the_list() {
-        let text = "function add() {}
-add();
-add();
-add();
-";
-        let (service, doc) = setup_places(
-            Vec::new(),
-            vec![place(0, 9, 12)],
-            vec![place(1, 0, 3), place(2, 0, 3), place(3, 0, 3)],
-        );
-        let mut state = state_for(text);
-        state.cursor = 10;
-        state.assist_goto(10);
-        for _ in 0..3 {
-            frame(&mut state, &service, &doc, text);
-        }
-        let chooser = state
-            .assist
-            .chooser
-            .as_mut()
-            .expect("three usages to choose from");
-        let rect = Rect::from_min_size(pos2(100.0, 100.0), vec2(560.0, 140.0));
-        chooser.rect = Some(rect);
-        let mut owned = text.to_string();
-        // The second row: below the title, one row down.
-        let click = pos2(150.0, rect.top() + 26.0 + 4.0 + ROW_HEIGHT * 1.5);
-        assert_eq!(state.assist_click(&mut owned, click), Some(false));
-        assert_eq!(state.assist.navigate, Some(place(2, 0, 3)));
-        assert!(state.assist.chooser.is_none());
-    }
-
-    #[test]
-    fn the_wheel_scrolls_a_long_list() {
-        let many: Vec<Location> = (0..30).map(|i| place(i, 0, 3)).collect();
-        let mut chooser = Chooser::new("Utilisations", place_entries(many), false);
-        scroll_chooser(&mut chooser, -3.0);
-        assert_eq!(chooser.scroll, 3);
-        scroll_chooser(&mut chooser, 100.0);
-        assert_eq!(chooser.scroll, 0);
-        scroll_chooser(&mut chooser, -1000.0);
-        assert_eq!(chooser.scroll, 30 - ROWS);
-    }
-
-    /// A provider that renames `old` to whatever is asked, in this file and in `other.js`.
-    struct Renamer;
-
-    impl Provider for Renamer {
-        fn handles(&self, language: &str) -> bool {
-            language == "js"
-        }
-        fn update(&mut self, _: &DocRef, _: &str, _: u64) {}
-        fn close(&mut self, _: u64) {}
-        fn diagnostics(&mut self, _: u64) -> Arc<Vec<Diagnostic>> {
-            Arc::default()
-        }
-        fn complete(
-            &mut self,
-            _: &DocRef,
-            _: &str,
-            _: usize,
-            _: bool,
-        ) -> Oneshot<Option<Completion>> {
-            Oneshot::ready(None)
-        }
-        fn hover(&mut self, _: &DocRef, _: &str, _: usize) -> Oneshot<Option<Hover>> {
-            Oneshot::ready(None)
-        }
-        fn rename(
-            &mut self,
-            _: &DocRef,
-            text: &str,
-            offset: usize,
-            new_name: &str,
-        ) -> Oneshot<Result<Vec<FileEdit>, String>> {
-            if new_name == "taken" {
-                return Oneshot::ready(Err("« taken » existe déjà ici".into()));
-            }
-            let start = text[..offset]
-                .rfind(|c: char| !c.is_alphanumeric())
-                .map_or(0, |i| i + 1);
-            let old = start
-                ..text[start..]
-                    .find(|c: char| !c.is_alphanumeric())
-                    .map_or(text.len(), |i| start + i);
-            Oneshot::ready(Ok(vec![
-                FileEdit {
-                    path: None,
-                    edits: vec![TextEdit {
-                        range: old,
-                        new_text: new_name.into(),
-                    }],
-                },
-                FileEdit {
-                    path: Some("other.js".into()),
-                    edits: vec![TextEdit {
-                        range: 0..3,
-                        new_text: new_name.into(),
-                    }],
-                },
-            ]))
-        }
-    }
-
-    #[test]
-    fn renaming_asks_for_a_name_and_returns_the_changes_of_every_file() {
-        let service = Service::default();
-        service.add(Box::new(Renamer));
-        let doc = DocRef {
-            key: 1,
-            path: None,
-            language: "js".into(),
-        };
-        let mut text = "old + old".to_string();
-        let mut state = state_for(&text);
-        state.cursor = 1;
-        state.anchor = 1;
-        // Shift+F6 opens the field with the name in it.
-        assert_eq!(
-            state.assist_key(&mut text, Key::F6, Modifiers::SHIFT),
-            Some(false)
-        );
-        assert_eq!(state.assist.rename.as_ref().unwrap().name, "old");
-        // A refused name keeps the field open with the reason.
-        state.assist.rename.as_mut().unwrap().name = "taken".into();
-        state.assist.rename.as_mut().unwrap().submit = true;
-        frame(&mut state, &service, &doc, &text);
-        assert_eq!(
-            state.assist.rename.as_ref().unwrap().error.as_deref(),
-            Some("« taken » existe déjà ici")
-        );
-        // A good one closes it and hands the changes over.
-        state.assist.rename.as_mut().unwrap().name = "fresh".into();
-        state.assist.rename.as_mut().unwrap().submit = true;
-        frame(&mut state, &service, &doc, &text);
-        assert!(state.assist.rename.is_none());
-        let edits = state.assist.apply.take().expect("changes to this document");
-        state.apply_edits(&mut text, edits);
-        assert_eq!(text, "fresh + old");
-        assert_eq!(state.assist.file_edits.len(), 1);
-        assert_eq!(
-            state.assist.file_edits[0].0,
-            std::path::PathBuf::from("other.js")
-        );
-        // One undo brings everything back.
-        assert!(state.undo(&mut text));
-        assert_eq!(text, "old + old");
-    }
-
-    #[test]
-    fn nothing_to_go_to_does_nothing() {
-        let (service, doc) = setup_places(Vec::new(), Vec::new(), Vec::new());
-        let text = "foo();\n";
-        let mut state = state_for(text);
-        state.assist_goto(1);
-        frame(&mut state, &service, &doc, text);
-        frame(&mut state, &service, &doc, text);
-        assert!(
-            state.assist.navigate.is_none()
-                && state.assist.chooser.is_none()
-                && state.assist.job.is_none()
-        );
-    }
-
-    #[test]
-    fn diagnostics_are_counted_for_the_status_bar() {
-        let (service, doc) = setup(Vec::new());
-        let mut state = state_for("bad");
-        frame(&mut state, &service, &doc, "bad");
-        assert_eq!(state.assist.counts(), (1, 0));
-    }
-}
+#[path = "../../test/editor/assist/tests.rs"]
+mod tests;

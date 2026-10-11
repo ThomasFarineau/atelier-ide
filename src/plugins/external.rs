@@ -37,20 +37,20 @@ pub fn load(root: &Path) -> (Vec<Plugin>, Vec<String>) {
         }
         let result = (|| -> anyhow::Result<Plugin> {
             if fs::metadata(&path)?.len() > 128 * 1024 {
-                anyhow::bail!("Manifeste trop volumineux");
+                anyhow::bail!(tr!("manifest_too_large"));
             }
             let plugin: Plugin = serde_json::from_str(&fs::read_to_string(&path)?)?;
             if plugin.id.is_empty()
                 || plugin.name.is_empty()
                 || plugin.commands.iter().any(|c| c.program.is_empty())
             {
-                anyhow::bail!("Identifiant, nom ou programme vide");
+                anyhow::bail!(tr!("empty_identifier_name_program"));
             }
             Ok(plugin)
         })();
         match result {
             Ok(p) if plugins.iter().any(|other: &Plugin| other.id == p.id) => {
-                errors.push(format!("{} : identifiant dupliqué", path.display()))
+                errors.push(trf!("duplicate_identifier", path = path.display()))
             }
             Ok(p) => plugins.push(p),
             Err(e) => errors.push(format!("{} : {e}", path.display())),
@@ -71,6 +71,24 @@ pub fn shell_command(program: &str, args: &[String]) -> String {
     )
 }
 
+/// The command typed in the terminal to run a program from a folder of the project: the
+/// terminal starts at the root, so a folder below it goes first.
+pub fn command_in(dir: &Path, root: &Path, program: &str, args: &[String]) -> String {
+    let run = shell_command(program, args);
+    if dir == root {
+        return run;
+    }
+    let folder = dir.to_string_lossy();
+    if cfg!(windows) {
+        format!(
+            "Set-Location -LiteralPath '{}'; {run}",
+            folder.replace('\'', "''")
+        )
+    } else {
+        format!("cd '{}' && {run}", folder.replace('\'', "'\\''"))
+    }
+}
+
 fn shell_quote(value: &str) -> String {
     if cfg!(windows) {
         format!("'{}'", value.replace('\'', "''"))
@@ -80,20 +98,5 @@ fn shell_quote(value: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn arguments_are_quoted_as_literals() {
-        let cmd = shell_command(
-            "python",
-            &["a b.py".into(), "$(echo injected)".into(), "it's.py".into()],
-        );
-        assert!(cmd.contains("'a b.py'"));
-        assert!(cmd.contains("'$(echo injected)'"));
-        if cfg!(windows) {
-            assert!(cmd.contains("'it''s.py'"));
-        } else {
-            assert!(cmd.contains("'it'\\''s.py'"));
-        }
-    }
-}
+#[path = "../../test/plugins/external/tests.rs"]
+mod tests;

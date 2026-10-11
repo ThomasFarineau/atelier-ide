@@ -36,6 +36,9 @@ toml_edit = "0.22"
 # Memory and processor use of the IDE, in the status bar.
 sysinfo = { version = "0.37", default-features = false, features = ["system"] }
 tar = { version = "0.4", default-features = false }
+# The language of the system, the default language of the interface.
+sys-locale = "0.3"
+tree-sitter-java = "0.23"
 
 
 [target.'cfg(windows)'.build-dependencies]

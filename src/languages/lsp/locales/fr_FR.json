@@ -1,0 +1,17 @@
+{
+  "lsp.cannot_start": "impossible de lancer {program}",
+  "lsp.header_without_length": "en-tête sans longueur",
+  "lsp.initialization_refused": "initialisation refusée",
+  "lsp.input_locked": "entrée verrouillée",
+  "lsp.local_analysis": "{language} : analyse locale",
+  "lsp.message_too_large": "message trop gros",
+  "lsp.no_standard_input": "pas d'entrée standard",
+  "lsp.no_standard_output": "pas de sortie standard",
+  "lsp.nothing_to_rename": "Rien à renommer ici",
+  "lsp.project": "projet",
+  "lsp.server_failed_message": "{server} : {message}",
+  "lsp.server_failed_status": "{language} : serveur en échec ({reason})",
+  "lsp.server_stopped": "le serveur est arrêté",
+  "lsp.server_stopped_lower": "le serveur s'est arrêté",
+  "lsp.state_locked": "état verrouillé"
+}

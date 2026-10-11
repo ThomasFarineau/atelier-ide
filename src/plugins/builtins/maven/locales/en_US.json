@@ -1,0 +1,18 @@
+{
+  "maven.command_reload": "Maven: Reload Projects",
+  "maven.command_window": "Maven: Maven Window",
+  "maven.dependencies": "Dependencies",
+  "maven.description": "The Maven projects (pom.xml and modules) as in IntelliJ's Maven window: lifecycle phases, plugins and their goals, profiles, dependencies. A double click runs the phase or the goal with the mvnw wrapper of the project, or mvn; offline and skip-tests modes, and a typed goal to run.",
+  "maven.execute_goal": "Execute Maven Goal",
+  "maven.goal_hint": "clean install, dependency:tree… then Enter",
+  "maven.lifecycle": "Lifecycle",
+  "maven.no_project": "No pom.xml in this project",
+  "maven.offline": "Toggle Offline Mode (-o)",
+  "maven.plugins": "Plugins",
+  "maven.profiles": "Profiles",
+  "maven.reload": "Reload All Maven Projects",
+  "maven.run_goal": "Run '{goal}'",
+  "maven.scanning": "Looking for pom.xml files…",
+  "maven.skip_tests": "Toggle 'Skip Tests' Mode (-DskipTests)",
+  "maven.title": "Maven"
+}

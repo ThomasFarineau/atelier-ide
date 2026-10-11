@@ -19,10 +19,10 @@ use std::{
 
 pub static TOOL_WINDOWS: [ToolWindow; 1] = [ToolWindow {
     id: "search.results",
-    title: "Rechercher",
+    title: crate::i18n::Text("search.find"),
     icon: "search",
     dock: Dock::Bottom,
-    shortcut: "Ctrl+Maj+F",
+    shortcut: "Ctrl+Shift+F",
 }];
 
 const MAX_MATCHES: usize = 5000;
@@ -156,10 +156,10 @@ impl BuiltinPlugin for SearchPlugin {
         "search"
     }
     fn name(&self) -> &'static str {
-        "Recherche dans le projet"
+        tr!("search.find_project_2")
     }
     fn description(&self) -> &'static str {
-        "Recherche et remplacement dans tous les fichiers du projet : texte, mots entiers, casse, expressions régulières et masque de fichiers. Les résultats sont groupés par fichier."
+        tr!("search.find_replace_every_file_project")
     }
     fn icon(&self) -> &'static str {
         "search"
@@ -173,8 +173,8 @@ impl BuiltinPlugin for SearchPlugin {
         if let Some((files, total)) = replaced {
             host.reload_files();
             host.balloon(
-                "Remplacer dans le projet",
-                format!("{total} remplacement(s) dans {files} fichier(s)"),
+                tr!("search.replace_project"),
+                trf!("search.replacement_s_file_s", total = total, files = files),
                 false,
             );
             *self.results.lock().unwrap_or_else(|e| e.into_inner()) = Results::default();
@@ -192,7 +192,7 @@ impl BuiltinPlugin for SearchPlugin {
     fn commands(&self) -> Vec<Command> {
         vec![Command {
             id: "search.project",
-            label: "Rechercher dans le projet…  Ctrl+Maj+F".into(),
+            label: tr!("search.find_project_ctrl_shift_f").into(),
         }]
     }
 
@@ -220,10 +220,10 @@ impl BuiltinPlugin for SearchPlugin {
             } else {
                 "chevronRight"
             };
-            if ui::icon_toggle(ui, chevron, self.show_replace, "Remplacer").clicked() {
+            if ui::icon_toggle(ui, chevron, self.show_replace, tr!("search.replace_2")).clicked() {
                 self.show_replace = !self.show_replace;
             }
-            let field = ui::search_field(ui, &mut self.query, "Rechercher dans le projet", 320.0);
+            let field = ui::search_field(ui, &mut self.query, tr!("search.find_project"), 320.0);
             if self.focus {
                 field.request_focus();
                 self.focus = false;
@@ -235,9 +235,9 @@ impl BuiltinPlugin for SearchPlugin {
                 field.request_focus();
             }
             for (label, flag, tip) in [
-                ("Aa", &mut self.options.case, "Respecter la casse"),
-                ("W", &mut self.options.word, "Mots entiers"),
-                (".*", &mut self.options.regex, "Expression régulière"),
+                ("Aa", &mut self.options.case, tr!("search.match_case")),
+                ("W", &mut self.options.word, tr!("search.words")),
+                (".*", &mut self.options.regex, tr!("search.regex")),
             ] {
                 let galley = ui.painter().layout_no_wrap(
                     label.into(),
@@ -266,15 +266,15 @@ impl BuiltinPlugin for SearchPlugin {
             }
             ui.add(
                 egui::TextEdit::singleline(&mut self.mask)
-                    .hint_text("Masque : *.js, src/*")
+                    .hint_text(tr!("search.mask_js_src"))
                     .desired_width(170.0),
             );
-            if ui::primary_button(ui, "Rechercher").clicked() {
+            if ui::primary_button(ui, tr!("search.find")).clicked() {
                 run = true;
             }
             if self.cancel.is_some()
                 && !self.results.lock().is_ok_and(|r| r.done)
-                && ui::button(ui, "Arrêter").clicked()
+                && ui::button(ui, tr!("search.stop")).clicked()
                 && let Some(cancel) = &self.cancel
             {
                 cancel.store(true, Ordering::Relaxed);
@@ -283,12 +283,12 @@ impl BuiltinPlugin for SearchPlugin {
         if self.show_replace {
             ui.horizontal(|ui| {
                 ui.add_space(ui::BUTTON + 4.0);
-                ui::search_field(ui, &mut self.replace, "Remplacer par", 320.0);
+                ui::search_field(ui, &mut self.replace, tr!("search.replace"), 320.0);
                 let found = self.results.lock().map_or(0, |r| r.matches);
                 let label = if self.confirm {
-                    format!("Confirmer : {found} remplacement(s)")
+                    trf!("search.confirm_replacement_s", found = found)
                 } else {
-                    "Tout remplacer".to_string()
+                    tr!("search.replace_all").to_string()
                 };
                 ui.add_enabled_ui(found > 0, |ui| {
                     let clicked = if self.confirm {
@@ -306,7 +306,7 @@ impl BuiltinPlugin for SearchPlugin {
                 });
                 if self.confirm {
                     ui.label(
-                        RichText::new("Les fichiers du projet seront modifiés.")
+                        RichText::new(tr!("search.files_project_will_changed"))
                             .small()
                             .color(t.text_secondary),
                     );
@@ -324,17 +324,17 @@ impl BuiltinPlugin for SearchPlugin {
             let summary = if !self.searched {
                 String::new()
             } else if results.done {
-                format!(
-                    "{} résultat(s) dans {} fichier(s) · {} fichier(s) examiné(s)",
-                    results.matches,
-                    results.files.len(),
-                    results.looked
+                trf!(
+                    "search.result_s_file_s_file",
+                    matches = results.matches,
+                    count = results.files.len(),
+                    looked = results.looked
                 )
             } else {
-                format!(
-                    "Recherche… {} résultat(s) dans {} fichier(s)",
-                    results.matches,
-                    results.files.len()
+                trf!(
+                    "search.searching_result_s_file_s",
+                    matches = results.matches,
+                    count = results.files.len()
                 )
             };
             (self.rows(&results), summary)

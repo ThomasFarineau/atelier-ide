@@ -1,0 +1,6 @@
+{
+  "image.image_too_large_limit_64": "Image too large (limit: 64 MB)",
+  "image.image_viewer": "Image Viewer",
+  "image.shows_images_png_jpeg_gif": "Shows images (PNG, JPEG, GIF, WebP, BMP, ICO) instead of the text editor.",
+  "image.unreadable_image": "Unreadable image: {e}"
+}

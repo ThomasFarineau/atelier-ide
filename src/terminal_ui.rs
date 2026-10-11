@@ -1,11 +1,16 @@
 //! Drawing and keyboard of the terminal: colored cells, cursor, selection, scrollback, as in a
 //! real terminal emulator.
 
-use crate::{terminal::Terminal, ui::Theme};
+use crate::{
+    terminal::Terminal,
+    terminal_links::{self, Link},
+    ui::Theme,
+};
 use eframe::egui::{
     self, Color32, Event, FontId, Key, Modifiers, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, pos2,
     text::LayoutJob, vec2,
 };
+use std::path::Path;
 
 const FONT_SIZE: f32 = 13.0;
 
@@ -137,7 +142,7 @@ fn selected_text(screen: &vt100::Screen, from: (u16, u16), to: (u16, u16)) -> St
         for col in start..=end {
             match screen.cell(row, col) {
                 Some(cell) if cell.is_wide_continuation() => {}
-                Some(cell) if cell.has_contents() => line.push_str(&cell.contents()),
+                Some(cell) if cell.has_contents() => line.push_str(cell.contents()),
                 _ => line.push(' '),
             }
         }
@@ -147,6 +152,32 @@ fn selected_text(screen: &vt100::Screen, from: (u16, u16), to: (u16, u16)) -> St
         }
     }
     out
+}
+
+/// The text of a row with one character per column (the second half of a wide character is a
+/// space), so that a character of it is a column.
+fn row_text(screen: &vt100::Screen, row: u16, cols: u16) -> String {
+    (0..cols)
+        .map(|col| match screen.cell(row, col) {
+            Some(cell) if !cell.is_wide_continuation() && cell.has_contents() => {
+                cell.contents().chars().next().unwrap_or(' ')
+            }
+            _ => ' ',
+        })
+        .collect()
+}
+
+/// The link at a cell of the screen, with the columns it spans.
+fn link_at(
+    screen: &vt100::Screen,
+    (row, col): (u16, u16),
+    cols: u16,
+    root: &Path,
+) -> Option<(std::ops::Range<usize>, Link)> {
+    let text = row_text(screen, row, cols);
+    terminal_links::find(&text, root, |p| p.is_file())
+        .into_iter()
+        .find(|(range, _)| range.contains(&(col as usize)))
 }
 
 /// Selection anchor and head, as (row, column) of the visible screen.
@@ -163,12 +194,14 @@ impl Selection {
     }
 }
 
-/// Draws the terminal in the available space and handles the mouse and the keyboard.
+/// Draws the terminal in the available space and handles the mouse and the keyboard. Paths
+/// in its text are read from `root`.
 pub fn show(
     ui: &mut Ui,
     term: &mut Terminal,
     selection: &mut Selection,
     t: &Theme,
+    root: &Path,
 ) -> egui::Response {
     let font = FontId::monospace(FONT_SIZE);
     let (row_h, char_w) = ui.fonts_mut(|f| (f.row_height(&font).ceil(), f.glyph_width(&font, 'M')));
@@ -208,6 +241,27 @@ pub fn show(
             .floor()
             .clamp(0.0, cols as f32 - 1.0) as u16;
         (row, col)
+    };
+    // Links: the one under the pointer is underlined, a click opens it.
+    let hovered_link = response.hover_pos().and_then(|p| {
+        link_at(term.screen_ref(), cell_at(p), cols, root).map(|l| (cell_at(p).0, l))
+    });
+    if response.clicked()
+        && let Some((_, (_, link))) = &hovered_link
+    {
+        match link {
+            Link::Url(url) => ui.ctx().open_url(egui::OpenUrl::new_tab(url)),
+            Link::File { path, line, column } => {
+                term.open_file = Some((path.clone(), *line, *column));
+            }
+        }
+    }
+    let response = if hovered_link.is_some() {
+        response
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .on_hover_text(tr!("terminal.open_link"))
+    } else {
+        response
     };
     if let Some(p) = response.interact_pointer_pos() {
         if response.drag_started() || response.clicked() {
@@ -360,7 +414,7 @@ pub fn show(
                 }
                 if !cell.is_wide_continuation() {
                     if cell.has_contents() {
-                        text.push_str(&cell.contents());
+                        text.push_str(cell.contents());
                     } else {
                         text.push(' ');
                     }
@@ -399,6 +453,14 @@ pub fn show(
             painter.galley(pos2(x, y + (row_h - galley.size().y) / 2.0), galley, st.fg);
         }
     }
+    if let Some((row, (range, _))) = &hovered_link {
+        let y = rect.top() + (*row as f32 + 1.0) * row_h - 1.5;
+        painter.hline(
+            rect.left() + range.start as f32 * char_w..=rect.left() + range.end as f32 * char_w,
+            y,
+            Stroke::new(1.0_f32, t.link),
+        );
+    }
     if let Some((from, to)) = selection.range() {
         for row in from.0..=to.0 {
             let start = if row == from.0 { from.1 } else { 0 };
@@ -435,4 +497,43 @@ pub fn show(
         }
     }
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn links_are_found_under_the_pointer_whatever_the_colors() {
+        let mut parser = vt100::Parser::new(4, 80, 0);
+        // A colored address, as cargo and npm print them.
+        parser.process(
+            b"Serving at \x1b[36mhttp://localhost:8080/\x1b[0m now\r\n\xe6\x97\xa5 https://x.dev",
+        );
+        let screen = parser.screen();
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let (range, link) = link_at(screen, (0, 15), 80, root).expect("a link");
+        assert_eq!(range, 11..33);
+        assert_eq!(link, Link::Url("http://localhost:8080/".into()));
+        assert!(link_at(screen, (0, 3), 80, root).is_none());
+        // After a wide character, columns and characters still agree.
+        let (range, _) = link_at(screen, (1, 4), 80, root).expect("a link after a wide character");
+        assert_eq!(range.start, 3);
+    }
+
+    #[test]
+    fn paths_of_the_project_are_links() {
+        let mut parser = vt100::Parser::new(2, 80, 0);
+        parser.process(b"error: --> src/main.rs:12:5");
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let (_, link) = link_at(parser.screen(), (0, 15), 80, root).expect("a link");
+        assert_eq!(
+            link,
+            Link::File {
+                path: root.join("src/main.rs"),
+                line: Some(12),
+                column: Some(5)
+            }
+        );
+    }
 }

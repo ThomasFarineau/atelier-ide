@@ -10,7 +10,7 @@ use std::{collections::HashSet, path::PathBuf};
 
 pub static TOOL_WINDOWS: [ToolWindow; 1] = [ToolWindow {
     id: "problems.list",
-    title: "Problèmes",
+    title: crate::i18n::Text("problems.problems"),
     icon: "problems",
     dock: Dock::Bottom,
     shortcut: "Alt+6",
@@ -70,10 +70,10 @@ impl BuiltinPlugin for ProblemsPlugin {
         "problems"
     }
     fn name(&self) -> &'static str {
-        "Problèmes"
+        tr!("problems.problems")
     }
     fn description(&self) -> &'static str {
-        "Liste des erreurs et avertissements des documents ouverts, groupés par fichier, avec accès direct à la ligne."
+        tr!("problems.list_errors_warnings_open_documents")
     }
     fn icon(&self) -> &'static str {
         "problems"
@@ -98,13 +98,13 @@ impl BuiltinPlugin for ProblemsPlugin {
             ui.spacing_mut().item_spacing.x = 6.0;
             for (label, on, n, color) in [
                 (
-                    "Erreurs",
+                    tr!("problems.errors"),
                     &mut self.errors,
                     errors,
                     Color32::from_rgb(0xF0, 0x56, 0x56),
                 ),
                 (
-                    "Avertissements",
+                    tr!("problems.warnings"),
                     &mut self.warnings,
                     warnings,
                     Color32::from_rgb(0xE6, 0xB5, 0x4A),
@@ -145,9 +145,9 @@ impl BuiltinPlugin for ProblemsPlugin {
         if shown.is_empty() {
             ui.add_space(12.0);
             let text = if all.is_empty() {
-                "Aucun problème dans les documents ouverts"
+                tr!("problems.no_problems_open_documents")
             } else {
-                "Aucun problème avec ces filtres"
+                tr!("problems.no_problems_these_filters")
             };
             ui.vertical_centered(|ui| ui.label(RichText::new(text).color(t.text_secondary)));
             return;
@@ -239,7 +239,7 @@ impl BuiltinPlugin for ProblemsPlugin {
                                 ui,
                                 rect,
                                 rect.left() + 50.0,
-                                &problem.message.lines().next().unwrap_or(""),
+                                problem.message.lines().next().unwrap_or(""),
                                 t.text,
                                 FontId::proportional(12.5),
                             );
@@ -278,46 +278,5 @@ impl BuiltinPlugin for ProblemsPlugin {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn problem(path: &str, line: usize, severity: u8) -> Problem {
-        Problem {
-            path: PathBuf::from(path),
-            line,
-            column: 0,
-            length: 1,
-            severity,
-            message: format!("problème {line}"),
-            source: String::new(),
-        }
-    }
-
-    #[test]
-    fn problems_are_filtered_and_ordered_by_file_severity_and_line() {
-        let all = vec![
-            problem("b.js", 3, 2),
-            problem("a.js", 9, 2),
-            problem("a.js", 5, 1),
-            problem("a.js", 1, 2),
-            problem("c.js", 0, 4),
-        ];
-        let shown = visible(&all, true, true);
-        let order: Vec<(String, usize)> = shown
-            .iter()
-            .map(|p| (p.path.display().to_string(), p.line))
-            .collect();
-        assert_eq!(
-            order,
-            [
-                ("a.js".to_string(), 5),
-                ("a.js".to_string(), 1),
-                ("a.js".to_string(), 9),
-                ("b.js".to_string(), 3)
-            ],
-            "errors first, hints left out"
-        );
-        assert_eq!(visible(&all, true, false).len(), 1);
-        assert_eq!(visible(&all, false, true).len(), 3);
-    }
-}
+#[path = "../../../test/features/problems/mod/tests.rs"]
+mod tests;

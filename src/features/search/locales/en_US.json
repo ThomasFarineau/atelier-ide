@@ -1,0 +1,21 @@
+{
+  "search.confirm_replacement_s": "Confirm: {found} replacement(s)",
+  "search.files_project_will_changed": "The files of the project will be changed.",
+  "search.find": "Find",
+  "search.find_project": "Find in project",
+  "search.find_project_2": "Find in Project",
+  "search.find_project_ctrl_shift_f": "Find in Project…  Ctrl+Shift+F",
+  "search.find_replace_every_file_project": "Find and replace in every file of the project: text, whole words, case, regular expressions and file mask. The results are grouped by file.",
+  "search.mask_js_src": "Mask: *.js, src/*",
+  "search.match_case": "Match Case",
+  "search.regex": "Regex",
+  "search.replace": "Replace with",
+  "search.replace_2": "Replace",
+  "search.replace_all": "Replace All",
+  "search.replace_project": "Replace in Project",
+  "search.replacement_s_file_s": "{total} replacement(s) in {files} file(s)",
+  "search.result_s_file_s_file": "{matches} result(s) in {count} file(s) · {looked} file(s) searched",
+  "search.searching_result_s_file_s": "Searching… {matches} result(s) in {count} file(s)",
+  "search.stop": "Stop",
+  "search.words": "Words"
+}

@@ -13,7 +13,8 @@ use eframe::egui::{
 };
 
 const LIST_WIDTH: f32 = 236.0;
-const BODY_HEIGHT: f32 = 450.0;
+/// The least height of the list and the details; they take what the dialog gives them.
+const BODY_HEIGHT: f32 = 300.0;
 const ROW_HEIGHT: f32 = 52.0;
 
 /// What the list and the detail pane need to know about a built-in plugin.
@@ -23,7 +24,7 @@ struct Builtin {
     description: &'static str,
     icon: &'static str,
     version: &'static str,
-    tools: Vec<(&'static str, &'static str)>,
+    tools: Vec<(&'static str, String)>,
     /// (label, shortcut)
     commands: Vec<(String, String)>,
 }
@@ -280,7 +281,7 @@ impl Ide {
                 tools: p
                     .tool_windows()
                     .iter()
-                    .map(|w| (w.title, w.shortcut))
+                    .map(|w| (w.title.get(), crate::i18n::shortcut(w.shortcut)))
                     .collect(),
                 commands: p
                     .commands()
@@ -295,9 +296,9 @@ impl Ide {
 
         // Tabs, as in IntelliJ. Only the installed plugins exist here: there is no marketplace.
         ui.horizontal(|ui| {
-            tab(ui, &t, "Installés", true);
+            tab(ui, &t, tr!("installed"), true);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui::icon_button(ui, "refresh", "Recharger les extensions du projet").clicked() {
+                if ui::icon_button(ui, "refresh", tr!("reload_project_extensions")).clicked() {
                     (self.plugins, self.plugin_errors) = plugins::load(&self.root);
                 }
             });
@@ -306,9 +307,10 @@ impl Ide {
         ui.painter().rect_filled(line, 0.0, t.separator);
         ui.add_space(8.0);
 
+        let body_height = (ui.available_height() - 4.0).max(BODY_HEIGHT);
         let (body, _) =
-            ui.allocate_exact_size(vec2(ui.available_width(), BODY_HEIGHT), Sense::hover());
-        let left = Rect::from_min_size(body.min, vec2(LIST_WIDTH, BODY_HEIGHT));
+            ui.allocate_exact_size(vec2(ui.available_width(), body_height), Sense::hover());
+        let left = Rect::from_min_size(body.min, vec2(LIST_WIDTH, body_height));
         let right = Rect::from_min_max(pos2(left.right() + 20.0, body.top()), body.max);
         ui.painter().rect_filled(
             Rect::from_min_max(
@@ -344,7 +346,7 @@ impl Ide {
             ui::search_field(
                 ui,
                 &mut self.plugin_filter,
-                "Rechercher parmi les plugins",
+                tr!("search_plugins"),
                 LIST_WIDTH,
             );
             ui.add_space(6.0);
@@ -362,16 +364,16 @@ impl Ide {
                 .collect();
             egui::ScrollArea::vertical()
                 .id_salt("plugin_list")
-                .max_height(BODY_HEIGHT - 40.0)
+                .max_height(body_height - 40.0)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = 0.0;
                     if !visible_builtins.is_empty()
-                        && group_header(ui, &t, "Intégrés", visible_builtins.len())
+                        && group_header(ui, &t, tr!("builtin_plugins"), visible_builtins.len())
                     {
                         for b in &visible_builtins {
                             let key = format!("b:{}", b.id);
-                            let subtitle = format!("Intégré · {}", b.version);
+                            let subtitle = trf!("builtin_short_version", version = b.version);
                             let (clicked, toggle) = list_row(
                                 ui,
                                 &t,
@@ -379,7 +381,7 @@ impl Ide {
                                 b.name,
                                 &subtitle,
                                 selected == key,
-                                self.builtin_enabled(b.id),
+                                !self.settings_draft.disabled_builtins.contains(b.id),
                             );
                             if toggle {
                                 toggled = Some(key.clone());
@@ -390,14 +392,14 @@ impl Ide {
                         }
                     }
                     if (!visible_project.is_empty() || filter.is_empty())
-                        && group_header(ui, &t, "Extensions du projet", visible_project.len())
+                        && group_header(ui, &t, tr!("project_extensions"), visible_project.len())
                     {
                         if self.plugins.is_empty() {
                             ui.add_space(6.0);
                             ui.horizontal(|ui| {
                                 ui.add_space(16.0);
                                 ui.label(
-                                    RichText::new("Aucune extension dans .atelier/plugins/")
+                                    RichText::new(tr!("no_extensions_atelier_plugins"))
                                         .small()
                                         .color(t.text_secondary),
                                 );
@@ -407,10 +409,10 @@ impl Ide {
                             let plugin = &self.plugins[i];
                             let key = format!("p:{}", plugin.id);
                             let enabled = self
-                                .settings
+                                .settings_draft
                                 .enabled_plugins
                                 .contains(&self.plugin_key(&plugin.id));
-                            let subtitle = format!("Projet · {}", plugin.version);
+                            let subtitle = trf!("project_2", version = plugin.version);
                             let (clicked, toggle) = list_row(
                                 ui,
                                 &t,
@@ -431,7 +433,7 @@ impl Ide {
                     if visible_builtins.is_empty() && visible_project.is_empty() {
                         ui.add_space(24.0);
                         ui.vertical_centered(|ui| {
-                            ui.label(RichText::new("Aucun résultat").color(t.text_secondary));
+                            ui.label(RichText::new(tr!("no_results")).color(t.text_secondary));
                         });
                     }
                 });
@@ -443,7 +445,7 @@ impl Ide {
             let ui = &mut detail;
             egui::ScrollArea::vertical()
                 .id_salt("plugin_detail")
-                .max_height(BODY_HEIGHT)
+                .max_height(body_height)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     ui.set_width(right.width());
@@ -464,14 +466,18 @@ impl Ide {
 
     fn toggle_plugin(&mut self, key: &str) {
         match key.split_once(':') {
+            // The draft of the settings: Apply or OK makes it so.
             Some(("b", id)) => {
-                let enabled = self.builtin_enabled(id);
-                self.set_builtin_enabled(id, !enabled);
+                let disabled = &mut self.settings_draft.disabled_builtins;
+                if !disabled.remove(id) {
+                    disabled.insert(id.to_string());
+                }
             }
             Some(("p", id)) => {
                 let key = self.plugin_key(id);
-                if !self.settings.enabled_plugins.remove(&key) {
-                    self.settings.enabled_plugins.insert(key);
+                let enabled = &mut self.settings_draft.enabled_plugins;
+                if !enabled.remove(&key) {
+                    enabled.insert(key);
                 }
             }
             _ => {}
@@ -508,9 +514,9 @@ impl Ide {
             });
             ui.add_space(10.0);
             clicked |= if enabled {
-                ui::button(ui, "Désactiver").clicked()
+                ui::button(ui, tr!("disable")).clicked()
             } else {
-                ui::primary_button(ui, "Activer").clicked()
+                ui::primary_button(ui, tr!("enable")).clicked()
             };
             ui.add_space(6.0);
             clicked
@@ -519,7 +525,7 @@ impl Ide {
             let mut current = ui.data_mut(|d| *d.get_temp_mut_or_insert_with(tab_id, || 0usize));
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
-                for (i, label) in ["Aperçu", "Contributions"].iter().enumerate() {
+                for (i, label) in [tr!("overview"), tr!("contributions")].iter().enumerate() {
                     if tab(ui, &t, label, current == i) {
                         current = i;
                     }
@@ -536,8 +542,8 @@ impl Ide {
                 let Some(b) = builtins.iter().find(|b| b.id == id) else {
                     return;
                 };
-                let enabled = self.builtin_enabled(id);
-                let meta = format!("Intégré  ·  version {}", b.version);
+                let enabled = !self.settings_draft.disabled_builtins.contains(id);
+                let meta = trf!("builtin_version", version = b.version);
                 if header(ui, Some(b.icon), b.name, meta, enabled) {
                     *toggled = Some(selected.to_string());
                 }
@@ -545,24 +551,24 @@ impl Ide {
                     ui.add(egui::Label::new(b.description).wrap());
                     if !enabled {
                         ui.add_space(10.0);
-                        ui.label(RichText::new("Ce plugin est désactivé.").color(t.text_secondary));
+                        ui.label(RichText::new(tr!("plugin_disabled")).color(t.text_secondary));
                     }
                 } else {
                     if b.tools.is_empty() && b.commands.is_empty() {
                         ui.label(
-                            RichText::new("Ce plugin ne contribue ni fenêtre ni action.")
+                            RichText::new(tr!("plugin_contributes_no_window_no"))
                                 .color(t.text_secondary),
                         );
                     }
                     if !b.tools.is_empty() {
-                        ui::section(ui, "Fenêtres d'outils");
+                        ui::section(ui, tr!("tool_windows"));
                         for (title, shortcut) in &b.tools {
                             contribution(ui, &t, title, shortcut);
                         }
                         ui.add_space(8.0);
                     }
                     if !b.commands.is_empty() {
-                        ui::section(ui, "Actions de Rechercher partout");
+                        ui::section(ui, tr!("search_everywhere_actions"));
                         for (label, shortcut) in &b.commands {
                             contribution(ui, &t, label, shortcut);
                         }
@@ -573,8 +579,11 @@ impl Ide {
                 let Some(plugin) = self.plugins.iter().find(|p| p.id == id) else {
                     return;
                 };
-                let enabled = self.settings.enabled_plugins.contains(&self.plugin_key(id));
-                let meta = format!("Extension du projet  ·  version {}", plugin.version);
+                let enabled = self
+                    .settings_draft
+                    .enabled_plugins
+                    .contains(&self.plugin_key(id));
+                let meta = trf!("project_extension_version", version = plugin.version);
                 if header(ui, None, &plugin.name, meta, enabled) {
                     *toggled = Some(selected.to_string());
                 }
@@ -583,19 +592,17 @@ impl Ide {
                     ui.add_space(10.0);
                     ui.add(
                         egui::Label::new(
-                            RichText::new(
-                                "Ces commandes s'exécutent avec vos droits locaux : n'activez que des extensions de confiance.",
-                            )
-                            .small()
-                            .color(t.text_secondary),
+                            RichText::new(tr!("these_commands_run_your_local"))
+                                .small()
+                                .color(t.text_secondary),
                         )
                         .wrap(),
                     );
                 } else {
-                    ui::section(ui, "Commandes");
+                    ui::section(ui, tr!("commands"));
                     if !enabled {
                         ui.label(
-                            RichText::new("Activez l'extension pour lancer ses commandes.")
+                            RichText::new(tr!("enable_extension_run_commands"))
                                 .color(t.text_secondary),
                         );
                     }

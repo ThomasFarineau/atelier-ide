@@ -1,0 +1,21 @@
+{
+  "csv.auto": "Auto ({detected})",
+  "csv.auto_2": "Auto",
+  "csv.comma": "virgule",
+  "csv.comma_2": "Virgule ,",
+  "csv.csv_editor_only": "CSV : éditeur seul",
+  "csv.csv_editor_table": "CSV : éditeur et tableau",
+  "csv.csv_table_only": "CSV : tableau seul",
+  "csv.empty_file": "Fichier vide",
+  "csv.first_row_as_header": "Première ligne en en-tête",
+  "csv.open_csv_tsv_psv_file": "Ouvrez un fichier CSV, TSV ou PSV",
+  "csv.other": "autre",
+  "csv.pipe": "barre",
+  "csv.pipe_2": "Barre |",
+  "csv.rows_columns": "{body} lignes · {columns} colonnes",
+  "csv.semicolon": "point-virgule",
+  "csv.semicolon_2": "Point-virgule ;",
+  "csv.tab": "tabulation",
+  "csv.tab_2": "Tabulation",
+  "csv.table_preview_csv_tsv_psv": "Aperçu en tableau des fichiers CSV, TSV et PSV : séparateur détecté, première ligne en en-tête, tri des colonnes, éditeur seul, côte à côte ou tableau seul."
+}

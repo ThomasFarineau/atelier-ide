@@ -5,6 +5,7 @@
 //! it: the index of line starts, caret and selection, undo history and incremental
 //! highlighting. Positions are byte offsets on char boundaries.
 
+mod actions;
 mod assist;
 mod fold;
 
@@ -13,8 +14,8 @@ use crate::{
     plugins::builtin::{Command, LineMark, MarkKind},
     ui::Theme,
 };
-pub use assist::Assist;
 use assist::AssistState;
+pub use assist::{Assist, FormatRequest};
 use eframe::egui::{
     self, Color32, FontId, Id, Key, Modifiers, Pos2, Rect, Sense, Stroke, Ui, pos2, text::CCursor,
     vec2,
@@ -73,6 +74,8 @@ pub struct EditorState {
     visible: Vec<usize>,
     /// The mouse press that is on a fold marker: it does not select.
     fold_press: bool,
+    /// The selections Extend Selection went from, and to, for Shrink Selection.
+    expanded: Vec<((usize, usize), Range<usize>)>,
 }
 
 impl Default for EditorState {
@@ -99,6 +102,7 @@ impl Default for EditorState {
             fold_language: String::new(),
             visible: Vec::new(),
             fold_press: false,
+            expanded: Vec::new(),
         }
     }
 }
@@ -135,6 +139,8 @@ pub struct Output {
     pub navigate: Option<crate::languages::Location>,
     /// Changes to other files, from a rename.
     pub file_edits: Vec<(std::path::PathBuf, Vec<crate::languages::TextEdit>)>,
+    /// A message for the status bar (after Reformat Code).
+    pub message: Option<String>,
 }
 
 fn is_word(c: char) -> bool {
@@ -295,7 +301,7 @@ impl EditorState {
             while next.peek().is_some_and(|r| r.end <= line) {
                 next.next();
             }
-            if !next.peek().is_some_and(|r| r.start <= line) {
+            if next.peek().is_none_or(|r| r.start > line) {
                 self.visible.push(line);
             }
         }
@@ -989,6 +995,10 @@ impl EditorState {
                 self.move_to(pos, extend);
                 self.preferred_column = None;
             }
+            Key::ArrowUp | Key::ArrowDown if m.shift && (m.alt || m.command) => {
+                self.move_lines(text, key == Key::ArrowUp);
+                return true;
+            }
             Key::ArrowUp => self.vertical(text, -1, extend),
             Key::ArrowDown => self.vertical(text, 1, extend),
             Key::PageUp => self.vertical(text, -page, extend),
@@ -1028,6 +1038,16 @@ impl EditorState {
                     self.move_to(target + 1, extend);
                 }
             }
+            Key::W if m.command && m.shift => self.shrink_selection(),
+            Key::W if m.command => self.extend_selection(text),
+            Key::J if m.command && m.shift => {
+                self.join_lines(text);
+                return true;
+            }
+            Key::U if m.command && m.shift => {
+                self.toggle_case(text);
+                return true;
+            }
             Key::Z if m.command && m.shift => return self.redo(text),
             Key::Z if m.command => return self.undo(text),
             // Redo after an undo (the Windows habit), otherwise IntelliJ's delete line.
@@ -1060,8 +1080,8 @@ impl EditorState {
             Key::Tab if m.shift => {
                 self.edit_lines(text, |l| {
                     let spaces = l.len() - l.trim_start_matches(' ').len();
-                    if l.starts_with('\t') {
-                        l[1..].to_string()
+                    if let Some(rest) = l.strip_prefix('\t') {
+                        rest.to_string()
                     } else {
                         l[spaces.min(INDENT.len())..].to_string()
                     }
@@ -1220,6 +1240,7 @@ impl EditorState {
     }
 
     /// Byte offset under a point of the text area.
+    #[allow(clippy::too_many_arguments)]
     fn hit(
         &mut self,
         ui: &Ui,
@@ -1468,7 +1489,7 @@ impl EditorState {
                 gutter_response.context_menu(|ui| {
                     crate::ui::menu_begin(ui);
                     if opt.gutter_commands.is_empty() {
-                        crate::ui::menu_entry(ui, None, "Aucune action", None, false, false);
+                        crate::ui::menu_entry(ui, None, tr!("no_actions"), None, false, false);
                     }
                     for (plugin, command) in opt.gutter_commands {
                         if crate::ui::menu_item(ui, None, &command.label, None, false).clicked() {
@@ -1600,7 +1621,7 @@ impl EditorState {
                     );
                     if index == caret_line && focused {
                         let blink = self.activity.elapsed().as_secs_f32();
-                        if blink < 0.6 || (blink * 1.2) as u32 % 2 == 0 {
+                        if blink < 0.6 || ((blink * 1.2) as u32).is_multiple_of(2) {
                             let column =
                                 column_of(self.line(text, index), self.cursor - range.start);
                             let x = text_left + galley.pos_from_cursor(CCursor::new(column)).min.x;
@@ -1719,213 +1740,15 @@ impl EditorState {
         (output.errors, output.warnings) = self.assist.counts();
         output.navigate = self.assist.navigate.take();
         output.file_edits = std::mem::take(&mut self.assist.file_edits);
+        output.message = self.assist.message.take();
         output
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn state(text: &str) -> EditorState {
-        let mut state = EditorState::default();
-        state.sync(text);
-        state
-    }
-
-    #[test]
-    fn line_index_follows_edits() {
-        let mut text = "un\ndeux\r\ntrois".to_string();
-        let mut s = state(&text);
-        assert_eq!(s.line_count(), 3);
-        assert_eq!(s.line(&text, 1), "deux");
-        s.select(3, 3);
-        s.insert(&mut text, "a\nb\n", false);
-        assert_eq!(text, "un\na\nb\ndeux\r\ntrois");
-        assert_eq!(s.line_count(), 5);
-        assert_eq!(s.line(&text, 3), "deux");
-        assert_eq!(s.line_of(text.len()), 4);
-        let mut fresh = state(&text);
-        fresh.sync(&text);
-        assert_eq!(
-            fresh.lines, s.lines,
-            "incremental index equals a full rebuild"
-        );
-    }
-
-    #[test]
-    fn typing_merges_into_one_undo_step() {
-        let mut text = String::new();
-        let mut s = state(&text);
-        for c in ["a", "b", "c"] {
-            s.type_text(&mut text, c);
-        }
-        s.newline(&mut text);
-        assert_eq!(text, "abc\n");
-        assert!(s.undo(&mut text));
-        assert_eq!(text, "abc");
-        assert!(s.undo(&mut text));
-        assert_eq!(text, "");
-        assert!(s.redo(&mut text));
-        assert_eq!(text, "abc");
-        assert_eq!(s.cursor, 3);
-    }
-
-    #[test]
-    fn brackets_close_and_enter_indents_between_them() {
-        let mut text = "    fn f() ".to_string();
-        let mut s = state(&text);
-        s.select(text.len(), text.len());
-        s.type_text(&mut text, "{");
-        assert_eq!(text, "    fn f() {}");
-        s.newline(&mut text);
-        assert_eq!(text, "    fn f() {\n        \n    }");
-        assert_eq!(s.position(&text), (2, 9));
-        // Typing the closing bracket steps over it.
-        let mut text = "()".to_string();
-        let mut s = state(&text);
-        s.select(1, 1);
-        s.type_text(&mut text, ")");
-        assert_eq!(text, "()");
-        assert_eq!(s.cursor, 2);
-    }
-
-    #[test]
-    fn intellij_line_actions() {
-        let mut text = "let a = 1;\n    let b = 2;\n".to_string();
-        let mut s = state(&text);
-        s.select(0, 15);
-        s.toggle_comment(&mut text, "rs");
-        assert_eq!(text, "// let a = 1;\n//     let b = 2;\n");
-        s.toggle_comment(&mut text, "rs");
-        assert_eq!(text, "let a = 1;\n    let b = 2;\n");
-        s.select(0, 0);
-        s.duplicate(&mut text);
-        assert_eq!(text, "let a = 1;\nlet a = 1;\n    let b = 2;\n");
-        s.delete_line(&mut text);
-        assert_eq!(text, "let a = 1;\n    let b = 2;\n");
-        s.select(0, 0);
-        s.key(&mut text, "rs", Key::Tab, Modifiers::NONE, 10);
-        assert_eq!(text, "    let a = 1;\n    let b = 2;\n");
-    }
-
-    #[test]
-    fn word_moves_and_smart_backspace() {
-        let text = "let value_1 = foo(bar);".to_string();
-        let s = state(&text);
-        assert_eq!(s.word_right(&text, 0), 4);
-        assert_eq!(s.word_right(&text, 4), 12);
-        assert_eq!(s.word_left(&text, 11), 4);
-        assert_eq!(s.word_at(&text, 6), 4..11);
-        let mut text = "        x".to_string();
-        let mut s = state(&text);
-        s.select(8, 8);
-        s.backspace(&mut text, false);
-        assert_eq!(text, "    x");
-    }
-
-    #[test]
-    fn columns_expand_tabs() {
-        assert_eq!(column_of("\tab", 1), 4);
-        assert_eq!(offset_of("\tab", 4), 1);
-        assert_eq!(offset_of("\tab", 5), 2);
-        assert_eq!(offset_of("abc", 10), 3);
-        assert_eq!(display("\tx"), "    x");
-    }
-}
+#[path = "../test/editor/tests.rs"]
+mod tests;
 
 #[cfg(test)]
-mod ctrl_y_tests {
-    use super::*;
-
-    #[test]
-    fn ctrl_y_deletes_the_current_line() {
-        let mut text = "one\ntwo\nthree".to_string();
-        let mut s = EditorState::default();
-        s.sync(&text);
-        s.select(5, 5);
-        assert!(s.key(&mut text, "js", Key::Y, Modifiers::COMMAND, 10));
-        assert_eq!(text, "one\nthree");
-        s.select(text.len(), text.len());
-        assert!(s.key(&mut text, "js", Key::Y, Modifiers::COMMAND, 10));
-        assert_eq!(text, "one");
-    }
-
-    #[test]
-    fn ctrl_y_redoes_what_was_just_undone() {
-        let mut text = "one\ntwo".to_string();
-        let mut s = EditorState::default();
-        s.sync(&text);
-        s.select(3, 3);
-        s.insert(&mut text, "!", false);
-        assert_eq!(text, "one!\ntwo");
-        assert!(s.undo(&mut text));
-        assert_eq!(text, "one\ntwo");
-        assert!(s.key(&mut text, "js", Key::Y, Modifiers::COMMAND, 10));
-        assert_eq!(text, "one!\ntwo", "redone, not a deleted line");
-        assert!(s.key(&mut text, "js", Key::Y, Modifiers::COMMAND, 10));
-        assert_eq!(text, "two", "nothing left to redo: the line goes");
-    }
-
-    fn folding(text: &str) -> EditorState {
-        let mut s = EditorState::default();
-        s.sync(text);
-        s.refresh_folds(text, "js");
-        s
-    }
-
-    #[test]
-    fn a_collapsed_region_hides_its_lines_and_the_caret_skips_them() {
-        let text = "function a() {
-  one();
-  two();
-}
-next();
-";
-        let mut s = folding(text);
-        let open = s.region_at(0).unwrap().open;
-        s.toggle_fold(open);
-        assert_eq!(s.row_count(), 3, "the function is one row");
-        assert_eq!((s.line_at(0), s.line_at(1)), (0, 4));
-        assert_eq!(s.row_of(2), 0, "a hidden line is shown on its fold");
-        s.select(0, 0);
-        s.vertical(text, 1, false);
-        assert_eq!(s.line_of(s.cursor), 4, "down goes past the hidden lines");
-        s.vertical(text, -1, false);
-        assert_eq!(s.line_of(s.cursor), 0);
-    }
-
-    #[test]
-    fn folds_follow_the_edits_and_open_when_the_caret_enters() {
-        let mut text = "x();
-function a() {
-  one();
-}
-"
-        .to_string();
-        let mut s = folding(&text);
-        s.fold_caret(true);
-        assert!(s.folded.is_empty(), "no region around the first line");
-        s.select(10, 10);
-        s.fold_caret(true);
-        assert_eq!(s.folded.len(), 1);
-        assert_eq!(s.line_of(s.cursor), 1, "the caret stays on the first line");
-        s.replace_range(
-            &mut text,
-            0..0,
-            "y();
-",
-        );
-        s.refresh_folds(&text, "js");
-        assert_eq!(
-            s.folded.len(),
-            1,
-            "an edit above keeps the region collapsed"
-        );
-        assert_eq!(s.row_count(), 4);
-        s.select(text.find("one").unwrap(), text.find("one").unwrap());
-        s.refresh_folds(&text, "js");
-        assert!(s.folded.is_empty(), "going into it opens it");
-        assert_eq!(s.row_count(), s.line_count());
-    }
-}
+#[path = "../test/editor/ctrl_y_tests.rs"]
+mod ctrl_y_tests;

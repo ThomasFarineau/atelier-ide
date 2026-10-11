@@ -22,6 +22,10 @@
 //! `src/plugins/builtins/<plugin>/extensions` (only while the plugin is on, which names the
 //! folder with `BuiltinPlugin::extensions_dir`). A name or extension belongs to one folder only,
 //! except between a plugin and the rest, where the plugin wins.
+//!
+//! It also gathers the translations (`locales.rs`): every `locales/<identifier>.json` of the
+//! project, the one at the root for the IDE and the `locales` folder of each plugin or language
+//! (`src/plugins/builtins/git/locales/fr_FR.json`).
 
 use std::{
     collections::BTreeMap,
@@ -82,6 +86,24 @@ fn collect(
     }
 }
 
+/// Every `<identifier>.json` of the `locales` folders under `dir`.
+fn collect_locales(dir: &Path, out: &mut Vec<(String, PathBuf)>) {
+    println!("cargo:rerun-if-changed={}", dir.display());
+    let Ok(read) = fs::read_dir(dir) else { return };
+    let mut paths: Vec<_> = read.flatten().map(|e| e.path()).collect();
+    paths.sort();
+    for path in paths {
+        if path.is_dir() {
+            collect_locales(&path, out);
+        } else if dir.file_name().is_some_and(|n| n == "locales")
+            && path.extension().is_some_and(|e| e == "json")
+        {
+            let identifier = path.file_stem().unwrap().to_string_lossy().into_owned();
+            out.push((identifier, path));
+        }
+    }
+}
+
 /// The name Windows shows for the program (Task Manager, taskbar jump list): the product, not the
 /// file name.
 #[cfg(windows)]
@@ -124,10 +146,12 @@ fn main() {
     let mut table = String::from("pub static ICONS: &[Icon] = &[\n");
     for (key, entry) in &icons {
         let short = key.rsplit('/').next().unwrap();
-        if !key.starts_with("file/") && short != "icon" && !key.contains("/extensions/") {
-            if let Some(other) = shorts.insert(short.to_string(), key.clone()) {
-                panic!("the icons {other} and {key} share the name {short}");
-            }
+        if !key.starts_with("file/")
+            && short != "icon"
+            && !key.contains("/extensions/")
+            && let Some(other) = shorts.insert(short.to_string(), key.clone())
+        {
+            panic!("the icons {other} and {key} share the name {short}");
         }
         table.push_str(&format!("    Icon {{ key: {key:?}, variants: [\n"));
         for (index, file) in entry.files.iter().enumerate() {
@@ -173,5 +197,17 @@ fn main() {
     }
     table.push_str("];\n");
     let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("icon_set.rs");
+    fs::write(out, table).unwrap();
+
+    let mut locales = Vec::new();
+    collect_locales(&root.join("locales"), &mut locales);
+    collect_locales(&root.join("src"), &mut locales);
+    let mut table = String::from("pub static LOCALES: &[(&str, &str)] = &[\n");
+    for (identifier, path) in &locales {
+        let path = path.display().to_string().replace('\\', "/");
+        table.push_str(&format!("    ({identifier:?}, include_str!({path:?})),\n"));
+    }
+    table.push_str("];\n");
+    let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("locales.rs");
     fs::write(out, table).unwrap();
 }

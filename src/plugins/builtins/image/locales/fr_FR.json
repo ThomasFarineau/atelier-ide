@@ -1,0 +1,6 @@
+{
+  "image.image_too_large_limit_64": "Image trop volumineuse (limite : 64 Mo)",
+  "image.image_viewer": "Visionneuse d'images",
+  "image.shows_images_png_jpeg_gif": "Affiche les images (PNG, JPEG, GIF, WebP, BMP, ICO) à la place de l'éditeur de texte.",
+  "image.unreadable_image": "Image illisible : {e}"
+}

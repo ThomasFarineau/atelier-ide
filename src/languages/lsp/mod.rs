@@ -5,6 +5,9 @@
 //! which runs the callback given with the request; notifications sent before the server is
 //! ready are kept and sent once it is.
 
+pub mod convert;
+pub mod provider;
+
 use anyhow::{Context as _, Result, anyhow, bail};
 use serde_json::{Value, json};
 use std::{
@@ -90,15 +93,15 @@ impl Client {
         }
         let mut child = command
             .spawn()
-            .with_context(|| format!("impossible de lancer {}", launch.program.display()))?;
+            .with_context(|| trf!("lsp.cannot_start", program = launch.program.display()))?;
         let stdin = child
             .stdin
             .take()
-            .ok_or_else(|| anyhow!("pas d'entrée standard"))?;
+            .ok_or_else(|| anyhow!(tr!("lsp.no_standard_input")))?;
         let stdout = child
             .stdout
             .take()
-            .ok_or_else(|| anyhow!("pas de sortie standard"))?;
+            .ok_or_else(|| anyhow!(tr!("lsp.no_standard_output")))?;
         let stderr = child.stderr.take();
         let shared = Arc::new(Mutex::new(Shared::default()));
         let exited = Arc::new(AtomicBool::new(false));
@@ -129,7 +132,7 @@ impl Client {
                     .map(|mut s| s.callbacks.drain().map(|(_, c)| c).collect())
                     .unwrap_or_default();
                 for callback in callbacks {
-                    callback(Err(json!({"message": "le serveur s'est arrêté"})));
+                    callback(Err(json!({"message": tr!("lsp.server_stopped_lower")})));
                 }
                 repaint();
             });
@@ -148,9 +151,9 @@ impl Client {
         }
 
         let root_uri = path_to_uri(root);
-        let name = root
-            .file_name()
-            .map_or("projet".into(), |n| n.to_string_lossy().into_owned());
+        let name = root.file_name().map_or(tr!("lsp.project").into(), |n| {
+            n.to_string_lossy().into_owned()
+        });
         let params = json!({
             "processId": std::process::id(),
             "clientInfo": {"name": "Atelier"},
@@ -188,7 +191,7 @@ impl Client {
                 if let Err(error) = result {
                     let message = error["message"]
                         .as_str()
-                        .unwrap_or("initialisation refusée")
+                        .unwrap_or(tr!("lsp.initialization_refused"))
                         .to_string();
                     if let Ok(mut s) = client.shared.lock() {
                         s.error = Some(message);
@@ -239,7 +242,7 @@ impl Client {
         let mut stdin = self
             .stdin
             .lock()
-            .map_err(|_| anyhow!("entrée verrouillée"))?;
+            .map_err(|_| anyhow!(tr!("lsp.input_locked")))?;
         write!(stdin, "Content-Length: {}\r\n\r\n", body.len())?;
         stdin.write_all(&body)?;
         stdin.flush()?;
@@ -250,7 +253,7 @@ impl Client {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         self.shared
             .lock()
-            .map_err(|_| anyhow!("état verrouillé"))?
+            .map_err(|_| anyhow!(tr!("lsp.state_locked")))?
             .callbacks
             .insert(id, callback);
         let message = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
@@ -276,7 +279,7 @@ impl Client {
         callback: impl FnOnce(Result<Value, Value>) + Send + 'static,
     ) {
         if self.exited() {
-            callback(Err(json!({"message": "le serveur est arrêté"})));
+            callback(Err(json!({"message": tr!("lsp.server_stopped")})));
             return;
         }
         let _ = self.send_request(method, params, Box::new(callback));
@@ -344,9 +347,9 @@ fn read_message(reader: &mut impl BufRead) -> Result<Option<Value>> {
             length = value.trim().parse::<usize>().ok();
         }
     }
-    let length = length.ok_or_else(|| anyhow!("en-tête sans longueur"))?;
+    let length = length.ok_or_else(|| anyhow!(tr!("lsp.header_without_length")))?;
     if length > 256 * 1024 * 1024 {
-        bail!("message trop gros");
+        bail!(tr!("lsp.message_too_large"));
     }
     let mut body = vec![0; length];
     reader.read_exact(&mut body)?;
@@ -511,67 +514,5 @@ fn percent_decode(text: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn positions_count_utf16_units() {
-        let text = "a😀b\nsecond line\n";
-        assert_eq!(to_position(text, 0), (0, 0));
-        assert_eq!(to_position(text, 1), (0, 1));
-        assert_eq!(to_position(text, 5), (0, 3), "an emoji is two units");
-        assert_eq!(to_position(text, text.find("line").unwrap()), (1, 7));
-        assert_eq!(from_position(text, 0, 3), 5);
-        assert_eq!(from_position(text, 1, 7), text.find("line").unwrap());
-        assert_eq!(from_position(text, 9, 0), text.len(), "past the end");
-        assert_eq!(
-            from_position(text, 0, 99),
-            text.find('\n').unwrap(),
-            "past the line"
-        );
-    }
-
-    #[test]
-    fn addresses_are_encoded_and_compared_in_one_form() {
-        let uri = path_to_uri(Path::new(r"C:\Users\Thomas\my project\a#b.js"));
-        assert_eq!(uri, "file:///C:/Users/Thomas/my%20project/a%23b.js");
-        assert_eq!(
-            normalize_uri(&uri),
-            normalize_uri("file:///c%3A/Users/Thomas/my%20project/a%23b.js")
-        );
-        assert_eq!(
-            path_to_uri(Path::new("/home/t/x.js")),
-            "file:///home/t/x.js"
-        );
-    }
-
-    #[test]
-    fn addresses_come_back_to_paths() {
-        assert_eq!(
-            uri_to_path("file:///C:/Users/Thomas/my%20project/a.js"),
-            Some(PathBuf::from("C:/Users/Thomas/my project/a.js"))
-        );
-        assert_eq!(
-            uri_to_path("file:///home/t/x.js"),
-            Some(PathBuf::from("/home/t/x.js"))
-        );
-        assert_eq!(uri_to_path("https://x"), None);
-    }
-
-    #[test]
-    fn messages_are_read_with_their_length() {
-        let body = br#"{"jsonrpc":"2.0","id":1,"result":null}"#;
-        let framed = [
-            format!("Content-Length: {}\r\n\r\n", body.len()).into_bytes(),
-            body.to_vec(),
-        ]
-        .concat();
-        let mut reader = std::io::Cursor::new(framed);
-        let message = read_message(&mut reader).unwrap().unwrap();
-        assert_eq!(message["id"], 1);
-        assert!(
-            read_message(&mut reader).unwrap().is_none(),
-            "end of stream"
-        );
-    }
-}
+#[path = "../../../test/languages/lsp/mod/tests.rs"]
+mod tests;

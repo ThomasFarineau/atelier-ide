@@ -107,7 +107,7 @@ fn rasterize(svg: &str) -> Result<(Vec<u8>, egui::Vec2), String> {
         (natural.width() * scale).ceil().max(1.0) as u32,
         (natural.height() * scale).ceil().max(1.0) as u32,
     );
-    let mut pixmap = tiny_skia::Pixmap::new(width, height).ok_or("Image trop grande")?;
+    let mut pixmap = tiny_skia::Pixmap::new(width, height).ok_or(tr!("mermaid.image_too_large"))?;
     resvg::render(
         &tree,
         tiny_skia::Transform::from_scale(
@@ -123,10 +123,10 @@ fn rasterize(svg: &str) -> Result<(Vec<u8>, egui::Vec2), String> {
 /// Draws a diagram now, on this thread. The interface goes through [`render_async`].
 pub fn render_blocking(source: &str) -> Rendered {
     if source.len() > MAX_SOURCE {
-        return Err(format!(
-            "Diagramme trop volumineux ({} Ko, au plus {} Ko)",
-            source.len() / 1000,
-            MAX_SOURCE / 1000
+        return Err(trf!(
+            "mermaid.diagram_too_large_kb_at",
+            source = source.len() / 1000,
+            value = MAX_SOURCE / 1000
         ));
     }
     catch_unwind(AssertUnwindSafe(|| {
@@ -139,7 +139,7 @@ pub fn render_blocking(source: &str) -> Rendered {
             png: Arc::from(png),
         })
     }))
-    .unwrap_or_else(|_| Err("Diagramme non pris en charge".to_string()))
+    .unwrap_or_else(|_| Err(tr!("mermaid.diagram_not_supported").to_string()))
 }
 
 enum Slot {
@@ -160,9 +160,9 @@ pub fn render_async(source: &str, ctx: &egui::Context) -> Option<Rendered> {
     match jobs.get(&key) {
         Some(Slot::Done(result)) => return Some(result.clone()),
         Some(Slot::Drawing(since)) if since.elapsed() > GIVE_UP => {
-            return Some(Err(format!(
-                "Délai dépassé ({} s) : diagramme trop complexe",
-                GIVE_UP.as_secs()
+            return Some(Err(trf!(
+                "mermaid.timed_out_s_diagram_too",
+                as_secs = GIVE_UP.as_secs()
             )));
         }
         Some(Slot::Drawing(_)) => return None,
@@ -175,7 +175,7 @@ pub fn render_async(source: &str, ctx: &egui::Context) -> Option<Rendered> {
     jobs.insert(key, Slot::Drawing(Instant::now()));
     let (source, ctx) = (source.to_string(), ctx.clone());
     // Announced before the thread starts, so that it is listed from the first frame on.
-    let task = crate::tasks::start("Génération du diagramme Mermaid");
+    let task = crate::tasks::start(tr!("mermaid.drawing_mermaid_diagram"));
     let spawned = std::thread::Builder::new()
         .name("mermaid".into())
         .stack_size(WORKER_STACK)
@@ -191,7 +191,7 @@ pub fn render_async(source: &str, ctx: &egui::Context) -> Option<Rendered> {
     if spawned.is_err() {
         jobs.insert(
             key,
-            Slot::Done(Err("Impossible de démarrer le calcul du diagramme".into())),
+            Slot::Done(Err(tr!("mermaid.cannot_start_drawing_diagram").into())),
         );
         return jobs.get(&key).and_then(|slot| {
             if let Slot::Done(r) = slot {
@@ -208,7 +208,7 @@ pub fn render_async(source: &str, ctx: &egui::Context) -> Option<Rendered> {
 fn drawing(ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         ui.spinner();
-        ui.label("Génération du diagramme…");
+        ui.label(tr!("mermaid.drawing_diagram"));
     });
     ui.ctx().request_repaint_after(Duration::from_millis(100));
 }
@@ -217,9 +217,10 @@ fn drawing(ui: &mut egui::Ui) {
 fn export_refusal(size: egui::Vec2) -> Option<String> {
     let pixels = size.x as f64 * size.y as f64;
     (pixels > MAX_EXPORT_PIXELS).then(|| {
-        format!(
-            "image de {:.0} × {:.0} px trop grande pour un PNG, exportez en SVG",
-            size.x, size.y
+        trf!(
+            "mermaid.image_px_too_large_png",
+            x = format!("{:.0}", size.x),
+            y = format!("{:.0}", size.y)
         )
     })
 }
@@ -238,7 +239,7 @@ pub fn export_png(diagram: &Diagram, path: &Path) -> Result<(), String> {
             &Theme::modern(),
         )
     }))
-    .map_err(|_| "Export impossible".to_string())?
+    .map_err(|_| tr!("mermaid.cannot_export_2").to_string())?
     .map_err(|e| e.to_string())
 }
 
@@ -267,8 +268,8 @@ fn export_in_background(
                 export_svg(&diagram, &target)
             };
             *message.lock().unwrap_or_else(|e| e.into_inner()) = Some(match result {
-                Ok(()) => (false, format!("Exporté : {}", target.display())),
-                Err(e) => (true, format!("Export impossible : {e}")),
+                Ok(()) => (false, trf!("mermaid.exported", target = target.display())),
+                Err(e) => (true, trf!("mermaid.cannot_export", e = e)),
             });
             ctx.request_repaint();
         });
@@ -348,7 +349,10 @@ pub fn show(ui: &mut egui::Ui, source: &str, max_width: f32) {
         }
         Some(Err(error)) => {
             let t = ui::theme(ui.ctx());
-            ui.colored_label(t.error, format!("Diagramme Mermaid invalide : {error}"));
+            ui.colored_label(
+                t.error,
+                trf!("mermaid.invalid_mermaid_diagram", error = error),
+            );
         }
     }
 }
@@ -372,7 +376,7 @@ impl BuiltinPlugin for MermaidPlugin {
         "Mermaid"
     }
     fn description(&self) -> &'static str {
-        "Diagrammes Mermaid : fichiers .mmd en éditeur, aperçu ou les deux, export PNG/SVG, et rendu des blocs ```mermaid dans l'aperçu Markdown."
+        tr!("mermaid.mermaid_diagrams_mmd_files_editor")
     }
     fn icon(&self) -> &'static str {
         "editorPreview"
@@ -383,9 +387,9 @@ impl BuiltinPlugin for MermaidPlugin {
 
     fn commands(&self) -> Vec<Command> {
         [
-            ("mermaid.text", "Mermaid : éditeur seul"),
-            ("mermaid.split", "Mermaid : éditeur et aperçu"),
-            ("mermaid.preview", "Mermaid : aperçu seul"),
+            ("mermaid.text", tr!("mermaid.mermaid_editor_only")),
+            ("mermaid.split", tr!("mermaid.mermaid_editor_preview")),
+            ("mermaid.preview", tr!("mermaid.mermaid_preview_only")),
         ]
         .into_iter()
         .map(|(id, label)| Command {
@@ -404,7 +408,7 @@ impl BuiltinPlugin for MermaidPlugin {
         };
         match host.active_file().filter(|p| is_mermaid(p)) {
             Some(path) => self.set_editor_layout(&path, layout),
-            None => host.notify("Ouvrez un fichier Mermaid (.mmd)".into()),
+            None => host.notify(tr!("mermaid.open_mermaid_file_mmd").into()),
         }
     }
 
@@ -426,17 +430,17 @@ impl BuiltinPlugin for MermaidPlugin {
             let ready = rendered.as_ref().and_then(|r| r.as_ref().ok()).cloned();
             for (label, title, png, filter, extension) in [
                 (
-                    "Exporter PNG",
-                    "Export du diagramme en PNG",
+                    tr!("mermaid.export_png"),
+                    tr!("mermaid.export_diagram_as_png"),
                     true,
-                    "Image PNG",
+                    tr!("mermaid.png_image"),
                     "png",
                 ),
                 (
-                    "Exporter SVG",
-                    "Export du diagramme en SVG",
+                    tr!("mermaid.export_svg"),
+                    tr!("mermaid.export_diagram_as_svg"),
                     false,
-                    "Image SVG",
+                    tr!("mermaid.svg_image"),
                     "svg",
                 ),
             ] {
@@ -465,7 +469,7 @@ impl BuiltinPlugin for MermaidPlugin {
             }
             if ui
                 .button(format!("{:.0} %", *zoom * 100.0))
-                .on_hover_text("Ajuster à la fenêtre")
+                .on_hover_text(tr!("mermaid.fit_window"))
                 .clicked()
             {
                 *zoom = 1.0;
@@ -493,7 +497,7 @@ impl BuiltinPlugin for MermaidPlugin {
                 egui::Frame::new()
                     .inner_margin(Margin::same(18))
                     .show(ui, |ui| {
-                        ui.colored_label(t.error, format!("Diagramme invalide : {error}"));
+                        ui.colored_label(t.error, trf!("mermaid.invalid_diagram", error = error));
                     });
                 return;
             }
@@ -530,136 +534,5 @@ fn stem(path: &Path, extension: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    const FLOW: &str =
-        "flowchart LR\n  A[Début] --> B{Choix}\n  B -->|oui| C[Fin]\n  B -->|non| A\n";
-
-    #[test]
-    fn mmd_files_get_a_split_layout_by_default() {
-        let mut plugin = MermaidPlugin::default();
-        let file = Path::new("C:/projet/flux.MMD");
-        assert_eq!(plugin.editor_layout(file), Some(EditorLayout::Split));
-        assert_eq!(plugin.editor_layout(Path::new("main.rs")), None);
-        plugin.set_editor_layout(file, EditorLayout::Preview);
-        assert_eq!(plugin.editor_layout(file), Some(EditorLayout::Preview));
-    }
-
-    #[test]
-    fn diagrams_render_to_svg_and_export_to_png() {
-        let diagram = render_blocking(FLOW).unwrap();
-        assert!(String::from_utf8_lossy(&diagram.svg).contains("<svg"));
-        assert!(
-            diagram.size.x > 50.0 && diagram.size.x < 2000.0,
-            "{:?}",
-            diagram.size
-        );
-        let dir = std::env::temp_dir().join(format!("atelier-mmd-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        export_png(&diagram, &dir.join("a.png")).unwrap();
-        export_svg(&diagram, &dir.join("a.svg")).unwrap();
-        assert_eq!(
-            &diagram.png[1..4],
-            b"PNG",
-            "the picture shown is rasterized once, off the interface"
-        );
-        let png = std::fs::read(dir.join("a.png")).unwrap();
-        assert_eq!(&png[1..4], b"PNG");
-        assert!(
-            std::fs::read_to_string(dir.join("a.svg"))
-                .unwrap()
-                .contains("<svg")
-        );
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn markdown_is_cut_around_mermaid_fences_only() {
-        let doc = "# Titre\n\n```mermaid\ngraph TD\nA-->B\n```\n\n```rust\nfn main() {}\n```\n\n~~~mermaid\nA-->C\n~~~\nfin\n";
-        let blocks = split_blocks(doc);
-        assert_eq!(
-            blocks,
-            vec![
-                Block::Text("# Titre\n\n".into()),
-                Block::Diagram("graph TD\nA-->B\n".into()),
-                Block::Text("\n```rust\nfn main() {}\n```\n\n".into()),
-                Block::Diagram("A-->C\n".into()),
-                Block::Text("fin\n".into()),
-            ]
-        );
-        // Nothing lost when there is no diagram, and a mermaid fence inside another is text.
-        assert_eq!(split_blocks("a\nb"), vec![Block::Text("a\nb".into())]);
-        let nested = "````md\n```mermaid\nA-->B\n```\n````\n";
-        assert_eq!(split_blocks(nested), vec![Block::Text(nested.into())]);
-    }
-
-    /// Runs frames of `plugin` until its diagram is drawn.
-    fn frames_until_drawn(plugin: &mut MermaidPlugin, ctx: &egui::Context, text: &mut String) {
-        for _ in 0..400 {
-            let _ = ctx.run(Default::default(), |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    plugin.preview(ui, Path::new("a.mmd"), text, None);
-                });
-            });
-            if render_async(text, ctx).is_some() {
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        panic!("the diagram was never drawn");
-    }
-
-    #[test]
-    fn invalid_diagrams_report_an_error_instead_of_panicking() {
-        let _ = render_blocking("ceci n'est pas un diagramme");
-        let ctx = egui::Context::default();
-        egui_extras::install_image_loaders(&ctx);
-        ui::install(&ctx, ui::theme_by_index(0), 14.0);
-        let mut plugin = MermaidPlugin::default();
-        let mut text = FLOW.to_string();
-        frames_until_drawn(&mut plugin, &ctx, &mut text);
-        let _ = ctx.run(Default::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
-                plugin.preview(ui, Path::new("a.mmd"), &mut text, None)
-            });
-        });
-        assert_eq!(plugin.uris.len(), 1);
-    }
-
-    #[test]
-    fn a_diagram_is_drawn_in_the_background_and_shows_as_a_task() {
-        let ctx = egui::Context::default();
-        let source = "flowchart LR\n  X1 --> X2\n  X2 --> X3\n";
-        // The first call only starts the work.
-        assert!(
-            render_async(source, &ctx).is_none(),
-            "nothing blocks the interface"
-        );
-        assert!(
-            crate::tasks::running()
-                .iter()
-                .any(|t| t.title.contains("Mermaid"))
-                || render_async(source, &ctx).is_some(),
-            "listed as a task while it is drawn"
-        );
-        let mut drawn = None;
-        for _ in 0..500 {
-            drawn = render_async(source, &ctx);
-            if drawn.is_some() {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        assert!(drawn.expect("drawn in the end").is_ok());
-    }
-
-    #[test]
-    fn a_huge_diagram_is_refused_instead_of_taking_the_window_down() {
-        let huge = format!("flowchart LR\n{}", "  A --> B\n".repeat(MAX_SOURCE / 8));
-        let error = render_blocking(&huge).err().expect("refused");
-        assert!(error.contains("trop volumineux"), "{error}");
-        assert!(export_refusal(egui::vec2(30_000.0, 20_000.0)).is_some());
-        assert!(export_refusal(egui::vec2(3_000.0, 2_000.0)).is_none());
-    }
-}
+#[path = "../../../../test/plugins/builtins/mermaid/mod/tests.rs"]
+mod tests;

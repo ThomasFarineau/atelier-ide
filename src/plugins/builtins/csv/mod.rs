@@ -1,6 +1,7 @@
 //! CSV built-in plugin: table preview of delimiter-separated files (`.csv`, `.tsv`, `.psv`,
 //! `.tab`) next to the source or instead of it, with sortable columns.
 
+use crate::i18n::Text;
 use crate::{
     plugins::builtin::{BuiltinPlugin, Command, EditorLayout, Host},
     ui,
@@ -16,12 +17,15 @@ use std::{
 
 const ROW_HEIGHT: f32 = 22.0;
 const MAX_COLUMN_CHARS: usize = 40;
-const DELIMITERS: [(&str, Option<char>); 5] = [
-    ("Auto", None),
-    ("Virgule ,", Some(',')),
-    ("Point-virgule ;", Some(';')),
-    ("Tabulation", Some('\t')),
-    ("Barre |", Some('|')),
+/// What the display order was computed for: (text version, header, sort column and direction).
+type OrderKey = (u64, bool, Option<(usize, bool)>);
+
+const DELIMITERS: [(Text, Option<char>); 5] = [
+    (Text("csv.auto_2"), None),
+    (Text("csv.comma_2"), Some(',')),
+    (Text("csv.semicolon_2"), Some(';')),
+    (Text("csv.tab_2"), Some('\t')),
+    (Text("csv.pipe_2"), Some('|')),
 ];
 
 pub fn is_csv(path: &Path) -> bool {
@@ -167,7 +171,7 @@ struct State {
     parsed: Option<Parsed>,
     /// Body rows (indices into `parsed.rows`) in display order.
     order: Vec<usize>,
-    order_key: Option<(u64, bool, Option<(usize, bool)>)>,
+    order_key: Option<OrderKey>,
 }
 
 impl Default for State {
@@ -247,7 +251,7 @@ impl BuiltinPlugin for CsvPlugin {
         "CSV / TSV"
     }
     fn description(&self) -> &'static str {
-        "Aperçu en tableau des fichiers CSV, TSV et PSV : séparateur détecté, première ligne en en-tête, tri des colonnes, éditeur seul, côte à côte ou tableau seul."
+        tr!("csv.table_preview_csv_tsv_psv")
     }
     fn icon(&self) -> &'static str {
         "editorPreview"
@@ -258,9 +262,9 @@ impl BuiltinPlugin for CsvPlugin {
 
     fn commands(&self) -> Vec<Command> {
         [
-            ("csv.text", "CSV : éditeur seul"),
-            ("csv.split", "CSV : éditeur et tableau"),
-            ("csv.preview", "CSV : tableau seul"),
+            ("csv.text", tr!("csv.csv_editor_only")),
+            ("csv.split", tr!("csv.csv_editor_table")),
+            ("csv.preview", tr!("csv.csv_table_only")),
         ]
         .into_iter()
         .map(|(id, label)| Command {
@@ -279,7 +283,7 @@ impl BuiltinPlugin for CsvPlugin {
         };
         match host.active_file().filter(|p| is_csv(p)) {
             Some(path) => self.set_editor_layout(&path, layout),
-            None => host.notify("Ouvrez un fichier CSV, TSV ou PSV".into()),
+            None => host.notify(tr!("csv.open_csv_tsv_psv_file").into()),
         }
     }
 
@@ -305,11 +309,11 @@ impl BuiltinPlugin for CsvPlugin {
         ui.horizontal(|ui| {
             ui.add_space(10.0);
             let mut changed =
-                ui::checkbox(ui, &mut state.header, "Première ligne en en-tête").changed();
+                ui::checkbox(ui, &mut state.header, tr!("csv.first_row_as_header")).changed();
             ui.add_space(8.0);
             let detected = state.parsed.as_ref().map_or(',', |p| p.delimiter);
             let shown = match state.delimiter {
-                None => format!("Auto ({})", delimiter_name(detected)),
+                None => trf!("csv.auto", detected = delimiter_name(detected)),
                 Some(c) => delimiter_name(c).to_string(),
             };
             egui::ComboBox::from_id_salt(("csv_delimiter", path))
@@ -317,7 +321,7 @@ impl BuiltinPlugin for CsvPlugin {
                 .show_ui(ui, |ui| {
                     for (label, value) in DELIMITERS {
                         if ui
-                            .selectable_label(state.delimiter == value, label)
+                            .selectable_label(state.delimiter == value, label.get())
                             .clicked()
                         {
                             state.delimiter = value;
@@ -331,9 +335,13 @@ impl BuiltinPlugin for CsvPlugin {
             if let Some(parsed) = &state.parsed {
                 let body = parsed.rows.len().saturating_sub(usize::from(state.header));
                 ui.label(
-                    RichText::new(format!("{body} lignes · {} colonnes", parsed.columns))
-                        .small()
-                        .color(t.text_secondary),
+                    RichText::new(trf!(
+                        "csv.rows_columns",
+                        body = body,
+                        columns = parsed.columns
+                    ))
+                    .small()
+                    .color(t.text_secondary),
                 );
             }
         });
@@ -343,7 +351,7 @@ impl BuiltinPlugin for CsvPlugin {
         if parsed.rows.is_empty() {
             ui.add_space(20.0);
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("Fichier vide").color(t.text_secondary))
+                ui.label(RichText::new(tr!("csv.empty_file")).color(t.text_secondary))
             });
             return;
         }
@@ -444,84 +452,14 @@ impl BuiltinPlugin for CsvPlugin {
 
 fn delimiter_name(c: char) -> &'static str {
     match c {
-        ',' => "virgule",
-        ';' => "point-virgule",
-        '\t' => "tabulation",
-        '|' => "barre",
-        _ => "autre",
+        ',' => tr!("csv.comma"),
+        ';' => tr!("csv.semicolon"),
+        '\t' => tr!("csv.tab"),
+        '|' => tr!("csv.pipe"),
+        _ => tr!("csv.other"),
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_quotes_line_breaks_and_empty_fields() {
-        let rows = parse(
-            "a,b,c\r\n\"x,1\",\"say \"\"hi\"\"\",\n\"multi\nline\",,z\n",
-            ',',
-        );
-        assert_eq!(rows.len(), 3);
-        assert_eq!(rows[1], ["x,1", "say \"hi\"", ""]);
-        assert_eq!(rows[2], ["multi\nline", "", "z"]);
-        assert_eq!(parse("", ','), Vec::<Vec<String>>::new());
-        assert_eq!(parse("a\n\nb", ','), [vec!["a"], vec!["b"]]);
-        assert_eq!(parse("\u{feff}x;y", ';'), [vec!["x", "y"]]);
-    }
-
-    #[test]
-    fn detects_the_delimiter() {
-        let p = Path::new("data.csv");
-        assert_eq!(detect_delimiter(p, "a;b;c\n1;2;3"), ';');
-        assert_eq!(detect_delimiter(p, "\"a,b\";c\n"), ';');
-        assert_eq!(detect_delimiter(p, "a,b,c\n"), ',');
-        assert_eq!(detect_delimiter(p, "single\n"), ',');
-        assert_eq!(detect_delimiter(Path::new("x.TSV"), "a,b"), '\t');
-        assert_eq!(detect_delimiter(p, "a\tb\n"), '\t');
-    }
-
-    #[test]
-    fn sorts_numbers_before_text_and_numerically() {
-        assert_eq!(compare("9", "10"), Ordering::Less);
-        assert_eq!(compare("2", "abc"), Ordering::Less);
-        assert_eq!(compare("Banane", "cerise"), Ordering::Less);
-        assert_eq!(column_name(0), "A");
-        assert_eq!(column_name(26), "AA");
-    }
-
-    #[test]
-    fn rows_are_ordered_by_the_sorted_column() {
-        let mut state = State::default();
-        state.refresh(Path::new("a.csv"), "n,v\nx,10\ny,9\nz,100\n");
-        assert_eq!(state.order, [1, 2, 3]);
-        state.sort = Some((1, true));
-        state.refresh(Path::new("a.csv"), "n,v\nx,10\ny,9\nz,100\n");
-        assert_eq!(state.order, [2, 1, 3]);
-        state.sort = Some((1, false));
-        state.header = false;
-        state.refresh(Path::new("a.csv"), "n,v\nx,10\ny,9\nz,100\n");
-        assert_eq!(state.order, [0, 3, 1, 2]);
-    }
-
-    #[test]
-    fn csv_files_get_a_split_layout_and_the_table_renders() {
-        let mut plugin = CsvPlugin::default();
-        let path = Path::new("C:/projet/data.CSV");
-        assert_eq!(plugin.editor_layout(path), Some(EditorLayout::Split));
-        assert_eq!(plugin.editor_layout(Path::new("main.rs")), None);
-        plugin.set_editor_layout(path, EditorLayout::Preview);
-        assert_eq!(plugin.editor_layout(path), Some(EditorLayout::Preview));
-        let ctx = egui::Context::default();
-        ui::install(&ctx, ui::theme_by_index(0), 14.0);
-        let mut text = "name,qty\napple,3\n\"pear, green\",5\n".to_string();
-        for _ in 0..2 {
-            let _ = ctx.run(Default::default(), |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    plugin.preview(ui, path, &mut text, None);
-                });
-            });
-        }
-        assert_eq!(plugin.states[path].order.len(), 2);
-    }
-}
+#[path = "../../../../test/plugins/builtins/csv/mod/tests.rs"]
+mod tests;

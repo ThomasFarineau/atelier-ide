@@ -1,0 +1,7 @@
+{
+  "svg.open_svg_file": "Open an SVG file",
+  "svg.preview_svg_files_editor_only": "Preview of SVG files: editor only, editor and preview side by side, or preview only.",
+  "svg.svg_editor_only": "SVG: Editor Only",
+  "svg.svg_editor_preview": "SVG: Editor and Preview",
+  "svg.svg_preview_only": "SVG: Preview Only"
+}
