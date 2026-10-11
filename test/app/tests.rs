@@ -702,3 +702,60 @@ fn a_press_begun_in_another_file_does_not_select() {
     step(&mut ide, vec![button(to, false)]);
     assert!(ide.documents[1].view.selection().is_empty());
 }
+
+/// Shift+F6 opens the rename field on the name at the caret, and Enter renames it everywhere:
+/// the single-line field gives up the focus in the frame where Enter is pressed.
+#[test]
+fn shift_f6_then_enter_renames_the_name_at_the_caret() {
+    use egui::{Event, Key, Modifiers, PointerButton, pos2};
+    let ctx = egui::Context::default();
+    let mut ide = ide();
+    ide.apply_theme(&ctx);
+    ide.open_file(ide.root.join("examples/demo/app.js"));
+    ide.wait_loaded();
+    let mut time = 0.0;
+    let mut step = |ide: &mut Ide, events: Vec<Event>, modifiers: Modifiers| {
+        time += 0.05;
+        frame_mod(&ctx, ide, time, events, modifiers);
+    };
+    step(&mut ide, vec![], Modifiers::NONE);
+    step(&mut ide, vec![], Modifiers::NONE);
+    // A click gives the editor the keyboard.
+    let at = pos2(400.0, 100.0);
+    let button = |pressed| Event::PointerButton {
+        pos: at,
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+    step(&mut ide, vec![Event::PointerMoved(at), button(true)], Modifiers::NONE);
+    step(&mut ide, vec![button(false)], Modifiers::NONE);
+    let caret = ide.documents[0].text.find("message").unwrap() + 1;
+    ide.documents[0].view.cursor = caret;
+    ide.documents[0].view.anchor = caret;
+    let key = |key, modifiers| Event::Key {
+        key,
+        physical_key: Some(key),
+        pressed: true,
+        repeat: false,
+        modifiers,
+    };
+    step(&mut ide, vec![key(Key::F6, Modifiers::SHIFT)], Modifiers::SHIFT);
+    step(&mut ide, vec![], Modifiers::NONE);
+    assert_eq!(
+        ctx.memory(|m| m.focused()),
+        Some(egui::Id::new("rename_field"))
+    );
+    step(&mut ide, vec![Event::Text("greeting".into())], Modifiers::NONE);
+    step(&mut ide, vec![key(Key::Enter, Modifiers::NONE)], Modifiers::NONE);
+    for _ in 0..40 {
+        step(&mut ide, vec![], Modifiers::NONE);
+        if !ide.documents[0].text.contains("message") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let text = &ide.documents[0].text;
+    assert!(!text.contains("message"), "{text}");
+    assert_eq!(text.matches("greeting").count(), 3);
+}
