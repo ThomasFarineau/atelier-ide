@@ -128,7 +128,7 @@ export default defineConfig({
     root: {
       label: 'English',
       lang: 'en',
-      description: 'A desktop IDE written in Rust, in the image of IntelliJ IDEA.',
+      description: 'A fast, modern desktop IDE written in Rust.',
       themeConfig: {
         nav: [
           { text: 'Guide', link: '/guide/getting-started' },
@@ -143,7 +143,7 @@ export default defineConfig({
       label: 'Français',
       lang: 'fr',
       link: '/fr/',
-      description: 'Un IDE de bureau écrit en Rust, à l’image d’IntelliJ IDEA.',
+      description: 'Un IDE de bureau moderne et rapide, écrit en Rust.',
       themeConfig: {
         nav: [
           { text: 'Guide', link: '/fr/guide/getting-started' },

@@ -1,10 +1,10 @@
 # Git
 
-The built-in Git plugin uses the installed `git` command (2.26 or newer) and works like IntelliJ.
+The built-in Git plugin uses the installed `git` command (2.26 or newer).
 
 ## Commit window
 
-**Alt+0**, on the left rail: changes, conflicts and unversioned files, with checkboxes. As in IntelliJ, only the checked files are committed, without going through the index.
+**Alt+0**, on the left rail: changes, conflicts and unversioned files, with checkboxes. Only the checked files are committed, without going through the index.
 
 - **Amend** the last commit and **Sign-off** options, **Commit** and **Commit and Push…**.
 - Context menu: diff, open, history, rollback, add to Git or to `.gitignore`, copy the path.

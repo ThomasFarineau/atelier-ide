@@ -1,6 +1,6 @@
 # Raccourcis clavier
 
-Atelier reprend les raccourcis d'IntelliJ. Sur macOS, utilisez Cmd pour les raccourcis Ctrl de l'éditeur.
+Sur macOS, utilisez Cmd pour les raccourcis Ctrl de l'éditeur.
 
 ## Fichiers et navigation
 

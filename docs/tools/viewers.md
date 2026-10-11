@@ -4,7 +4,7 @@ Built-in plugins open some files in a viewer, next to the source or instead of i
 
 ## Markdown
 
-For `.md` files, three modes at the top right of the editor, as in IntelliJ: editor only, editor and preview side by side (the default, with synchronized scrolling and a resizable split), preview only. The preview shows headings, lists, tables, colored code blocks, images relative to the file, links and ```` ```mermaid ```` diagrams; the boxes of task lists can be ticked from the preview. The modes are also in Search Everywhere (“Markdown: …”).
+For `.md` files, three modes at the top right of the editor: editor only, editor and preview side by side (the default, with synchronized scrolling and a resizable split), preview only. The preview shows headings, lists, tables, colored code blocks, images relative to the file, links and ```` ```mermaid ```` diagrams; the boxes of task lists can be ticked from the preview. The modes are also in Search Everywhere (“Markdown: …”).
 
 ## Mermaid
 

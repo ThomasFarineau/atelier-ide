@@ -20,8 +20,6 @@ Flèches pour choisir, **Entrée** pour insérer, **Tab** pour remplacer le rest
 
 ## Navigation
 
-Comme dans IntelliJ :
-
 - **Ctrl+clic** (ou **Ctrl+B**) sur un nom va à sa déclaration, y compris dans un autre fichier ou un module importé ; sur une déclaration, il liste ses utilisations dans une fenêtre.
 - **Ctrl** maintenu sur un nom le souligne comme un lien et montre la ligne de sa déclaration.
 - **Ctrl+Maj+B** va à la déclaration du type, **Ctrl+Alt+B** aux implémentations (serveur de langage), **Alt+F7** liste les utilisations.

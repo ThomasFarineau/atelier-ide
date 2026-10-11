@@ -4,22 +4,19 @@ layout: home
 hero:
   name: Atelier IDE
   text: Un IDE de bureau en Rust
-  tagline: À l'image de la New UI d'IntelliJ IDEA, léger et rapide, avec Git, un terminal, l'intelligence du code et des outils pour les agents IA intégrés.
+  tagline: Léger et rapide, avec Git, un terminal, l'intelligence du code et des outils pour les agents IA intégrés.
   image:
     src: /logo.svg
     alt: Atelier IDE
   actions:
-    - theme: brand
+    - theme: alt
       text: Commencer
       link: /fr/guide/getting-started
-    - theme: alt
-      text: Télécharger
-      link: https://github.com/ThomasFarineau/atelier-ide/releases/latest
 
 features:
   - icon: 🪟
-    title: L'interface d'IntelliJ
-    details: Thèmes Islands, icônes New UI, rails de fenêtres d'outils, Rechercher partout, widget d'exécution et raccourcis d'IntelliJ.
+    title: Une interface moderne et épurée
+    details: Thèmes Islands, rails de fenêtres d'outils, Rechercher partout, widget d'exécution et raccourcis familiers.
   - icon: 🧠
     title: Intelligence du code
     details: JavaScript, TypeScript, Rust et Java, avec tree-sitter dès l'ouverture, puis tsserver, rust-analyzer ou jdtls.

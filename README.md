@@ -5,7 +5,7 @@
 <h1 align="center">Atelier IDE</h1>
 
 <p align="center">
-  A desktop IDE written in Rust, in the image of IntelliJ IDEA's New UI.<br>
+  A fast, modern desktop IDE written in Rust.<br>
   <a href="https://thomasfarineau.github.io/atelier-ide/"><b>Documentation</b></a> ·
   <a href="https://thomasfarineau.github.io/atelier-ide/fr/">Documentation en français</a> ·
   <a href="https://github.com/ThomasFarineau/atelier-ide/releases/latest">Download</a> ·
@@ -14,7 +14,7 @@
 
 ## Features
 
-- **IntelliJ look and feel**: Islands themes, New UI icons, tool window rails, Search Everywhere, run widget and IntelliJ shortcuts. Interface in English and French.
+- **A clean, modern interface**: Islands themes, tool window rails, Search Everywhere, run widget and familiar shortcuts. Interface in English and French.
 - **Code intelligence** for JavaScript, TypeScript, Rust and Java: tree-sitter right away, then tsserver, rust-analyzer or jdtls (completion, navigation, rename, quick actions, reformat).
 - **Git**: commit window, log with branch graph, branch widget, diff, conflict resolution, blame.
 - **Project tools**: terminal, run configurations, npm, Maven, Gradle, translations, Kubernetes, and viewers for Markdown, Mermaid, SVG, CSV, images and Office documents.

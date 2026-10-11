@@ -34,8 +34,8 @@ In the code, a text is named by its key: `tr!("save")`, or `trf!("files_count", 
 | --- | --- |
 | `src/main.rs` | Entry point of the IDE |
 | `src/app.rs`, `src/app/` | The shell of the IDE (title bar, rails, tool windows, tabs, editor, status bar, dialogs), shortcuts and document life cycle; the Projects, Settings and Plugins pages, run configurations, Reformat code, Go to symbol |
-| `src/ui.rs` | IntelliJ look and feel shared with the plugins: themes, fonts, icons, widgets |
-| `src/highlight.rs` | Syntax highlighting in IntelliJ's colors |
+| `src/ui.rs` | The look and feel shared with the plugins: themes, fonts, icons, widgets |
+| `src/highlight.rs` | Syntax highlighting |
 | `src/editor.rs`, `src/editor/` | The editor: actions, completion popup and tooltips (`assist.rs`), folding |
 | `src/languages/` | Code intelligence: `mod.rs` (types, `Provider`, `Service`), `lsp/` (Language Server Protocol client and the generic provider of a language with a server), `javascript/`, `typescript/`, `rust/`, `java/`, `format.rs`, `syntax.rs` |
 | `src/features/` | Problems window and project search |

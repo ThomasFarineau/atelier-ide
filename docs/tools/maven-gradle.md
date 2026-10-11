@@ -1,6 +1,6 @@
 # Maven & Gradle
 
-The built-in **Maven** and **Gradle** plugins add their windows on the right rail, as IntelliJ does, only in a project that has a `pom.xml` (Maven) or a `settings.gradle` / `build.gradle` (Gradle). Elsewhere, neither their window nor their commands show up.
+The built-in **Maven** and **Gradle** plugins add their windows on the right rail, only in a project that has a `pom.xml` (Maven) or a `settings.gradle` / `build.gradle` (Gradle). Elsewhere, neither their window nor their commands show up.
 
 ## Maven
 

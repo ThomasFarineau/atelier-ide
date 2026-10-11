@@ -20,8 +20,6 @@ Arrows to choose, **Enter** to insert, **Tab** to replace the rest of the word, 
 
 ## Navigation
 
-As in IntelliJ:
-
 - **Ctrl+click** (or **Ctrl+B**) on a name goes to its declaration, also in another file or an imported module; on a declaration, it lists its usages in a popup.
 - Holding **Ctrl** over a name underlines it as a link and shows the line of its declaration.
 - **Ctrl+Shift+B** goes to the type declaration, **Ctrl+Alt+B** to the implementations (language server), **Alt+F7** lists the usages.

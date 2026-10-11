@@ -1,17 +1,17 @@
 # Interface
 
-Atelier suit la New UI d'IntelliJ IDEA et son thème Islands : barre de titre avec les widgets de projet, de branche et d'exécution, rails de fenêtres d'outils, îlots arrondis, onglets, Rechercher partout, notifications et barre d'état avec fil d'Ariane.
+Atelier a une interface moderne et épurée : barre de titre avec les widgets de projet, de branche et d'exécution, rails de fenêtres d'outils, îlots arrondis, onglets, Rechercher partout, notifications et barre d'état avec fil d'Ariane.
 
 ## Apparence
 
-- Les vraies icônes « New UI » d'IntelliJ, les polices Inter et JetBrains Mono, et le menu principal (☰).
-- Les thèmes Islands Dark, Dark et Islands Light, avec les couleurs de coloration syntaxique des schémas Dark et Light d'IntelliJ.
+- Des icônes nettes, les polices Inter et JetBrains Mono, et le menu principal (☰).
+- Les thèmes Islands Dark, Dark et Islands Light, chacun avec ses couleurs de coloration syntaxique.
 - L'interface existe en anglais et en français. Au premier lancement, Atelier prend la langue du système (l'anglais si elle n'est pas disponible) ; elle se change dans **Paramètres › Apparence › Langue**, sans redémarrer.
 
 ## Projets
 
-- La page **Projets** (Fichier › Tous les projets…, le widget de projet ou Rechercher partout), comme l'écran d'accueil d'IntelliJ : les 50 derniers projets avec leur date d'ouverture, une recherche, et pour chacun : ouvrir ici ou dans une nouvelle fenêtre, afficher dans l'explorateur, copier le chemin ou retirer de la liste. Un dossier qui n'existe plus est grisé.
-- Plusieurs projets à la fois : chaque projet s'ouvre dans sa propre fenêtre, comme IntelliJ sous Windows. L'ouverture d'un projet demande **Cette fenêtre** ou **Nouvelle fenêtre**. Le widget de projet liste les projets récents ; un clic droit en ouvre un directement dans une nouvelle fenêtre.
+- La page **Projets** (Fichier › Tous les projets…, le widget de projet ou Rechercher partout) : les 50 derniers projets avec leur date d'ouverture, une recherche, et pour chacun : ouvrir ici ou dans une nouvelle fenêtre, afficher dans l'explorateur, copier le chemin ou retirer de la liste. Un dossier qui n'existe plus est grisé.
+- Plusieurs projets à la fois : chaque projet s'ouvre dans sa propre fenêtre. L'ouverture d'un projet demande **Cette fenêtre** ou **Nouvelle fenêtre**. Le widget de projet liste les projets récents ; un clic droit en ouvre un directement dans une nouvelle fenêtre.
 - Glisser-déposer : un fichier s'ouvre dans un onglet, un dossier propose de l'ouvrir comme projet.
 
 ## Rechercher partout
@@ -47,7 +47,7 @@ Les erreurs et les opérations Git apparaissent en bulles, et la fenêtre d'outi
 
 ## Paramètres
 
-**Ctrl+Alt+S** ouvre les paramètres, comme ceux d'IntelliJ : un arbre de pages avec une recherche (Apparence et comportement, Raccourcis clavier, Éditeur, Plugins, Langages et frameworks, Build, exécution, déploiement), un fil d'Ariane, et **OK**, **Annuler** et **Appliquer**. Les pages modifient un brouillon : rien ne change avant Appliquer ou OK, Annuler l'oublie, et **Réinitialiser** rétablit une page.
+**Ctrl+Alt+S** ouvre les paramètres : un arbre de pages avec une recherche (Apparence et comportement, Raccourcis clavier, Éditeur, Plugins, Langages et frameworks, Build, exécution, déploiement), un fil d'Ariane, et **OK**, **Annuler** et **Appliquer**. Les pages modifient un brouillon : rien ne change avant Appliquer ou OK, Annuler l'oublie, et **Réinitialiser** rétablit une page.
 
 ## Pas encore là
 

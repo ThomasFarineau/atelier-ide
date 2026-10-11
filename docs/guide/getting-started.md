@@ -1,5 +1,7 @@
 # Installation
 
+<DownloadButton />
+
 ## Windows
 
 Download **`atelier-setup-windows-x86_64.exe`** from the [latest release](https://github.com/ThomasFarineau/atelier-ide/releases/latest) and run it. It installs Atelier for your user only, without administrator rights, in `%LOCALAPPDATA%\Programs\Atelier`, with:

@@ -4,7 +4,7 @@
 
 ## Le widget d'exécution
 
-Le widget d'exécution de la barre de titre choisit ce que lance Maj+F10, comme dans IntelliJ : le **fichier actif** ou une **configuration d'exécution**.
+Le widget d'exécution de la barre de titre choisit ce que lance Maj+F10 : le **fichier actif** ou une **configuration d'exécution**.
 
 ### Le fichier actif
 

@@ -7,7 +7,7 @@
 - Syntax errors.
 - File structure (**Ctrl+F12**): classes, interfaces, enums, records, methods, constructors and fields.
 - Occurrences, and the declaration in the file.
-- Completion of names, keywords, common types, and IntelliJ's templates: `psvm`, `sout`, `fori`, `iter`, `ifn`, `try`, `test`…
+- Completion of names, keywords, common types, and templates: `psvm`, `sout`, `fori`, `iter`, `ifn`, `try`, `test`…
 
 ## With jdtls
 

@@ -1,6 +1,6 @@
 # Node.js (npm, pnpm, Yarn, Bun)
 
-Le plugin intégré Node.js ajoute la fenêtre **npm** sur le rail de droite, comme IntelliJ, seulement dans un projet qui a un `package.json`. Elle liste tous les `package.json` du projet (racine, espaces de travail et sous-dossiers, sans `node_modules`), avec leurs scripts dans l'ordre du fichier.
+Le plugin intégré Node.js ajoute la fenêtre **npm** sur le rail de droite, seulement dans un projet qui a un `package.json`. Elle liste tous les `package.json` du projet (racine, espaces de travail et sous-dossiers, sans `node_modules`), avec leurs scripts dans l'ordre du fichier.
 
 Le gestionnaire de paquets de chaque `package.json` est celui de son champ `packageManager`, sinon celui du fichier de verrouillage de son dossier ou d'un dossier parent (`bun.lock(b)`, `pnpm-lock.yaml`, `yarn.lock`, `package-lock.json`), sinon npm.
 

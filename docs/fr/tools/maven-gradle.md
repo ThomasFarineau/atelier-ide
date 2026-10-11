@@ -1,6 +1,6 @@
 # Maven et Gradle
 
-Les plugins intégrés **Maven** et **Gradle** ajoutent leurs fenêtres sur le rail de droite, comme IntelliJ, seulement dans un projet qui a un `pom.xml` (Maven) ou un `settings.gradle` / `build.gradle` (Gradle). Ailleurs, ni leur fenêtre ni leurs commandes n'apparaissent.
+Les plugins intégrés **Maven** et **Gradle** ajoutent leurs fenêtres sur le rail de droite, seulement dans un projet qui a un `pom.xml` (Maven) ou un `settings.gradle` / `build.gradle` (Gradle). Ailleurs, ni leur fenêtre ni leurs commandes n'apparaissent.
 
 ## Maven
 

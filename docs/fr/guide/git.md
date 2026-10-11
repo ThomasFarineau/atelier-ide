@@ -1,10 +1,10 @@
 # Git
 
-Le plugin intégré Git utilise la commande `git` installée (2.26 ou plus récente) et fonctionne comme IntelliJ.
+Le plugin intégré Git utilise la commande `git` installée (2.26 ou plus récente).
 
 ## Fenêtre Commit
 
-**Alt+0**, sur le rail de gauche : modifications, conflits et fichiers non versionnés, avec des cases à cocher. Comme dans IntelliJ, seuls les fichiers cochés sont commités, sans passer par l'index.
+**Alt+0**, sur le rail de gauche : modifications, conflits et fichiers non versionnés, avec des cases à cocher. Seuls les fichiers cochés sont commités, sans passer par l'index.
 
 - Options **Modifier le dernier commit** (amend) et **Sign-off**, **Commit** et **Commit et pousser…**.
 - Menu contextuel : diff, ouvrir, historique, annuler les modifications, ajouter à Git ou au `.gitignore`, copier le chemin.

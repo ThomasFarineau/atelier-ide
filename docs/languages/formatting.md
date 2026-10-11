@@ -1,7 +1,5 @@
 # Reformat code
 
-As in IntelliJ:
-
 | Shortcut | Action |
 | --- | --- |
 | Ctrl+Alt+L | Reformats the active file, or only the selected lines (Code › Reformat Code) |

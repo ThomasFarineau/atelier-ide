@@ -1,6 +1,6 @@
 # Keyboard shortcuts
 
-Atelier uses IntelliJ's shortcuts. On macOS, use Cmd for the Ctrl shortcuts of the editor.
+On macOS, use Cmd for the Ctrl shortcuts of the editor.
 
 ## Files and navigation
 

@@ -7,7 +7,7 @@ Les fichiers `.java` suivent le même modèle : une analyse locale avec tree-sit
 - Erreurs de syntaxe.
 - Structure du fichier (**Ctrl+F12**) : classes, interfaces, enums, records, méthodes, constructeurs et champs.
 - Occurrences, et la déclaration dans le fichier.
-- Complétion des noms, des mots clés, des types courants et des modèles d'IntelliJ : `psvm`, `sout`, `fori`, `iter`, `ifn`, `try`, `test`…
+- Complétion des noms, des mots clés, des types courants et des modèles : `psvm`, `sout`, `fori`, `iter`, `ifn`, `try`, `test`…
 
 ## Avec jdtls
 

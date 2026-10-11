@@ -1,7 +1,5 @@
 # Reformater le code
 
-Comme dans IntelliJ :
-
 | Raccourci | Action |
 | --- | --- |
 | Ctrl+Alt+L | Reformate le fichier actif, ou seulement les lignes sélectionnées (Code › Reformater le code) |

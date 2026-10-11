@@ -4,7 +4,7 @@
 
 ## The run widget
 
-The run widget of the title bar chooses what Shift+F10 starts, as in IntelliJ: the **active file** or a **run configuration**.
+The run widget of the title bar chooses what Shift+F10 starts: the **active file** or a **run configuration**.
 
 ### The active file
 

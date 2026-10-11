@@ -34,8 +34,8 @@ Dans le code, un texte s'écrit par sa clé : `tr!("save")`, ou `trf!("files_cou
 | --- | --- |
 | `src/main.rs` | Point d'entrée de l'IDE |
 | `src/app.rs`, `src/app/` | La coquille de l'IDE (barre de titre, rails, fenêtres d'outils, onglets, éditeur, barre d'état, dialogues), les raccourcis et le cycle de vie des documents ; les pages Projets, Paramètres et Plugins, les configurations d'exécution, Reformater le code, Aller au symbole |
-| `src/ui.rs` | Le look and feel d'IntelliJ partagé avec les plugins : thèmes, polices, icônes, widgets |
-| `src/highlight.rs` | Coloration syntaxique aux couleurs d'IntelliJ |
+| `src/ui.rs` | Le look and feel partagé avec les plugins : thèmes, polices, icônes, widgets |
+| `src/highlight.rs` | Coloration syntaxique |
 | `src/editor.rs`, `src/editor/` | L'éditeur : actions, popup de complétion et infobulles (`assist.rs`), repli du code |
 | `src/languages/` | Intelligence du code : `mod.rs` (types, `Provider`, `Service`), `lsp/` (client du Language Server Protocol et fournisseur générique d'un langage à serveur), `javascript/`, `typescript/`, `rust/`, `java/`, `format.rs`, `syntax.rs` |
 | `src/features/` | Fenêtre Problèmes et recherche dans le projet |

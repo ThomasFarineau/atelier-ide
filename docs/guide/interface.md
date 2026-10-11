@@ -1,17 +1,17 @@
 # Interface
 
-Atelier follows IntelliJ IDEA's New UI and its Islands theme: a title bar with the project, branch and run widgets, tool window rails, rounded islands, tabs, Search Everywhere, notifications and a status bar with breadcrumbs.
+Atelier has a clean, modern interface: a title bar with the project, branch and run widgets, tool window rails, rounded islands, tabs, Search Everywhere, notifications and a status bar with breadcrumbs.
 
 ## Look and feel
 
-- The real IntelliJ New UI icons, the Inter and JetBrains Mono fonts, and the main menu (☰).
-- The Islands Dark, Dark and Islands Light themes, with the syntax colors of IntelliJ's Dark and Light schemes.
+- Crisp icons, the Inter and JetBrains Mono fonts, and the main menu (☰).
+- The Islands Dark, Dark and Islands Light themes, each with its own syntax colors.
 - The interface is in English and French. At the first start, Atelier takes the language of the system (English when it is not available); change it in **Settings › Appearance › Language**, without restarting.
 
 ## Projects
 
-- The **Projects** page (File › All Projects…, the project widget or Search Everywhere), like IntelliJ's welcome screen: the last 50 projects with the date they were opened, a search box, and for each one: open here or in a new window, show in the file explorer, copy the path or remove from the list. A folder that no longer exists is greyed out.
-- Several projects at once: each project opens in its own window, as IntelliJ does on Windows. Opening a project asks for **This window** or **New window**. The project widget lists the recent projects; a right click opens one straight in a new window.
+- The **Projects** page (File › All Projects…, the project widget or Search Everywhere): the last 50 projects with the date they were opened, a search box, and for each one: open here or in a new window, show in the file explorer, copy the path or remove from the list. A folder that no longer exists is greyed out.
+- Several projects at once: each project opens in its own window. Opening a project asks for **This window** or **New window**. The project widget lists the recent projects; a right click opens one straight in a new window.
 - Drag and drop: a file opens in a tab, a folder offers to open it as a project.
 
 ## Search Everywhere
@@ -47,7 +47,7 @@ Errors and Git operations show up as balloons, and the **Notifications** tool wi
 
 ## Settings
 
-**Ctrl+Alt+S** opens the settings, like IntelliJ's: a tree of pages with a search box (Appearance & Behavior, Keymap, Editor, Plugins, Languages & Frameworks, Build, Execution, Deployment), breadcrumbs, and **OK**, **Cancel** and **Apply**. Pages change a draft: nothing changes before Apply or OK, Cancel forgets it, and **Reset** restores a page.
+**Ctrl+Alt+S** opens the settings: a tree of pages with a search box (Appearance & Behavior, Keymap, Editor, Plugins, Languages & Frameworks, Build, Execution, Deployment), breadcrumbs, and **OK**, **Cancel** and **Apply**. Pages change a draft: nothing changes before Apply or OK, Cancel forgets it, and **Reset** restores a page.
 
 ## Not there yet
 
