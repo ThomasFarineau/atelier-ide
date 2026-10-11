@@ -105,10 +105,15 @@ fn on_path(program: &str) -> bool {
 
 /// Installed WSL distributions; `wsl -l -q` prints UTF-16.
 fn wsl_distributions() -> Vec<String> {
-    let Ok(output) = std::process::Command::new("wsl.exe")
-        .args(["-l", "-q"])
-        .output()
-    else {
+    let mut command = std::process::Command::new("wsl.exe");
+    command.args(["-l", "-q"]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let Ok(output) = command.output() else {
         return Vec::new();
     };
     if !output.status.success() {

@@ -282,8 +282,20 @@ create and approve pull requests » (Settings › Actions › General) pour que 
 
 ### Bootstrap
 
-On ne télécharge qu'une fois le **bootstrap** (`atelier-<os>-<arch>`, `.exe` sur Windows) de la dernière release et on
-le lance toujours à la place de l'IDE. À chaque démarrage il :
+Sous Windows, on installe Atelier avec **`atelier-setup-windows-x86_64.exe`** de la dernière release
+(`installer/atelier.iss`, Inno Setup). Il s'installe pour l'utilisateur seul, sans droits administrateur, dans
+`%LOCALAPPDATA%\Programs\Atelier`, avec un raccourci dans le menu Démarrer (et sur le bureau en option) et un
+désinstalleur dans les paramètres de Windows. Comme pour VS Code, seul le dossier `bin\` va dans le PATH : il contient la
+commande `atelier` pour cmd, PowerShell (`atelier.cmd`) et Git Bash (`atelier`), et `atelier .` ouvre le dossier courant
+dans l'IDE. L'IDE est déjà dedans : rien n'est
+téléchargé au premier démarrage.
+
+Sur Linux et macOS, on télécharge une fois le **bootstrap** (`atelier-<os>-<arch>`) de la dernière release. Sous
+Windows, c'est ce que lancent les raccourcis. On le lance toujours à la place de l'IDE. Comme pour Discord ou VS Code,
+il ouvre une petite fenêtre avec le logo, l'étape en cours (recherche, téléchargement avec sa progression,
+installation, démarrage) et une barre de progression. Elle se ferme une fois l'IDE lancé. En cas d'échec, elle reste
+ouverte avec la raison et les boutons « Réessayer » et « Fermer ». La commande `atelier <chemin>` reste sans fenêtre.
+À chaque démarrage il :
 
 1. demande à GitHub la dernière release (4 s maximum, sans réseau il passe) ;
 2. si elle est plus récente que `app/VERSION` (ou que l'IDE n'est pas encore là), télécharge l'archive de la
