@@ -5,6 +5,15 @@
 <h1 align="center">Atelier IDE</h1>
 
 <p align="center">
+  <a href="https://github.com/ThomasFarineau/atelier-ide/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/ThomasFarineau/atelier-ide?color=6d3df5&label=release"></a>
+  <a href="https://github.com/ThomasFarineau/atelier-ide/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/ThomasFarineau/atelier-ide/ci.yml?branch=main&label=CI"></a>
+  <a href="https://github.com/ThomasFarineau/atelier-ide/actions/workflows/docs.yml"><img alt="Docs" src="https://img.shields.io/github/actions/workflow/status/ThomasFarineau/atelier-ide/docs.yml?branch=main&label=docs"></a>
+  <a href="https://github.com/ThomasFarineau/atelier-ide/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/ThomasFarineau/atelier-ide/total?color=047cff"></a>
+  <img alt="Rust 2024" src="https://img.shields.io/badge/Rust-2024-dea584?logo=rust&logoColor=white">
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-555">
+</p>
+
+<p align="center">
   A fast, modern desktop IDE written in Rust.<br>
   <a href="https://thomasfarineau.github.io/atelier-ide/"><b>Documentation</b></a> ·
   <a href="https://thomasfarineau.github.io/atelier-ide/fr/">Documentation en français</a> ·
