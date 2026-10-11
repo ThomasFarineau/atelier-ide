@@ -8,7 +8,10 @@ export default {
   extends: DefaultTheme,
   // The download button sits under the actions of the home page, and is `<DownloadButton />` in
   // any page.
-  Layout: () => h(DefaultTheme.Layout, null, { 'home-hero-actions-after': () => h(DownloadButton) }),
+  Layout: () =>
+    h(DefaultTheme.Layout, null, {
+      'home-hero-actions-after': () => h(DownloadButton, { guide: true }),
+    }),
   enhanceApp({ app }) {
     app.component('DownloadButton', DownloadButton)
   },

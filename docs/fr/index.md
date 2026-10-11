@@ -8,10 +8,6 @@ hero:
   image:
     src: /logo.svg
     alt: Atelier IDE
-  actions:
-    - theme: alt
-      text: Commencer
-      link: /fr/guide/getting-started
 
 features:
   - icon: 🪟
