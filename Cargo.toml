@@ -51,6 +51,8 @@ spellbook = "0.4.2"
 # The window handle eframe gives, to place the window on Windows.
 raw-window-handle = "0.6"
 tree-sitter-python = "0.25"
+rodio = { version = "0.23", default-features = false, features = ["playback", "mp3", "wav", "flac", "vorbis", "mp4"] }
+lzma-rs = "0.3"
 
 [target.'cfg(windows)'.dependencies]
 # Placement of the window on the monitor in use, its taskbar button and its crash log.

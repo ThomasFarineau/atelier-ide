@@ -10,6 +10,7 @@ pub mod k8s;
 pub mod markdown;
 pub mod maven;
 pub mod mcp;
+pub mod media;
 pub mod mermaid;
 pub mod msoffice;
 pub mod node;
