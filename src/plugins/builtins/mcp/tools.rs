@@ -17,54 +17,55 @@ const MAX_RESULTS: usize = 500;
 
 /// The tools, as the `tools/list` answer describes them.
 pub fn specs() -> Vec<Value> {
-    let path = json!({"type": "string", "description": "Chemin absolu, ou relatif au projet."});
+    let path =
+        json!({"type": "string", "description": "Absolute path, or relative to the project."});
     vec![
         json!({
             "name": "get_project_info",
-            "description": "Le projet ouvert dans l'IDE : dossier, fichier actif, nombre d'onglets et de problèmes.",
+            "description": "The project open in the IDE: folder, active file, number of tabs and of problems.",
             "inputSchema": {"type": "object", "properties": {}},
         }),
         json!({
             "name": "get_open_files",
-            "description": "Les onglets ouverts dans l'éditeur, avec le fichier actif et ceux qui ont des modifications non enregistrées.",
+            "description": "The tabs open in the editor, with the active file and those that have unsaved changes.",
             "inputSchema": {"type": "object", "properties": {}},
         }),
         json!({
             "name": "get_active_editor",
-            "description": "L'éditeur actif : fichier, langage, position du curseur (lignes et colonnes à partir de 1) et texte sélectionné.",
+            "description": "The active editor: file, language, caret position (lines and columns from 1) and selected text.",
             "inputSchema": {"type": "object", "properties": {}},
         }),
         json!({
             "name": "open_file",
-            "description": "Ouvre un fichier dans l'éditeur de l'IDE, éventuellement à une ligne, pour que l'utilisateur le voie.",
+            "description": "Opens a file in the editor of the IDE, optionally at a line, for the user to see it.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "path": path,
-                    "line": {"type": "integer", "minimum": 1, "description": "Ligne à montrer, à partir de 1."},
-                    "column": {"type": "integer", "minimum": 1, "description": "Colonne, à partir de 1."},
+                    "line": {"type": "integer", "minimum": 1, "description": "Line to show, from 1."},
+                    "column": {"type": "integer", "minimum": 1, "description": "Column, from 1."},
                 },
                 "required": ["path"],
             },
         }),
         json!({
             "name": "get_problems",
-            "description": "Les erreurs et avertissements que l'IDE a trouvés dans les fichiers ouverts (analyse du langage en direct), avec leur position.",
+            "description": "The errors and warnings the IDE found in the open files (live language analysis), with their position.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Ne garder que ce fichier."},
-                    "severity": {"type": "string", "enum": ["error", "warning"], "description": "Ne garder que ce niveau."},
+                    "path": {"type": "string", "description": "Only this file."},
+                    "severity": {"type": "string", "enum": ["error", "warning"], "description": "Only this level."},
                 },
             },
         }),
         json!({
             "name": "session_note",
-            "description": "Garde du contexte dans la session Atelier du projet, pour qu'elle puisse être reprise plus tard, par toi ou par une autre IA. Note l'objectif au début (goal), puis décisions, tâches restantes et avancement.",
+            "description": "Keeps context in the Atelier session of the project, so that it can be taken up later, by you or by another AI. Note the goal at the start (goal), then decisions, remaining tasks and progress.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "kind": {"type": "string", "enum": ["goal", "decision", "progress", "todo", "summary"], "description": "goal : l'objectif · decision : un choix fait · todo : reste à faire · progress : ce qui est fait · summary : résumé de fin."},
+                    "kind": {"type": "string", "enum": ["goal", "decision", "progress", "todo", "summary"], "description": "goal: the goal · decision: a choice made · todo: what is left · progress: what is done · summary: final summary."},
                     "text": {"type": "string"},
                 },
                 "required": ["kind", "text"],
@@ -72,12 +73,12 @@ pub fn specs() -> Vec<Value> {
         }),
         json!({
             "name": "get_session_context",
-            "description": "Le contexte d'une session d'Atelier (objectif, décisions, tâches, fichiers montrés, derniers appels) pour la reprendre. Sans « id », celle de cette connexion.",
-            "inputSchema": {"type": "object", "properties": {"id": {"type": "string", "description": "Identifiant d'une session du projet (voir list_sessions)."}}},
+            "description": "The context of an Atelier session (goal, decisions, tasks, files shown, latest calls) to take it up. Without “id”, the one of this connection.",
+            "inputSchema": {"type": "object", "properties": {"id": {"type": "string", "description": "Identifier of a session of the project (see list_sessions)."}}},
         }),
         json!({
             "name": "list_sessions",
-            "description": "Les sessions d'IA enregistrées dans le projet, les plus récentes d'abord.",
+            "description": "The AI sessions saved in the project, most recent first.",
             "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 100}}},
         }),
         json!({
@@ -173,20 +174,21 @@ pub fn specs() -> Vec<Value> {
         }),
         json!({
             "name": "search_in_project",
-            "description": "Cherche du texte dans les fichiers du projet (comme « Rechercher dans les fichiers » de l'IDE, sans dossiers ignorés ni binaires).",
+            "description": "Searches text in the files of the project (like “Find in Files” of the IDE, without ignored folders or binaries).",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Texte ou expression régulière."},
-                    "regex": {"type": "boolean", "description": "La requête est une expression régulière."},
+                    "query": {"type": "string", "description": "Text or regular expression."},
+                    "regex": {"type": "boolean", "description": "The query is a regular expression."},
                     "caseSensitive": {"type": "boolean"},
                     "wholeWord": {"type": "boolean"},
-                    "fileMask": {"type": "string", "description": "Masque de fichiers, ex. « *.rs, src/* »."},
-                    "maxResults": {"type": "integer", "minimum": 1, "maximum": MAX_RESULTS, "description": "50 par défaut."},
+                    "fileMask": {"type": "string", "description": "File mask, e.g. “*.rs, src/*”."},
+                    "maxResults": {"type": "integer", "minimum": 1, "maximum": MAX_RESULTS, "description": "50 by default."},
                 },
                 "required": ["query"],
             },
         }),
+        crate::plugins::builtins::translations::mcp_spec(),
     ]
 }
 
@@ -257,12 +259,12 @@ pub fn run(host: &mut dyn Host, name: &str, args: &Value) -> Result<String, Stri
                 "column": editor.column,
                 "selectedText": editor.selection,
             })),
-            None => Err("Aucun fichier n'est ouvert dans l'éditeur".into()),
+            None => Err("No file is open in the editor".into()),
         },
         "open_file" => {
-            let path = resolve(&root, text(args, "path").ok_or("« path » est obligatoire")?);
+            let path = resolve(&root, text(args, "path").ok_or("“path” is required")?);
             if !path.is_file() {
-                return Err(format!("Fichier introuvable : {}", path.display()));
+                return Err(format!("File not found: {}", path.display()));
             }
             let line = number(args, "line").unwrap_or(1).max(1) - 1;
             let column = number(args, "column").unwrap_or(1).max(1) - 1;
@@ -279,7 +281,7 @@ pub fn run(host: &mut dyn Host, name: &str, args: &Value) -> Result<String, Stri
                 Some("error") => Some(1),
                 Some("warning") => Some(2),
                 Some(other) => {
-                    return Err(format!("« severity » vaut error ou warning, pas {other}"));
+                    return Err(format!("“severity” is error or warning, not {other}"));
                 }
                 None => None,
             };
@@ -301,7 +303,7 @@ pub fn run(host: &mut dyn Host, name: &str, args: &Value) -> Result<String, Stri
                 .collect();
             pretty(json!({"count": problems.len(), "problems": problems}))
         }
-        other => Err(format!("outil inconnu : {other}")),
+        other => Err(format!("unknown tool: {other}")),
     }
 }
 
@@ -348,7 +350,7 @@ pub fn graph(name: &str, args: &Value) -> Option<Result<String, String>> {
 
 /// The project search, run off the interface thread.
 pub fn search(root: &Path, args: &Value) -> Result<String, String> {
-    let query = text(args, "query").ok_or("« query » est obligatoire")?;
+    let query = text(args, "query").ok_or("“query” is required")?;
     let flag = |key: &str| args.get(key).and_then(Value::as_bool).unwrap_or(false);
     let options = crate::search::Options {
         case: flag("caseSensitive"),
@@ -356,7 +358,7 @@ pub fn search(root: &Path, args: &Value) -> Result<String, String> {
         regex: flag("regex"),
     };
     let re =
-        crate::search::build(query, options).map_err(|e| format!("Expression invalide : {e}"))?;
+        crate::search::build(query, options).map_err(|e| format!("Invalid expression: {e}"))?;
     let limit = number(args, "maxResults")
         .unwrap_or(DEFAULT_RESULTS)
         .clamp(1, MAX_RESULTS);
@@ -392,182 +394,5 @@ pub fn search(root: &Path, args: &Value) -> Result<String, String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::plugins::builtin::{EditorSnapshot, OpenDocument, Problem};
-
-    struct Fake {
-        root: PathBuf,
-        opened: Option<(PathBuf, usize, usize)>,
-    }
-
-    impl Host for Fake {
-        fn root(&self) -> &Path {
-            &self.root
-        }
-        fn active_file(&self) -> Option<PathBuf> {
-            Some(self.root.join("a.js"))
-        }
-        fn open_file(&mut self, _: PathBuf) {}
-        fn open_at(&mut self, path: PathBuf, line: usize, column: usize, _: usize) {
-            self.opened = Some((path, line, column));
-        }
-        fn open_project(&mut self, _: PathBuf) {}
-        fn save_files(&mut self) -> bool {
-            true
-        }
-        fn reload_files(&mut self) {}
-        fn show_tool_window(&mut self, _: &'static crate::plugins::builtin::ToolWindow) {}
-        fn notify(&mut self, _: String) {}
-        fn problems(&self) -> Vec<Problem> {
-            let problem = |name: &str, severity, message: &str| Problem {
-                path: self.root.join(name),
-                line: 4,
-                column: 2,
-                length: 3,
-                severity,
-                message: message.into(),
-                source: "syntaxe".into(),
-            };
-            vec![
-                problem("a.js", 1, "Syntaxe inattendue"),
-                problem("b.js", 2, "Variable inutilisée"),
-            ]
-        }
-        fn open_documents(&self) -> Vec<OpenDocument> {
-            vec![OpenDocument {
-                path: Some(self.root.join("a.js")),
-                title: "a.js".into(),
-                dirty: true,
-                active: true,
-            }]
-        }
-        fn editor_state(&self) -> Option<EditorSnapshot> {
-            Some(EditorSnapshot {
-                path: Some(self.root.join("a.js")),
-                language: "js".into(),
-                line: 5,
-                column: 3,
-                selection: Some("let x".into()),
-            })
-        }
-    }
-
-    fn fake() -> Fake {
-        // One folder per test: they run side by side and each removes its own at the end.
-        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let root =
-            std::env::temp_dir().join(format!("atelier-mcp-tools-{}-{n}", std::process::id()));
-        std::fs::create_dir_all(root.join("src")).unwrap();
-        std::fs::write(root.join("a.js"), "let x = 1;\n").unwrap();
-        Fake { root, opened: None }
-    }
-
-    fn json_of(result: Result<String, String>) -> Value {
-        serde_json::from_str(&result.expect("the tool answered")).unwrap()
-    }
-
-    #[test]
-    fn every_tool_has_a_schema_and_the_editor_tools_answer() {
-        for spec in specs() {
-            assert!(
-                spec["name"].is_string()
-                    && spec["description"].is_string()
-                    && spec["inputSchema"]["type"] == "object",
-                "{spec}"
-            );
-        }
-        let mut host = fake();
-        let info = json_of(run(&mut host, "get_project_info", &json!({})));
-        assert_eq!(
-            (
-                info["errors"].as_u64(),
-                info["warnings"].as_u64(),
-                info["openFiles"].as_u64()
-            ),
-            (Some(1), Some(1), Some(1))
-        );
-        let files = json_of(run(&mut host, "get_open_files", &json!({})));
-        assert_eq!(files[0]["unsavedChanges"], true);
-        let editor = json_of(run(&mut host, "get_active_editor", &json!({})));
-        assert_eq!(
-            (editor["line"].as_u64(), editor["selectedText"].as_str()),
-            (Some(5), Some("let x"))
-        );
-        let _ = std::fs::remove_dir_all(&host.root);
-    }
-
-    #[test]
-    fn problems_are_filtered_by_file_and_level_and_counted_from_one() {
-        let mut host = fake();
-        let all = json_of(run(&mut host, "get_problems", &json!({})));
-        assert_eq!(all["count"], 2);
-        assert_eq!(
-            (
-                all["problems"][0]["line"].as_u64(),
-                all["problems"][0]["column"].as_u64()
-            ),
-            (Some(5), Some(3))
-        );
-        let errors = json_of(run(
-            &mut host,
-            "get_problems",
-            &json!({"severity": "error"}),
-        ));
-        assert_eq!(errors["count"], 1);
-        let one_file = json_of(run(&mut host, "get_problems", &json!({"path": "b.js"})));
-        assert_eq!(one_file["problems"][0]["severity"], "warning");
-        assert!(run(&mut host, "get_problems", &json!({"severity": "grave"})).is_err());
-        let _ = std::fs::remove_dir_all(&host.root);
-    }
-
-    #[test]
-    fn a_file_opens_at_its_line_and_a_missing_one_is_refused() {
-        let mut host = fake();
-        run(
-            &mut host,
-            "open_file",
-            &json!({"path": "a.js", "line": 12, "column": 4}),
-        )
-        .unwrap();
-        assert_eq!(
-            host.opened,
-            Some((host.root.join("a.js"), 11, 3)),
-            "0-based inside the IDE"
-        );
-        assert!(run(&mut host, "open_file", &json!({"path": "nope.js"})).is_err());
-        assert!(run(&mut host, "open_file", &json!({})).is_err());
-        assert!(run(&mut host, "inconnu", &json!({})).is_err());
-        let _ = std::fs::remove_dir_all(&host.root);
-    }
-
-    #[test]
-    fn the_search_reports_files_lines_and_columns_from_one() {
-        let host = fake();
-        std::fs::write(
-            host.root.join("src").join("lib.rs"),
-            "fn main() {}\n// TODO: later\n",
-        )
-        .unwrap();
-        std::fs::write(host.root.join("a.js"), "// todo here\n").unwrap();
-        let found = json_of(search(&host.root, &json!({"query": "todo"})));
-        assert_eq!(found["matches"], 2);
-        let only_rust = json_of(search(
-            &host.root,
-            &json!({"query": "TODO", "caseSensitive": true, "fileMask": "*.rs"}),
-        ));
-        assert_eq!(only_rust["matches"], 1);
-        let hit = &only_rust["files"][0];
-        assert_eq!(
-            (hit["path"].as_str(), hit["matches"][0]["line"].as_u64()),
-            (Some("src/lib.rs"), Some(2))
-        );
-        assert!(
-            search(&host.root, &json!({"query": "("  , "regex": true})).is_err(),
-            "an invalid expression is reported"
-        );
-        assert!(search(&host.root, &json!({})).is_err());
-        let _ = std::fs::remove_dir_all(&host.root);
-    }
-}
+#[path = "../../../../test/plugins/builtins/mcp/tools/tests.rs"]
+mod tests;

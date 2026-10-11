@@ -13,7 +13,7 @@ use std::{
 
 pub static TOOL_WINDOWS: [ToolWindow; 1] = [ToolWindow {
     id: "k8s.resources",
-    title: "Kubernetes",
+    title: crate::i18n::Text("k8s.kubernetes"),
     icon: "k8s/icon",
     dock: Dock::Bottom,
     shortcut: "Alt+8",
@@ -63,9 +63,9 @@ fn kubectl_input(args: &[String], input: Option<String>) -> Result<String> {
     }
     let mut child = cmd.spawn().map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
-            anyhow!("kubectl est introuvable : installez-le et ajoutez-le au PATH")
+            anyhow!(tr!("k8s.kubectl_cannot_found_install_add"))
         } else {
-            anyhow!("Impossible de lancer kubectl : {e}")
+            anyhow!(trf!("k8s.cannot_start_kubectl", e = e))
         }
     })?;
     if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
@@ -83,7 +83,7 @@ fn kubectl_input(args: &[String], input: Option<String>) -> Result<String> {
         while !text.is_char_boundary(cut) {
             cut += 1;
         }
-        text = format!("… (début tronqué)\n{}", &text[cut..]);
+        text = format!("{}\n{}", tr!("k8s.start_cut"), &text[cut..]);
     }
     Ok(text)
 }
@@ -251,7 +251,7 @@ impl Editor {
         }
         let obj = doc
             .as_object_mut()
-            .ok_or_else(|| anyhow!("réponse inattendue de kubectl"))?;
+            .ok_or_else(|| anyhow!(tr!("k8s.unexpected_answer_kubectl")))?;
         if let Some(meta) = obj.get_mut("metadata").and_then(Value::as_object_mut) {
             meta.remove("managedFields");
         }
@@ -307,10 +307,9 @@ impl Editor {
                 .chars()
                 .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'));
         if !valid {
-            self.error =
-                Some("Clé invalide : lettres, chiffres, « . », « _ » et « - » seulement".into());
+            self.error = Some(tr!("k8s.invalid_key_letters_digits_only").into());
         } else if self.entries.iter().any(|(k, _)| *k == key) || self.binary.contains(&key) {
-            self.error = Some(format!("La clé {key} existe déjà"));
+            self.error = Some(trf!("k8s.key_already_exists", key = key));
         } else {
             self.entries.push((key, String::new()));
             self.new_key.clear();
@@ -348,7 +347,7 @@ impl<T: Send + 'static> Task<T> {
             return Some(
                 t.handle
                     .join()
-                    .unwrap_or_else(|_| Err(anyhow!("la commande a planté"))),
+                    .unwrap_or_else(|_| Err(anyhow!(tr!("k8s.command_crashed")))),
             );
         }
         None
@@ -547,7 +546,7 @@ impl K8sPlugin {
             return;
         };
         let input = editor.document().to_string();
-        let label = format!("Enregistrement de {}", editor.name);
+        let label = trf!("k8s.saving", name = editor.name);
         let ns = editor.ns.clone();
         self.saving = true;
         self.run_action_with(label, strings(&["replace", "-f", "-"]), Some(input), &ns);
@@ -604,19 +603,21 @@ impl K8sPlugin {
         let resource = KINDS[self.kind].1;
         if resource == "pods" {
             self.confirm = Some(Confirm {
-                title: "Redémarrer".into(),
-                text: format!(
-                    "Redémarrer le pod {name} ? Il est supprimé puis recréé par son contrôleur ; un pod sans contrôleur ne reviendra pas."
-                ),
-                label: format!("Redémarrage de {name}"),
+                title: tr!("k8s.restart").into(),
+                text: trf!("k8s.restart_pod_deleted_then_created", name = name),
+                label: trf!("k8s.restarting", name = name),
                 args: strings(&["delete", "pod", &name]),
             });
             return;
         }
         self.confirm = Some(Confirm {
-            title: "Redémarrer".into(),
-            text: format!("Redémarrer {resource}/{name} (rollout restart) ?"),
-            label: format!("Redémarrage de {name}"),
+            title: tr!("k8s.restart").into(),
+            text: trf!(
+                "k8s.restart_rollout_restart",
+                resource = resource,
+                name = name
+            ),
+            label: trf!("k8s.restarting", name = name),
             args: [
                 strings(&["rollout", "restart"]),
                 vec![format!("{resource}/{name}")],
@@ -682,9 +683,9 @@ impl K8sPlugin {
             match Task::poll(&mut slot) {
                 Some(Ok(doc)) => match Editor::new(resource, doc) {
                     Ok(editor) => self.editor = Some(editor),
-                    Err(e) => host.balloon("Édition impossible", format!("{e:#}"), true),
+                    Err(e) => host.balloon(tr!("k8s.cannot_edit"), format!("{e:#}"), true),
                 },
-                Some(Err(e)) => host.balloon("Édition impossible", format!("{e:#}"), true),
+                Some(Err(e)) => host.balloon(tr!("k8s.cannot_edit"), format!("{e:#}"), true),
                 None => self.editor_job = slot.map(|t| (resource, t)),
             }
         }
@@ -692,7 +693,7 @@ impl K8sPlugin {
             let mut slot = Some(task);
             match Task::poll(&mut slot) {
                 Some(Ok(_)) => {
-                    host.balloon("Kubernetes", format!("{label} : terminé"), false);
+                    host.balloon("Kubernetes", trf!("k8s.done", label = label), false);
                     if std::mem::take(&mut self.saving) {
                         self.editor = None;
                     }
@@ -700,7 +701,7 @@ impl K8sPlugin {
                 }
                 Some(Err(e)) => {
                     self.saving = false;
-                    host.balloon(&format!("{label} a échoué"), format!("{e:#}"), true);
+                    host.balloon(&trf!("k8s.failed", label = label), format!("{e:#}"), true);
                 }
                 None => self.action_job = slot.map(|t| (label, t)),
             }
@@ -736,7 +737,7 @@ impl K8sPlugin {
     fn toolbar_ui(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             let mut changed = false;
-            ui.label("Contexte");
+            ui.label(tr!("k8s.context"));
             let current = self.context.clone().unwrap_or_else(|| "—".into());
             egui::ComboBox::from_id_salt("k8s_context")
                 .selected_text(current)
@@ -759,7 +760,7 @@ impl K8sPlugin {
                 let shown = if self.all_namespaces {
                     "tous".to_string()
                 } else if self.namespace.is_empty() {
-                    "défaut".to_string()
+                    tr!("k8s.default").to_string()
                 } else {
                     self.namespace.clone()
                 };
@@ -793,8 +794,8 @@ impl K8sPlugin {
                         }
                     }
                 });
-            ui::search_field(ui, &mut self.filter, "Filtrer", 180.0);
-            if ui::icon_button(ui, "refresh", "Actualiser").clicked() {
+            ui::search_field(ui, &mut self.filter, tr!("k8s.filter"), 180.0);
+            if ui::icon_button(ui, "refresh", tr!("k8s.refresh")).clicked() {
                 self.load_namespaces();
                 changed = true;
             }
@@ -823,20 +824,20 @@ impl K8sPlugin {
             if ui::button(ui, "YAML").clicked() {
                 self.yaml(&ns, &name);
             }
-            if self.can_edit() && ui::button(ui, "Éditer").clicked() {
+            if self.can_edit() && ui::button(ui, tr!("k8s.edit_2")).clicked() {
                 self.open_editor(&ns, &name);
             }
             if resource == "pods" && ui::button(ui, "Logs").clicked() {
                 self.logs(&ns, &name);
             }
-            if self.can_restart() && ui::button(ui, "Redémarrer").clicked() {
+            if self.can_restart() && ui::button(ui, tr!("k8s.restart")).clicked() {
                 self.ask_restart();
             }
-            if ui::button(ui, "Supprimer").clicked() {
+            if ui::button(ui, tr!("k8s.delete")).clicked() {
                 self.confirm = Some(Confirm {
-                    title: "Supprimer".into(),
-                    text: format!("Supprimer {resource}/{name} du cluster ?"),
-                    label: format!("Suppression de {name}"),
+                    title: tr!("k8s.delete").into(),
+                    text: trf!("k8s.delete_from_cluster", resource = resource, name = name),
+                    label: trf!("k8s.deleting", name = name),
                     args: strings(&["delete", resource, &name]),
                 });
             }
@@ -853,7 +854,7 @@ impl K8sPlugin {
             let text = if self.list_job.is_some() || !self.meta_loaded {
                 "Chargement…"
             } else {
-                "Aucune ressource"
+                tr!("k8s.no_resources")
             };
             ui.label(RichText::new(text).color(t.text_secondary));
             return;
@@ -956,10 +957,10 @@ impl K8sPlugin {
         ui.horizontal(|ui| {
             ui::section(ui, &detail.title);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui::icon_button(ui, "close", "Fermer").clicked() {
+                if ui::icon_button(ui, "close", tr!("k8s.close")).clicked() {
                     detail.title.clear();
                 }
-                if ui::icon_button(ui, "copy", "Copier").clicked() {
+                if ui::icon_button(ui, "copy", tr!("k8s.copy")).clicked() {
                     ui.ctx().copy_text(detail.text.clone());
                 }
             });
@@ -995,13 +996,16 @@ impl K8sPlugin {
         };
         let (mut save, mut close) = (false, false);
         ui.horizontal(|ui| {
-            ui::section(ui, &format!("Éditer {}/{}", editor.resource, editor.name));
+            ui::section(
+                ui,
+                &trf!("k8s.edit", resource = editor.resource, name = editor.name),
+            );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui::icon_button(ui, "close", "Fermer sans enregistrer").clicked() {
+                if ui::icon_button(ui, "close", tr!("k8s.close_without_saving")).clicked() {
                     close = true;
                 }
                 if ui
-                    .add_enabled_ui(!saving, |ui| ui::primary_button(ui, "Enregistrer"))
+                    .add_enabled_ui(!saving, |ui| ui::primary_button(ui, tr!("k8s.save")))
                     .inner
                     .clicked()
                 {
@@ -1010,13 +1014,13 @@ impl K8sPlugin {
             });
         });
         if editor.resource == "secrets" {
-            ui.label(RichText::new("Les valeurs sont affichées décodées.").color(t.text_secondary));
+            ui.label(RichText::new(tr!("k8s.values_shown_decoded")).color(t.text_secondary));
         }
         if !editor.binary.is_empty() {
             ui.label(
-                RichText::new(format!(
-                    "Valeurs binaires conservées : {}",
-                    editor.binary.join(", ")
+                RichText::new(trf!(
+                    "k8s.binary_values_kept",
+                    binary = editor.binary.join(", ")
                 ))
                 .color(t.text_secondary),
             );
@@ -1028,7 +1032,7 @@ impl K8sPlugin {
                 for (i, (key, value)) in editor.entries.iter_mut().enumerate() {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(key.as_str()).font(ui::semibold(12.5)));
-                        if ui::icon_button(ui, "delete", "Supprimer la clé").clicked() {
+                        if ui::icon_button(ui, "delete", tr!("k8s.delete_key")).clicked() {
                             remove = Some(i);
                         }
                     });
@@ -1046,11 +1050,11 @@ impl K8sPlugin {
                 ui.horizontal(|ui| {
                     let field = ui.add(
                         egui::TextEdit::singleline(&mut editor.new_key)
-                            .hint_text("Nouvelle clé")
+                            .hint_text(tr!("k8s.new_key"))
                             .desired_width(200.0),
                     );
                     let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                    if ui::button(ui, "Ajouter").clicked() || enter {
+                    if ui::button(ui, tr!("k8s.add")).clicked() || enter {
                         editor.add_key();
                     }
                 });
@@ -1127,7 +1131,7 @@ impl BuiltinPlugin for K8sPlugin {
         "Kubernetes"
     }
     fn description(&self) -> &'static str {
-        "Ressources d'un cluster Kubernetes : pods, deployments, services… describe, YAML, logs, redémarrage et suppression, avec kubectl."
+        tr!("k8s.resources_kubernetes_cluster_pods_deployments")
     }
     fn icon(&self) -> &'static str {
         "k8s/icon"
@@ -1180,15 +1184,15 @@ impl BuiltinPlugin for K8sPlugin {
         vec![
             Command {
                 id: "k8s.open",
-                label: "Kubernetes : ressources  Alt+8".into(),
+                label: tr!("k8s.kubernetes_resources_alt_8").into(),
             },
             Command {
                 id: "k8s.restart",
-                label: "Kubernetes : rollout restart de la ressource sélectionnée".into(),
+                label: tr!("k8s.kubernetes_rollout_restart_selected_resource").into(),
             },
             Command {
                 id: "k8s.refresh",
-                label: "Kubernetes : actualiser".into(),
+                label: tr!("k8s.kubernetes_refresh").into(),
             },
         ]
     }
@@ -1201,10 +1205,7 @@ impl BuiltinPlugin for K8sPlugin {
                 if self.selected.is_some() && self.can_restart() {
                     self.ask_restart();
                 } else {
-                    host.notify(
-                        "Sélectionnez un pod, deployment, statefulset ou daemonset dans la fenêtre Kubernetes"
-                            .into(),
-                    );
+                    host.notify(tr!("k8s.select_pod_deployment_statefulset_daemonset").into());
                 }
             }
             "k8s.refresh" => {
@@ -1218,164 +1219,5 @@ impl BuiltinPlugin for K8sPlugin {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::{Path, PathBuf};
-
-    struct NoHost(PathBuf);
-    impl Host for NoHost {
-        fn root(&self) -> &Path {
-            &self.0
-        }
-        fn active_file(&self) -> Option<PathBuf> {
-            None
-        }
-        fn open_file(&mut self, _: PathBuf) {}
-        fn open_project(&mut self, _: PathBuf) {}
-        fn save_files(&mut self) -> bool {
-            true
-        }
-        fn reload_files(&mut self) {}
-        fn show_tool_window(&mut self, _: &'static ToolWindow) {}
-        fn notify(&mut self, _: String) {}
-    }
-
-    #[test]
-    fn parses_kubectl_columns() {
-        let text = "NAME         READY   STATUS             RESTARTS      AGE   NOMINATED NODE\n\
-                    web-1        1/1     Running            0             3d    <none>\n\
-                    job-x        0/1     CrashLoopBackOff   5 (2m ago)    1h    <none>\n";
-        let table = parse_table(text);
-        assert_eq!(
-            table.headers,
-            [
-                "NAME",
-                "READY",
-                "STATUS",
-                "RESTARTS",
-                "AGE",
-                "NOMINATED NODE"
-            ]
-        );
-        assert_eq!(table.rows[1][2], "CrashLoopBackOff");
-        assert_eq!(table.rows[1][3], "5 (2m ago)");
-        assert_eq!(table.rows[0][5], "<none>");
-        assert_eq!(parse_table(""), Table::default());
-    }
-
-    #[test]
-    fn sorts_cells_by_column_type() {
-        use std::cmp::Ordering::{Greater, Less};
-        assert_eq!(compare_cells("AGE", "5m", "1h"), Less);
-        assert_eq!(compare_cells("AGE", "2d3h", "2d"), Greater);
-        assert_eq!(compare_cells("RESTARTS", "10 (2m ago)", "9"), Greater);
-        assert_eq!(compare_cells("READY", "1/3", "2/2"), Less);
-        assert_eq!(compare_cells("NAME", "api", "Web"), Less);
-    }
-
-    #[test]
-    fn secrets_are_edited_decoded_and_sent_as_string_data() {
-        let doc = serde_json::json!({
-            "kind": "Secret",
-            "metadata": {"name": "db", "namespace": "dev", "managedFields": []},
-            "data": {"user": "YWRtaW4=", "blob": "//79"}
-        });
-        let mut editor = Editor::new("secrets", doc).unwrap();
-        assert_eq!(editor.entries, [("user".to_string(), "admin".to_string())]);
-        assert_eq!(editor.binary, ["blob"]);
-        editor.entries[0].1 = "root".into();
-        editor.new_key = "port".into();
-        editor.add_key();
-        let out = editor.document();
-        assert_eq!(out["stringData"]["user"], "root");
-        assert_eq!(out["stringData"]["port"], "");
-        assert_eq!(out["data"]["blob"], "//79");
-        assert!(out["data"].get("user").is_none());
-        assert!(out["metadata"].get("managedFields").is_none());
-    }
-
-    #[test]
-    fn config_maps_keep_binary_data_and_validate_keys() {
-        let doc = serde_json::json!({
-            "metadata": {"name": "cfg"}, "data": {"a": "1"}, "binaryData": {"b": "AAEC"}
-        });
-        let mut editor = Editor::new("configmaps", doc).unwrap();
-        editor.new_key = "bad key".into();
-        editor.add_key();
-        assert!(editor.error.is_some());
-        editor.new_key = "b".into();
-        editor.add_key();
-        assert!(editor.error.is_some(), "binary keys are taken");
-        editor.entries.clear();
-        assert_eq!(editor.document()["data"], serde_json::json!({}));
-        assert_eq!(editor.document()["binaryData"]["b"], "AAEC");
-    }
-
-    #[test]
-    fn decodes_base64() {
-        assert_eq!(b64_decode("aGVsbG8=").unwrap(), b"hello");
-        assert_eq!(b64_decode("aGk").unwrap(), b"hi");
-        assert!(b64_decode("a*b").is_none());
-    }
-
-    #[test]
-    fn row_identity_follows_the_namespace_column() {
-        let mut plugin = K8sPlugin::default();
-        let row = vec![
-            "kube-system".to_string(),
-            "dns".to_string(),
-            "1/1".to_string(),
-        ];
-        plugin.all_namespaces = true;
-        assert_eq!(
-            plugin.identity(&row),
-            Some(("kube-system".into(), "dns".into()))
-        );
-        plugin.all_namespaces = false;
-        plugin.namespace = "dev".into();
-        let row = vec!["dns".to_string()];
-        assert_eq!(plugin.identity(&row), Some(("dev".into(), "dns".into())));
-    }
-
-    #[test]
-    fn window_renders() {
-        let ctx = egui::Context::default();
-        ui::install(&ctx, ui::theme_by_index(0), 14.0);
-        let mut host = NoHost(PathBuf::new());
-        let mut plugin = K8sPlugin::default();
-        plugin.table = parse_table("NAME   READY\nweb   1/1\n");
-        plugin.meta_loaded = true;
-        plugin.selected = Some((String::new(), "web".into()));
-        plugin.detail = Some(Detail {
-            title: "web.yaml".into(),
-            text: "kind: Pod".into(),
-            error: false,
-        });
-        plugin.detail = None;
-        plugin.editor = Editor::new(
-            "configmaps",
-            serde_json::json!({"metadata": {"name": "cfg"}, "data": {"a": "1\n2"}}),
-        )
-        .ok();
-        for _ in 0..2 {
-            let _ = ctx.run(Default::default(), |ctx| {
-                egui::CentralPanel::default()
-                    .show(ctx, |ui| plugin.tool_window("k8s.resources", ui, &mut host));
-            });
-        }
-        assert!(plugin.editor.is_some());
-        plugin.confirm = Some(Confirm {
-            title: "Supprimer".into(),
-            text: "?".into(),
-            label: "x".into(),
-            args: Vec::new(),
-        });
-        for _ in 0..2 {
-            let _ = ctx.run(Default::default(), |ctx| {
-                egui::CentralPanel::default()
-                    .show(ctx, |ui| plugin.tool_window("k8s.resources", ui, &mut host));
-            });
-        }
-        assert!(plugin.confirm.is_some());
-    }
-}
+#[path = "../../../../test/plugins/builtins/k8s/mod/tests.rs"]
+mod tests;

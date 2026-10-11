@@ -42,9 +42,9 @@ const MAX_SIDE: u32 = 2048;
 fn load(ctx: &egui::Context, path: &Path) -> Result<(TextureHandle, [u32; 2]), String> {
     let size = fs::metadata(path).map_err(|e| e.to_string())?.len();
     if size > MAX_SIZE {
-        return Err("Image trop volumineuse (limite : 64 Mo)".into());
+        return Err(tr!("image.image_too_large_limit_64").into());
     }
-    let image = image::open(path).map_err(|e| format!("Image illisible : {e}"))?;
+    let image = image::open(path).map_err(|e| trf!("image.unreadable_image", e = e))?;
     let original = [image.width(), image.height()];
     let image = if original.iter().any(|&side| side > MAX_SIDE) {
         image.thumbnail(MAX_SIDE, MAX_SIDE)
@@ -71,10 +71,10 @@ impl BuiltinPlugin for ImagePlugin {
         "image"
     }
     fn name(&self) -> &'static str {
-        "Visionneuse d'images"
+        tr!("image.image_viewer")
     }
     fn description(&self) -> &'static str {
-        "Affiche les images (PNG, JPEG, GIF, WebP, BMP, ICO) à la place de l'éditeur de texte."
+        tr!("image.shows_images_png_jpeg_gif")
     }
     fn icon(&self) -> &'static str {
         "editorPreview"
@@ -139,18 +139,5 @@ impl BuiltinPlugin for ImagePlugin {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn images_are_recognized_and_have_no_layout_switch() {
-        let plugin = ImagePlugin::default();
-        assert!(plugin.opens_binary(Path::new("a/Photo.JPG")));
-        assert!(!plugin.opens_binary(Path::new("logo.svg")));
-        assert_eq!(
-            plugin.editor_layout(Path::new("x.png")),
-            Some(EditorLayout::Preview)
-        );
-        assert!(!plugin.layout_switch(Path::new("x.png")));
-    }
-}
+#[path = "../../../../test/plugins/builtins/image/mod/tests.rs"]
+mod tests;

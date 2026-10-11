@@ -17,9 +17,17 @@ mod server;
 pub(crate) mod symbols;
 
 use crate::languages::{
-    Completion, CompletionItem, Diagnostic, DocRef, FileEdit, Hover, ItemKind, Location, Oneshot,
-    Provider, QuickFix, Severity, Symbol, TextEdit,
-    lsp::{self, Client, from_position, to_position},
+    Completion, CompletionItem, Diagnostic, DocRef, FileEdit, Hover, Location, Oneshot, Provider,
+    QuickFix, Severity, Symbol, TextEdit,
+    format::{apply as apply_edits, edits_between},
+    lsp::{
+        self, Client,
+        convert::{
+            completion_from_server, fixes_from_server, locations_from_server, markup_text, plain,
+            severity, split_hover, symbols_from_server, workspace_edit,
+        },
+        from_position, to_position,
+    },
 };
 use crate::plugins::builtin::{BuiltinPlugin, Command, Host};
 use serde_json::{Value, json};
@@ -112,7 +120,7 @@ impl JavaScript {
                         let log = client.log();
                         let last = log.lines().last().unwrap_or("").to_string();
                         if last.is_empty() {
-                            "le serveur s'est arrêté".to_string()
+                            tr!("javascript.server_stopped").to_string()
                         } else {
                             last
                         }
@@ -120,8 +128,10 @@ impl JavaScript {
                 });
                 if let Some(message) = failure {
                     server::control(|c| {
-                        c.messages
-                            .push((format!("Serveur de langage JavaScript : {message}"), true))
+                        c.messages.push((
+                            trf!("javascript.javascript_language_server", message = message),
+                            true,
+                        ))
                     });
                     self.server = Server::Failed(message);
                 }
@@ -234,458 +244,6 @@ impl JavaScript {
         });
         answer
     }
-}
-
-fn severity(code: u8) -> Severity {
-    match code {
-        1 => Severity::Error,
-        2 => Severity::Warning,
-        3 => Severity::Info,
-        _ => Severity::Hint,
-    }
-}
-
-fn item_kind(code: u64) -> ItemKind {
-    match code {
-        2 | 4 => ItemKind::Method,
-        3 => ItemKind::Function,
-        5 | 10 | 20 => ItemKind::Property,
-        6 => ItemKind::Variable,
-        7 | 22 => ItemKind::Class,
-        8 => ItemKind::Interface,
-        9 => ItemKind::Module,
-        14 | 24 => ItemKind::Keyword,
-        15 => ItemKind::Snippet,
-        17 => ItemKind::File,
-        19 => ItemKind::Folder,
-        21 | 12 | 13 => ItemKind::Constant,
-        25 => ItemKind::Interface,
-        _ => ItemKind::Text,
-    }
-}
-
-/// Text of a protocol `documentation` or `contents` value.
-fn markup_text(value: &Value) -> String {
-    match value {
-        Value::String(text) => text.clone(),
-        Value::Object(map) => map
-            .get("value")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string(),
-        Value::Array(items) => items
-            .iter()
-            .map(markup_text)
-            .filter(|t| !t.is_empty())
-            .collect::<Vec<_>>()
-            .join("\n\n"),
-        _ => String::new(),
-    }
-}
-
-/// Plain text from markdown: links keep their label, emphasis and code marks go.
-fn plain(markdown: &str) -> String {
-    let mut out = String::new();
-    let mut rest = markdown;
-    while let Some(open) = rest.find('[') {
-        out.push_str(&rest[..open]);
-        let after = &rest[open + 1..];
-        match (after.find("]("), after.find(')')) {
-            (Some(mid), Some(close)) if mid < close => {
-                out.push_str(&after[..mid]);
-                rest = &after[close + 1..];
-            }
-            _ => {
-                out.push('[');
-                rest = after;
-            }
-        }
-    }
-    out.push_str(rest);
-    let out = out.replace("**", "").replace('`', "").replace("*@", "@");
-    // `*@param*` is a tag in italics: both stars are emphasis.
-    out.lines()
-        .map(|line| {
-            line.split(' ')
-                .map(|word| {
-                    if word.starts_with('@') {
-                        word.trim_end_matches('*')
-                    } else {
-                        word
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join(" ")
-        })
-        .collect::<Vec<_>>()
-        .join(
-            "
-",
-        )
-}
-
-/// Splits a hover into the signature (the first code block) and the text around it.
-fn split_hover(markdown: &str) -> (String, String) {
-    let mut title = String::new();
-    let mut body = String::new();
-    let mut in_code = false;
-    let mut first_block = true;
-    for line in markdown.lines() {
-        if line.trim_start().starts_with("```") {
-            in_code = !in_code;
-            if !in_code {
-                first_block = false;
-            }
-            continue;
-        }
-        if in_code && first_block {
-            if !title.is_empty() {
-                title.push(' ');
-            }
-            title.push_str(line.trim());
-        } else {
-            body.push_str(line);
-            body.push('\n');
-        }
-    }
-    if title.is_empty() {
-        // No code block: the first line is the title.
-        let mut lines = markdown.lines();
-        title = lines.next().unwrap_or("").to_string();
-        body = lines.collect::<Vec<_>>().join("\n");
-    }
-    (plain(&title), plain(body.trim()))
-}
-
-/// Places of a `textDocument/definition` or `references` answer: a location, a list of
-/// locations, or links to them. `uri` is the document the request was made in.
-fn locations_from_server(result: &Value, uri: &str, snapshot: &str) -> Vec<Location> {
-    let list: Vec<&Value> = match result {
-        Value::Array(items) => items.iter().collect(),
-        Value::Object(_) => vec![result],
-        _ => Vec::new(),
-    };
-    let mut out = Vec::new();
-    for item in list {
-        let target = item["targetUri"].as_str().or(item["uri"].as_str());
-        let range = if item["targetSelectionRange"].is_object() {
-            &item["targetSelectionRange"]
-        } else if item["targetRange"].is_object() {
-            &item["targetRange"]
-        } else {
-            &item["range"]
-        };
-        let (Some(target), Some(start), Some(end)) = (
-            target,
-            range["start"]["line"].as_u64(),
-            range["end"]["line"].as_u64(),
-        ) else {
-            continue;
-        };
-        let column = |side: &str| range[side]["character"].as_u64().unwrap_or(0) as usize;
-        let same = lsp::normalize_uri(target) == lsp::normalize_uri(uri);
-        let path = if same { None } else { lsp::uri_to_path(target) };
-        if !same && path.is_none() {
-            continue;
-        }
-        let owned;
-        let text = if same {
-            snapshot
-        } else {
-            owned = path
-                .as_ref()
-                .and_then(|p| std::fs::read_to_string(p).ok())
-                .filter(|t| t.len() <= 4_000_000)
-                .unwrap_or_default();
-            &owned
-        };
-        let preview = text
-            .lines()
-            .nth(start as usize)
-            .unwrap_or("")
-            .trim()
-            .chars()
-            .take(120)
-            .collect();
-        out.push(Location {
-            path,
-            line: start as usize,
-            column: column("start"),
-            end_line: end as usize,
-            end_column: column("end"),
-            preview,
-        });
-    }
-    out
-}
-
-/// The files and edits of a `WorkspaceEdit`. `uri` is the document the request was made in:
-/// its edits come with a path None.
-fn workspace_edit(result: &Value, uri: &str, snapshot: &str) -> Vec<FileEdit> {
-    let wanted = lsp::normalize_uri(uri);
-    let mut per_file: Vec<(String, Vec<Value>)> = Vec::new();
-    if let Some(changes) = result["changes"].as_object() {
-        for (target, edits) in changes {
-            per_file.push((
-                target.clone(),
-                edits.as_array().cloned().unwrap_or_default(),
-            ));
-        }
-    }
-    if let Some(changes) = result["documentChanges"].as_array() {
-        for change in changes {
-            if let Some(target) = change["textDocument"]["uri"].as_str() {
-                per_file.push((
-                    target.to_string(),
-                    change["edits"].as_array().cloned().unwrap_or_default(),
-                ));
-            }
-        }
-    }
-    let mut out = Vec::new();
-    for (target, edits) in per_file {
-        let same = lsp::normalize_uri(&target) == wanted;
-        let path = if same {
-            None
-        } else {
-            lsp::uri_to_path(&target)
-        };
-        if !same && path.is_none() {
-            continue;
-        }
-        let owned;
-        let text = if same {
-            snapshot
-        } else {
-            owned = path
-                .as_ref()
-                .and_then(|p| std::fs::read_to_string(p).ok())
-                .unwrap_or_default();
-            &owned
-        };
-        let converted: Vec<TextEdit> = edits
-            .iter()
-            .filter_map(|e| {
-                let range = &e["range"];
-                let start = from_position(
-                    text,
-                    range["start"]["line"].as_u64()? as usize,
-                    range["start"]["character"].as_u64()? as usize,
-                );
-                let end = from_position(
-                    text,
-                    range["end"]["line"].as_u64()? as usize,
-                    range["end"]["character"].as_u64()? as usize,
-                );
-                Some(TextEdit {
-                    range: start..end.max(start),
-                    new_text: e["newText"].as_str()?.to_string(),
-                })
-            })
-            .collect();
-        if !converted.is_empty() {
-            out.push(FileEdit {
-                path,
-                edits: converted,
-            });
-        }
-    }
-    out
-}
-
-/// The actions of a `textDocument/codeAction` answer that edit the document `uri`.
-fn fixes_from_server(result: &Value, uri: &str, snapshot: &str) -> Vec<QuickFix> {
-    let Some(actions) = result.as_array() else {
-        return Vec::new();
-    };
-    let wanted = lsp::normalize_uri(uri);
-    let edits_of = |edits: &Value| -> Vec<TextEdit> {
-        edits
-            .as_array()
-            .map(|list| {
-                list.iter()
-                    .filter_map(|e| {
-                        let range = &e["range"];
-                        let start = from_position(
-                            snapshot,
-                            range["start"]["line"].as_u64()? as usize,
-                            range["start"]["character"].as_u64()? as usize,
-                        );
-                        let end = from_position(
-                            snapshot,
-                            range["end"]["line"].as_u64()? as usize,
-                            range["end"]["character"].as_u64()? as usize,
-                        );
-                        Some(TextEdit {
-                            range: start..end.max(start),
-                            new_text: e["newText"].as_str()?.to_string(),
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
-    };
-    let mut fixes = Vec::new();
-    for action in actions {
-        let Some(title) = action["title"].as_str() else {
-            continue;
-        };
-        let edit = &action["edit"];
-        let mut edits: Vec<TextEdit> = Vec::new();
-        let mut elsewhere = false;
-        if let Some(changes) = edit["changes"].as_object() {
-            for (target, list) in changes {
-                if lsp::normalize_uri(target) == wanted {
-                    edits.extend(edits_of(list));
-                } else {
-                    elsewhere = true;
-                }
-            }
-        }
-        if let Some(changes) = edit["documentChanges"].as_array() {
-            for change in changes {
-                match change["textDocument"]["uri"].as_str() {
-                    Some(target) if lsp::normalize_uri(target) == wanted => {
-                        edits.extend(edits_of(&change["edits"]))
-                    }
-                    _ => elsewhere = true,
-                }
-            }
-        }
-        // Actions that run a command or touch other files are not offered here.
-        if !edits.is_empty() && !elsewhere {
-            fixes.push(QuickFix {
-                title: title.to_string(),
-                edits,
-            });
-        }
-    }
-    fixes
-}
-
-fn symbol_kind(code: u64) -> ItemKind {
-    match code {
-        5 | 23 => ItemKind::Class,
-        6 | 9 => ItemKind::Method,
-        7 | 8 => ItemKind::Property,
-        11 => ItemKind::Interface,
-        12 => ItemKind::Function,
-        13 => ItemKind::Variable,
-        14 | 22 | 10 => ItemKind::Constant,
-        2 | 3 | 4 => ItemKind::Module,
-        _ => ItemKind::Text,
-    }
-}
-
-/// The structure of a `textDocument/documentSymbol` answer, nested or flat, in document order.
-fn symbols_from_server(result: &Value, snapshot: &str) -> Vec<Symbol> {
-    fn convert(items: &[Value], depth: usize, snapshot: &str, out: &mut Vec<Symbol>) {
-        for item in items {
-            let Some(name) = item["name"].as_str() else {
-                continue;
-            };
-            let range = if item["selectionRange"].is_object() {
-                &item["selectionRange"]
-            } else {
-                &item["location"]["range"]
-            };
-            let (Some(sl), Some(sc), Some(el), Some(ec)) = (
-                range["start"]["line"].as_u64(),
-                range["start"]["character"].as_u64(),
-                range["end"]["line"].as_u64(),
-                range["end"]["character"].as_u64(),
-            ) else {
-                continue;
-            };
-            let start = from_position(snapshot, sl as usize, sc as usize);
-            let end = from_position(snapshot, el as usize, ec as usize).max(start);
-            out.push(Symbol {
-                name: name.to_string(),
-                kind: symbol_kind(item["kind"].as_u64().unwrap_or(0)),
-                detail: item["detail"].as_str().unwrap_or("").to_string(),
-                range: start..end,
-                depth,
-            });
-            if let Some(children) = item["children"].as_array() {
-                convert(children, depth + 1, snapshot, out);
-            }
-        }
-    }
-    let mut out = Vec::new();
-    if let Some(items) = result.as_array() {
-        convert(items, 0, snapshot, &mut out);
-    }
-    out
-}
-
-fn completion_from_server(result: &Value, text: &str, from: usize) -> Option<Completion> {
-    let list = match result {
-        Value::Array(items) => items,
-        Value::Object(map) => map.get("items")?.as_array()?,
-        _ => return None,
-    };
-    let mut entries: Vec<(&Value, String)> = list
-        .iter()
-        .map(|item| {
-            (
-                item,
-                item["sortText"]
-                    .as_str()
-                    .or(item["label"].as_str())
-                    .unwrap_or("")
-                    .to_string(),
-            )
-        })
-        .collect();
-    entries.sort_by(|a, b| a.1.cmp(&b.1));
-    let mut items = Vec::new();
-    for (index, (item, _)) in entries.into_iter().enumerate().take(1500) {
-        let Some(label) = item["label"].as_str() else {
-            continue;
-        };
-        let kind = item_kind(item["kind"].as_u64().unwrap_or(1));
-        let mut insert = item["insertText"].as_str().unwrap_or(label).to_string();
-        if let Some(edit) = item.get("textEdit") {
-            let start = edit["range"]["start"].as_object().and_then(|_| {
-                Some(from_position(
-                    text,
-                    edit["range"]["start"]["line"].as_u64()? as usize,
-                    edit["range"]["start"]["character"].as_u64()? as usize,
-                ))
-            });
-            if start == Some(from)
-                && let Some(new_text) = edit["newText"].as_str()
-            {
-                insert = new_text.to_string();
-            }
-        }
-        let mut entry = CompletionItem::new(label, kind).rank(index.min(10_000) as u32);
-        // Documentation and signatures come with a second request, when the item is selected.
-        if item["documentation"].is_null() && item["detail"].is_null() {
-            entry.raw = Some(Arc::new(item.to_string()));
-        }
-        let detail = item["detail"]
-            .as_str()
-            .or_else(|| item["labelDetails"]["description"].as_str());
-        if let Some(detail) = detail {
-            entry = entry.detail(detail);
-        }
-        let doc = plain(&markup_text(&item["documentation"]));
-        if !doc.is_empty() {
-            entry = entry.doc(doc);
-        }
-        // A function gets its parentheses, with the caret inside.
-        if matches!(kind, ItemKind::Function | ItemKind::Method)
-            && insert == label
-            && !text[from..].starts_with('(')
-        {
-            entry = entry.insert(format!("{label}()"), Some(label.len() + 1));
-        } else if insert != label {
-            entry = entry.insert(insert, None);
-        }
-        items.push(entry);
-    }
-    (!items.is_empty()).then_some(Completion { from, items })
 }
 
 impl Provider for JavaScript {
@@ -931,7 +489,7 @@ impl Provider for JavaScript {
             let native = if local {
                 rename::rename(&text, offset, &new_name, path.as_deref(), &root)
             } else {
-                Err("Renommer n'est pas pris en charge sans le serveur de langage".to_string())
+                Err(tr!("javascript.rename_not_supported_without_language").to_string())
             };
             // A name the local analysis refuses (invalid, already used) is refused for good.
             let (Some(client), Some(uri)) = (client, target) else {
@@ -941,7 +499,15 @@ impl Provider for JavaScript {
             };
             if local
                 && native.as_ref().is_err_and(|e| {
-                    e.contains("n'est pas un nom valide") || e.contains("existe déjà")
+                    // In either language of the interface.
+                    [
+                        "n'est pas un nom valide",
+                        "existe déjà",
+                        "is not a valid name",
+                        "already exists",
+                    ]
+                    .iter()
+                    .any(|refusal| e.contains(refusal))
                 })
             {
                 slot.fulfill(native);
@@ -1148,6 +714,93 @@ impl Provider for JavaScript {
         )
     }
 
+    /// tsserver formats with the indentation the file already uses.
+    fn format(&mut self, doc: &DocRef, text: &str) -> Oneshot<Result<Vec<TextEdit>, String>> {
+        let client = self.client().filter(|c| c.ready()).cloned();
+        let target = self
+            .docs
+            .get(&doc.key)
+            .and_then(|d| d.uri.clone().filter(|_| d.opened));
+        let (Some(client), Some(uri)) = (client, target) else {
+            return Oneshot::ready(Err(tr!(
+                "javascript.formatting_javascript_typescript_needs_language"
+            )
+            .into()));
+        };
+        let tabs = text.contains("\n\t");
+        let size = text
+            .lines()
+            .map(|l| l.len() - l.trim_start_matches(' ').len())
+            .find(|&n| n > 0)
+            .unwrap_or(2);
+        let answer = Oneshot::pending();
+        let slot = answer.clone();
+        let snapshot = text.to_string();
+        client.request(
+            "textDocument/formatting",
+            json!({"textDocument": {"uri": uri}, "options": {"tabSize": size, "insertSpaces": !tabs}}),
+            move |result| {
+                slot.fulfill(match result {
+                    Ok(Value::Array(edits)) => {
+                        let converted: Vec<TextEdit> = edits
+                            .iter()
+                            .filter_map(|e| {
+                                let range = &e["range"];
+                                let start = from_position(&snapshot, range["start"]["line"].as_u64()? as usize, range["start"]["character"].as_u64()? as usize);
+                                let end = from_position(&snapshot, range["end"]["line"].as_u64()? as usize, range["end"]["character"].as_u64()? as usize);
+                                Some(TextEdit {
+                                    range: start..end.max(start),
+                                    new_text: e["newText"].as_str()?.to_string(),
+                                })
+                            })
+                            .collect();
+                        let new = apply_edits(&snapshot, &converted);
+                        Ok(edits_between(&snapshot, &new))
+                    }
+                    Ok(_) => Ok(Vec::new()),
+                    Err(e) => Err(e["message"].as_str().unwrap_or_default().to_string()),
+                });
+            },
+        );
+        answer
+    }
+
+    /// The "organize imports" action of tsserver: sorted imports, the unused ones removed.
+    fn organize_imports(
+        &mut self,
+        doc: &DocRef,
+        text: &str,
+    ) -> Oneshot<Result<Vec<TextEdit>, String>> {
+        let client = self.client().filter(|c| c.ready()).cloned();
+        let target = self
+            .docs
+            .get(&doc.key)
+            .and_then(|d| d.uri.clone().filter(|_| d.opened));
+        let (Some(client), Some(uri)) = (client, target) else {
+            return Oneshot::ready(Ok(Vec::new()));
+        };
+        let end = to_position(text, text.len());
+        let params = json!({
+            "textDocument": {"uri": uri},
+            "range": {"start": {"line": 0, "character": 0}, "end": {"line": end.0, "character": end.1}},
+            "context": {"diagnostics": [], "only": ["source.organizeImports"], "triggerKind": 1},
+        });
+        let answer = Oneshot::pending();
+        let slot = answer.clone();
+        let snapshot = text.to_string();
+        client.request("textDocument/codeAction", params, move |result| {
+            let edits = result
+                .map(|r| fixes_from_server(&r, &uri, &snapshot))
+                .unwrap_or_default()
+                .into_iter()
+                .next()
+                .map(|fix| fix.edits)
+                .unwrap_or_default();
+            slot.fulfill(Ok(edits));
+        });
+        answer
+    }
+
     fn resolve(&mut self, _doc: &DocRef, item: &CompletionItem) -> Oneshot<Option<CompletionItem>> {
         let client = self.client().filter(|c| c.ready()).cloned();
         let raw = item
@@ -1179,16 +832,16 @@ impl Provider for JavaScript {
 
     fn status(&self) -> String {
         if server::control(|c| c.installing) {
-            return "Installation du serveur JS…".into();
+            return tr!("javascript.installing_js_server").into();
         }
         match &self.server {
             Server::NotStarted => String::new(),
             Server::Running(client) if client.ready() => "tsserver".into(),
             Server::Running(_) => "tsserver…".into(),
-            Server::Missing => "JS : analyse locale".into(),
-            Server::Failed(reason) => format!(
-                "JS : serveur en échec ({})",
-                reason.chars().take(60).collect::<String>()
+            Server::Missing => tr!("javascript.js_local_analysis").into(),
+            Server::Failed(reason) => trf!(
+                "javascript.js_server_failed",
+                reason = reason.chars().take(60).collect::<String>()
             ),
         }
     }
@@ -1206,7 +859,7 @@ impl BuiltinPlugin for JavaScriptPlugin {
         "JavaScript"
     }
     fn description(&self) -> &'static str {
-        "Complétion, infobulles et erreurs de syntaxe pour JavaScript, par analyse locale ; avec typescript-language-server (installé dans ~/.atelier/lsp) pour la précision de TypeScript : types, JSDoc, node_modules."
+        tr!("javascript.completion_tooltips_syntax_errors_javascript")
     }
     fn icon(&self) -> &'static str {
         "settings"
@@ -1222,11 +875,11 @@ impl BuiltinPlugin for JavaScriptPlugin {
         [
             (
                 "js.install",
-                "JavaScript : installer le serveur de langage (typescript-language-server)",
+                tr!("javascript.javascript_install_language_server_typescript"),
             ),
             (
                 "js.restart",
-                "JavaScript : redémarrer le serveur de langage",
+                tr!("javascript.javascript_restart_language_server"),
             ),
         ]
         .into_iter()
@@ -1241,10 +894,14 @@ impl BuiltinPlugin for JavaScriptPlugin {
         match id {
             "js.install" => {
                 if !server::node_available() {
-                    host.balloon("JavaScript", "Node.js est introuvable : installez-le pour utiliser le serveur de langage".into(), true);
+                    host.balloon(
+                        "JavaScript",
+                        tr!("javascript.node_js_cannot_found_install").into(),
+                        true,
+                    );
                     return;
                 }
-                host.notify("Installation du serveur de langage JavaScript…".into());
+                host.notify(tr!("javascript.installing_javascript_language_server").into());
                 server::control(|c| c.install_requested = true);
             }
             "js.restart" => server::control(|c| c.restart_requested = true),
@@ -1254,268 +911,5 @@ impl BuiltinPlugin for JavaScriptPlugin {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn hover_markdown_is_split_into_signature_and_text() {
-        let markdown = "```typescript\nfunction add(a: number, b: number): number\n```\n\nAdds **two** [numbers](https://x.y).\n\n*@param* `a` — first";
-        let (title, body) = split_hover(markdown);
-        assert_eq!(title, "function add(a: number, b: number): number");
-        assert!(body.starts_with("Adds two numbers."), "{body}");
-        assert!(body.contains("@param a — first"), "{body}");
-        let (title, body) = split_hover("Just a sentence.\nMore.");
-        assert_eq!(
-            (title.as_str(), body.as_str()),
-            ("Just a sentence.", "More.")
-        );
-    }
-
-    #[test]
-    fn server_completions_become_items_in_server_order() {
-        let text = "const x = [];\nx.pu";
-        let result = json!({"isIncomplete": false, "items": [
-            {"label": "push", "kind": 2, "sortText": "1", "detail": "(...items: any[]): number", "documentation": {"kind": "markdown", "value": "Appends **items**."}},
-            {"label": "length", "kind": 10, "sortText": "0"},
-            {"label": "toString", "kind": 2, "sortText": "2", "insertText": "toString"},
-        ]});
-        let from = text.len() - 2;
-        let completion = completion_from_server(&result, text, from).unwrap();
-        let labels: Vec<&str> = completion.items.iter().map(|i| i.label.as_str()).collect();
-        assert_eq!(labels, ["length", "push", "toString"], "sorted by sortText");
-        assert_eq!(completion.from, from);
-        let push = &completion.items[1];
-        assert_eq!(push.insert, "push()");
-        assert_eq!(push.caret, Some(5));
-        assert_eq!(push.doc.as_deref(), Some("Appends items."));
-        assert_eq!(completion.items[0].kind, ItemKind::Property);
-        assert!(completion_from_server(&json!({"items": []}), text, from).is_none());
-    }
-
-    #[test]
-    fn the_provider_falls_back_to_the_local_analysis_without_a_server() {
-        let mut provider = JavaScript::new(Path::new("."), Arc::new(|| {}));
-        provider.server = Server::Missing;
-        let doc = DocRef {
-            key: 1,
-            path: None,
-            language: "js".into(),
-        };
-        let text = "const total = 5;\nconsole.log(tot";
-        provider.update(&doc, text, 1);
-        let completion = provider
-            .complete(&doc, text, text.len(), false)
-            .take()
-            .unwrap()
-            .unwrap();
-        assert!(completion.items.iter().any(|i| i.label == "total"));
-        let broken = "const a = ;\n";
-        provider.update(&doc, broken, 2);
-        assert_eq!(provider.diagnostics(1).len(), 1);
-        assert_eq!(provider.status(), "JS : analyse locale");
-        let info = provider
-            .hover(&doc, "const total = 5;\ntotal;", 18)
-            .take()
-            .unwrap()
-            .unwrap();
-        assert_eq!(info.title, "const total: number");
-    }
-
-    fn wait_for(
-        provider: &mut JavaScript,
-        what: &str,
-        mut done: impl FnMut(&mut JavaScript) -> bool,
-    ) {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
-        while !done(provider) {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "timeout waiting for {what}: {}",
-                provider.status()
-            );
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
-    }
-
-    /// Talks to a real typescript-language-server when one is installed (here, or in
-    /// `ATELIER_LSP_DIR`); otherwise there is nothing to check.
-    #[test]
-    fn the_real_server_answers_completion_hover_and_diagnostics() {
-        let root = std::env::temp_dir().join(format!("atelier-js-lsp-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
-        if server::launch(&root).is_none() || !server::node_available() {
-            return;
-        }
-        let file = root.join("a.js");
-        let text = "/** Adds.
- * @param {number} a
- * @param {number} b
- */
-function add(a, b) { return a + b; }
-const greeting = 'x';
-greeting.toUp;
-add(1, 2);
-let broken = ;
-";
-        std::fs::write(&file, text).unwrap();
-        let mut provider = JavaScript::new(&root, Arc::new(|| {}));
-        let doc = DocRef {
-            key: 7,
-            path: Some(file.clone()),
-            language: "js".into(),
-        };
-        provider.update(&doc, text, 1);
-        wait_for(&mut provider, "the server", |p| {
-            p.client().is_some_and(|c| c.ready())
-        });
-        provider.update(&doc, text, 2);
-
-        let offset = text.find("greeting.toUp").unwrap() + "greeting.toUp".len();
-        let answer = provider.complete(&doc, text, offset, false);
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
-        let completion = loop {
-            if let Some(result) = answer.take() {
-                break result;
-            }
-            assert!(std::time::Instant::now() < deadline, "no completion");
-            std::thread::sleep(std::time::Duration::from_millis(50));
-        };
-        let completion = completion.expect("completion items");
-        let upper = completion
-            .items
-            .iter()
-            .find(|i| i.label == "toUpperCase")
-            .unwrap_or_else(|| {
-                panic!(
-                    "no toUpperCase in {} items: {:?}",
-                    completion.items.len(),
-                    completion
-                        .items
-                        .iter()
-                        .take(20)
-                        .map(|i| i.label.clone())
-                        .collect::<Vec<_>>()
-                )
-            });
-        assert_eq!(completion.from, offset - 4);
-        assert_eq!(upper.insert, "toUpperCase()");
-
-        let at = text.find("add(1, 2)").unwrap();
-        let answer = provider.hover(&doc, text, at);
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
-        let info = loop {
-            if let Some(result) = answer.take() {
-                break result;
-            }
-            assert!(std::time::Instant::now() < deadline, "no hover");
-            std::thread::sleep(std::time::Duration::from_millis(50));
-        };
-        let info = info.expect("a hover");
-        assert!(
-            info.title.contains("add(a: number, b: number)"),
-            "{}",
-            info.title
-        );
-
-        wait_for(&mut provider, "diagnostics", |p| {
-            !p.diagnostics(7).is_empty()
-        });
-        let diagnostics = provider.diagnostics(7);
-        assert!(
-            diagnostics.iter().any(|d| d.severity == Severity::Error),
-            "{diagnostics:?}"
-        );
-        assert_eq!(provider.status(), "tsserver");
-        drop(provider);
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    fn wait_answer<T>(answer: &Oneshot<T>, what: &str) -> T {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
-        loop {
-            if let Some(value) = answer.take() {
-                return value;
-            }
-            assert!(std::time::Instant::now() < deadline, "no answer for {what}");
-            std::thread::sleep(std::time::Duration::from_millis(50));
-        }
-    }
-
-    /// Definition, usages, structure and import actions from a real server.
-    #[test]
-    fn the_real_server_navigates_and_offers_imports() {
-        let root = std::env::temp_dir().join(format!("atelier-js-lsp-nav-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
-        if server::launch(&root).is_none() || !server::node_available() {
-            return;
-        }
-        std::fs::write(root.join("jsconfig.json"), "{}").unwrap();
-        std::fs::write(
-            root.join("util.js"),
-            "export function helper() { return 1; }
-",
-        )
-        .unwrap();
-        let file = root.join("main.js");
-        let text = "function add(a, b) { return a + b; }
-const total = add(1, 2);
-console.log(total, add(3, 4));
-helper();
-";
-        std::fs::write(&file, text).unwrap();
-        let mut provider = JavaScript::new(&root, Arc::new(|| {}));
-        let doc = DocRef {
-            key: 9,
-            path: Some(file.clone()),
-            language: "js".into(),
-        };
-        provider.update(&doc, text, 1);
-        wait_for(&mut provider, "the server", |p| {
-            p.client().is_some_and(|c| c.ready())
-        });
-        provider.update(&doc, text, 2);
-
-        // Definition of the first use of `add`.
-        let at = text.find("add(1, 2)").unwrap() + 1;
-        let found = wait_answer(&provider.definition(&doc, text, at), "definition");
-        assert_eq!(found.len(), 1, "{found:?}");
-        assert_eq!((found[0].line, found[0].column), (0, 9));
-
-        // Usages of `add`, from the declaration.
-        let declared = text.find("add(a").unwrap() + 1;
-        let usages = wait_answer(&provider.references(&doc, text, declared), "references");
-        assert_eq!(
-            usages.iter().map(|l| l.line).collect::<Vec<_>>(),
-            [1, 2],
-            "{usages:?}"
-        );
-
-        // The structure.
-        let symbols = wait_answer(&provider.symbols(&doc, text), "symbols");
-        assert!(
-            symbols
-                .iter()
-                .any(|s| s.name == "add" && s.kind == ItemKind::Function),
-            "{symbols:?}"
-        );
-        assert!(symbols.iter().any(|s| s.name == "total"), "{symbols:?}");
-
-        // The highlight of a name.
-        let places = wait_answer(&provider.highlights(&doc, text, at), "highlights");
-        assert_eq!(places.len(), 3, "the declaration and two uses: {places:?}");
-
-        // Import `helper` from util.js.
-        let at = text.find("helper();").unwrap() + 1;
-        let fixes = wait_answer(&provider.quick_fixes(&doc, text, at), "quick fixes");
-        assert!(
-            fixes
-                .iter()
-                .any(|f| f.title.to_lowercase().contains("import") && f.title.contains("util")),
-            "{fixes:?}"
-        );
-        drop(provider);
-        let _ = std::fs::remove_dir_all(&root);
-    }
-}
+#[path = "../../../test/languages/javascript/mod/tests.rs"]
+mod tests;

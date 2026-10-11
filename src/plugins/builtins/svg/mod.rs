@@ -30,7 +30,7 @@ impl BuiltinPlugin for SvgPlugin {
         "SVG"
     }
     fn description(&self) -> &'static str {
-        "Aperçu des fichiers SVG : éditeur seul, éditeur et aperçu côte à côte, ou aperçu seul."
+        tr!("svg.preview_svg_files_editor_only")
     }
     fn icon(&self) -> &'static str {
         "editorPreview"
@@ -41,9 +41,9 @@ impl BuiltinPlugin for SvgPlugin {
 
     fn commands(&self) -> Vec<Command> {
         [
-            ("svg.text", "SVG : éditeur seul"),
-            ("svg.split", "SVG : éditeur et aperçu"),
-            ("svg.preview", "SVG : aperçu seul"),
+            ("svg.text", tr!("svg.svg_editor_only")),
+            ("svg.split", tr!("svg.svg_editor_preview")),
+            ("svg.preview", tr!("svg.svg_preview_only")),
         ]
         .into_iter()
         .map(|(id, label)| Command {
@@ -62,7 +62,7 @@ impl BuiltinPlugin for SvgPlugin {
         };
         match host.active_file().filter(|p| is_svg(p)) {
             Some(path) => self.set_editor_layout(&path, layout),
-            None => host.notify("Ouvrez un fichier SVG".into()),
+            None => host.notify(tr!("svg.open_svg_file").into()),
         }
     }
 
@@ -101,32 +101,5 @@ impl BuiltinPlugin for SvgPlugin {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn svg_files_get_a_split_layout_by_default() {
-        let mut plugin = SvgPlugin::default();
-        let logo = Path::new("C:/projet/logo.SVG");
-        assert_eq!(plugin.editor_layout(logo), Some(EditorLayout::Split));
-        assert_eq!(plugin.editor_layout(Path::new("main.rs")), None);
-        plugin.set_editor_layout(logo, EditorLayout::Preview);
-        assert_eq!(plugin.editor_layout(logo), Some(EditorLayout::Preview));
-    }
-
-    #[test]
-    fn preview_renders() {
-        let ctx = egui::Context::default();
-        egui_extras::install_image_loaders(&ctx);
-        let mut plugin = SvgPlugin::default();
-        let mut text = r#"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="8"/></svg>"#.to_string();
-        for _ in 0..2 {
-            let _ = ctx.run(Default::default(), |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    plugin.preview(ui, Path::new("a.svg"), &mut text, None);
-                });
-            });
-        }
-        assert_eq!(plugin.uris.len(), 1);
-    }
-}
+#[path = "../../../../test/plugins/builtins/svg/mod/tests.rs"]
+mod tests;

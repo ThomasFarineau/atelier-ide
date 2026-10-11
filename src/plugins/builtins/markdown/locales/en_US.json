@@ -1,0 +1,7 @@
+{
+  "markdown.markdown_editor_only": "Markdown: Editor Only",
+  "markdown.markdown_editor_preview": "Markdown: Editor and Preview",
+  "markdown.markdown_preview_only": "Markdown: Preview Only",
+  "markdown.open_markdown_file": "Open a Markdown file",
+  "markdown.preview_markdown_files_editor_only": "Preview of Markdown files: editor only, editor and preview side by side with synchronized scrolling, or preview only."
+}

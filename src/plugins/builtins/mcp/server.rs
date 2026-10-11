@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use std::{
     io::{BufRead, BufReader, Read, Write},
     net::{Ipv4Addr, TcpListener, TcpStream},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex, mpsc},
     time::Duration,
 };
@@ -45,13 +45,14 @@ pub struct Server {
 }
 
 /// Tools that do not touch the editor: they run on the thread of the connection.
-fn background_tool(name: &str, root: &PathBuf, args: &Value) -> Option<Result<String, String>> {
+fn background_tool(name: &str, root: &Path, args: &Value) -> Option<Result<String, String>> {
     if name == "search_in_project" {
         return Some(super::tools::search(root, args));
     }
     super::commits::tool(name, args, root)
         .or_else(|| super::rework::tool(name, args, root))
         .or_else(|| super::tools::graph(name, args))
+        .or_else(|| crate::plugins::builtins::translations::mcp_tool(name, args, root))
 }
 
 /// Starts listening on `port` (0 for any), answering with `token` as the secret. `wake` is called
@@ -135,7 +136,7 @@ fn read_request(stream: &TcpStream) -> std::io::Result<Request> {
             break;
         }
         if size > MAX_HEADERS {
-            return Err(std::io::Error::other("en-têtes trop longs"));
+            return Err(std::io::Error::other(tr!("mcp.headers_too_long")));
         }
         if let Some((name, value)) = header.split_once(':') {
             headers.push((name.trim().to_string(), value.trim().to_string()));
@@ -147,7 +148,7 @@ fn read_request(stream: &TcpStream) -> std::io::Result<Request> {
         .and_then(|(_, v)| v.parse().ok())
         .unwrap_or(0);
     if length > MAX_BODY {
-        return Err(std::io::Error::other("corps trop long"));
+        return Err(std::io::Error::other(tr!("mcp.body_too_long")));
     }
     let mut body = vec![0; length];
     reader.read_exact(&mut body)?;
@@ -236,7 +237,7 @@ fn serve(
     let message: Value = match serde_json::from_slice(&request.body) {
         Ok(message) => message,
         Err(e) => {
-            let body = json!({"jsonrpc": "2.0", "id": null, "error": {"code": -32700, "message": format!("JSON invalide : {e}")}});
+            let body = json!({"jsonrpc": "2.0", "id": null, "error": {"code": -32700, "message": trf!("mcp.invalid_json", e = e)}});
             return respond(&stream, "400 Bad Request", &body.to_string(), "");
         }
     };
@@ -307,7 +308,7 @@ fn session_tool(
             );
             store
                 .note(session, kind, text)
-                .map(|()| format!("Noté ({kind}) dans la session {session}"))
+                .map(|()| trf!("mcp.noted_session", kind = kind, session = session))
         }
         "get_session_context" => {
             let wanted = args["id"].as_str().unwrap_or(session).to_string();
@@ -318,12 +319,12 @@ fn session_tool(
                         let _ = store.note(
                             session,
                             "progress",
-                            &format!("Reprise de la session {wanted}"),
+                            &trf!("mcp.taking_up_session", wanted = wanted),
                         );
                     }
                     Ok(text)
                 }
-                None => Err(format!("Session inconnue : {wanted}")),
+                None => Err(trf!("mcp.unknown_session", wanted = wanted)),
             }
         }
         "list_sessions" => {
@@ -358,7 +359,7 @@ fn handle(
     message: &Value,
     calls: &mpsc::Sender<Call>,
     wake: &(dyn Fn() + Send + Sync),
-    root: &PathBuf,
+    root: &Path,
     store: &Mutex<Store>,
     session: Option<&str>,
 ) -> (Option<Value>, Option<String>) {
@@ -408,7 +409,11 @@ fn handle(
                 }
                 None => {
                     return (
-                        Some(error(&id, -32602, &format!("commande inconnue : {name}"))),
+                        Some(error(
+                            &id,
+                            -32602,
+                            &trf!("mcp.unknown_command", name = name),
+                        )),
                         None,
                     );
                 }
@@ -422,7 +427,7 @@ fn handle(
                 .any(|t| t["name"] == name.as_str())
             {
                 return (
-                    Some(error(&id, -32602, &format!("outil inconnu : {name}"))),
+                    Some(error(&id, -32602, &trf!("mcp.unknown_tool", name = name))),
                     None,
                 );
             }
@@ -448,12 +453,15 @@ fn handle(
                         })
                         .is_err()
                     {
-                        return (Some(error(&id, -32603, "l'IDE n'écoute plus")), None);
+                        return (
+                            Some(error(&id, -32603, tr!("mcp.ide_no_longer_listens"))),
+                            None,
+                        );
                     }
                     wake();
                     answer
                         .recv_timeout(TOOL_TIMEOUT)
-                        .unwrap_or_else(|_| Err("l'IDE n'a pas répondu à temps".into()))
+                        .unwrap_or_else(|_| Err(tr!("mcp.ide_did_not_answer_time").into()))
                 }
             };
             store.lock().unwrap_or_else(|e| e.into_inner()).record(
@@ -470,7 +478,11 @@ fn handle(
         }
         _ => {
             return (
-                Some(error(&id, -32601, &format!("méthode inconnue : {method}"))),
+                Some(error(
+                    &id,
+                    -32601,
+                    &trf!("mcp.unknown_method", method = method),
+                )),
                 None,
             );
         }
@@ -482,303 +494,5 @@ fn handle(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// One request to the server, as an MCP client would send it: the status and the body.
-    fn post(port: u16, token: Option<&str>, extra: &str, body: &str) -> (u16, String) {
-        let (status, _, body) = post_with_headers(port, token, extra, body);
-        (status, body)
-    }
-
-    /// The same, with the headers of the answer.
-    fn post_with_headers(
-        port: u16,
-        token: Option<&str>,
-        extra: &str,
-        body: &str,
-    ) -> (u16, String, String) {
-        let mut stream = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
-        let auth = token
-            .map(|t| format!("Authorization: Bearer {t}\r\n"))
-            .unwrap_or_default();
-        write!(
-            stream,
-            "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{auth}{extra}Content-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
-            body.len()
-        )
-        .unwrap();
-        let mut reply = String::new();
-        stream.read_to_string(&mut reply).unwrap();
-        let status = reply
-            .split_whitespace()
-            .nth(1)
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(0);
-        let (head, body) = reply
-            .split_once("\r\n\r\n")
-            .map(|(h, b)| (h.to_string(), b.to_string()))
-            .unwrap_or_default();
-        (status, head, body)
-    }
-
-    fn running() -> (Server, u16) {
-        let server = start(0, "secret".into(), Arc::new(|| {})).unwrap();
-        let port = server.port;
-        (server, port)
-    }
-
-    #[test]
-    fn a_client_initializes_lists_the_tools_and_calls_one() {
-        let (server, port) = running();
-        let (status, body) = post(
-            port,
-            Some("secret"),
-            "",
-            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}"#,
-        );
-        assert_eq!(status, 200);
-        let answer: Value = serde_json::from_str(&body).unwrap();
-        assert_eq!(
-            answer["result"]["protocolVersion"], "2025-03-26",
-            "the version the client asked for"
-        );
-        assert_eq!(answer["result"]["serverInfo"]["name"], "atelier");
-        let (status, body) = post(
-            port,
-            Some("secret"),
-            "",
-            r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
-        );
-        assert_eq!(
-            (status, body.as_str()),
-            (202, ""),
-            "a notification is not answered"
-        );
-        let (_, body) = post(
-            port,
-            Some("secret"),
-            "",
-            r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
-        );
-        let tools: Value = serde_json::from_str(&body).unwrap();
-        let names: Vec<&str> = tools["result"]["tools"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter_map(|t| t["name"].as_str())
-            .collect();
-        assert!(
-            names.contains(&"get_problems")
-                && names.contains(&"open_file")
-                && names.contains(&"search_in_project"),
-            "{names:?}"
-        );
-        // A tool of the editor goes through the channel and is answered by the interface thread.
-        let answering = std::thread::spawn(move || {
-            let call = server.calls.recv_timeout(Duration::from_secs(5)).unwrap();
-            assert_eq!(call.tool, "get_open_files");
-            call.reply.send(Ok("[]".into())).unwrap();
-        });
-        let (_, body) = post(
-            port,
-            Some("secret"),
-            "",
-            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_open_files","arguments":{}}}"#,
-        );
-        answering.join().unwrap();
-        let answer: Value = serde_json::from_str(&body).unwrap();
-        assert_eq!(answer["result"]["content"][0]["text"], "[]");
-        assert_eq!(answer["result"]["isError"], false);
-    }
-
-    #[test]
-    fn unknown_methods_and_tools_get_json_rpc_errors() {
-        let (_server, port) = running();
-        let (_, body) = post(
-            port,
-            Some("secret"),
-            "",
-            r#"{"jsonrpc":"2.0","id":7,"method":"resources/list"}"#,
-        );
-        assert_eq!(
-            serde_json::from_str::<Value>(&body).unwrap()["error"]["code"],
-            -32601
-        );
-        let (_, body) = post(
-            port,
-            Some("secret"),
-            "",
-            r#"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"format_disk"}}"#,
-        );
-        assert_eq!(
-            serde_json::from_str::<Value>(&body).unwrap()["error"]["code"],
-            -32602
-        );
-        let (status, _) = post(port, Some("secret"), "", "pas du json");
-        assert_eq!(status, 400);
-    }
-
-    #[test]
-    fn without_the_token_or_from_a_web_page_nothing_is_answered() {
-        let (_server, port) = running();
-        let ping = r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#;
-        assert_eq!(post(port, None, "", ping).0, 401);
-        assert_eq!(post(port, Some("wrong"), "", ping).0, 401);
-        assert_eq!(
-            post(
-                port,
-                Some("secret"),
-                "Origin: https://evil.example\r\n",
-                ping
-            )
-            .0,
-            403,
-            "a page of the browser"
-        );
-        assert_eq!(post(port, Some("secret"), "", ping).0, 200);
-    }
-
-    #[test]
-    fn a_connection_is_a_session_that_records_its_calls_and_keeps_its_notes() {
-        let (server, port) = running();
-        let dir = std::env::temp_dir().join(format!("atelier-mcp-session-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        server.store.lock().unwrap().set_root(&dir);
-        let init = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","clientInfo":{"name":"claude-code","version":"2.1"}}}"#;
-        let (_, head, _) = post_with_headers(port, Some("secret"), "", init);
-        let id = head
-            .lines()
-            .find_map(|l| l.strip_prefix("Mcp-Session-Id: "))
-            .expect("the client is given its session")
-            .trim()
-            .to_string();
-        let with_session = format!("Mcp-Session-Id: {id}\r\n");
-        let note = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"session_note","arguments":{"kind":"goal","text":"Réparer le build"}}}"#;
-        let (_, body) = post(port, Some("secret"), &with_session, note);
-        assert_eq!(
-            serde_json::from_str::<Value>(&body).unwrap()["result"]["isError"],
-            false,
-            "{body}"
-        );
-        let search = r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"search_in_project","arguments":{"query":"fn main"}}}"#;
-        post(port, Some("secret"), &with_session, search);
-        let context = r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_session_context","arguments":{}}}"#;
-        let (_, body) = post(port, Some("secret"), &with_session, context);
-        let text = serde_json::from_str::<Value>(&body).unwrap()["result"]["content"][0]["text"]
-            .as_str()
-            .unwrap()
-            .to_string();
-        assert!(
-            text.contains("Réparer le build") && text.contains("claude-code"),
-            "{text}"
-        );
-        {
-            let store = server.store.lock().unwrap();
-            assert_eq!(store.sessions.len(), 1, "one connection, one session");
-            let tools: Vec<&str> = store.sessions[0]
-                .events
-                .iter()
-                .map(|e| e.tool.as_str())
-                .collect();
-            assert_eq!(
-                tools,
-                ["session_note", "search_in_project", "get_session_context"]
-            );
-            assert_eq!(store.sessions[0].title.as_deref(), Some("Réparer le build"));
-        }
-        // Closing the connection ends the session.
-        let mut stream = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
-        write!(stream, "DELETE /mcp HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer secret\r\n{with_session}\r\n").unwrap();
-        let mut reply = String::new();
-        stream.read_to_string(&mut reply).unwrap();
-        assert!(server.store.lock().unwrap().sessions[0].ended.is_some());
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn the_commit_commands_are_offered_as_prompts_and_the_commit_tools_are_listed() {
-        let (_server, port) = running();
-        let (_, body) = post(
-            port,
-            Some("secret"),
-            "",
-            r#"{"jsonrpc":"2.0","id":1,"method":"prompts/list"}"#,
-        );
-        let list: Value = serde_json::from_str(&body).unwrap();
-        let names: Vec<&str> = list["result"]["prompts"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter_map(|p| p["name"].as_str())
-            .collect();
-        assert_eq!(
-            names,
-            ["commit", "commit-all", "commit-by-context", "rework-commit"]
-        );
-        let (_, body) = post(
-            port,
-            Some("secret"),
-            "",
-            r#"{"jsonrpc":"2.0","id":5,"method":"prompts/get","params":{"name":"rework-commit","arguments":{"range":"last 10 commits"}}}"#,
-        );
-        let rework: Value = serde_json::from_str(&body).unwrap();
-        assert!(
-            rework["result"]["messages"][0]["content"]["text"]
-                .as_str()
-                .unwrap()
-                .contains("last 10 commits")
-        );
-        let (_, body) = post(
-            port,
-            Some("secret"),
-            "",
-            r#"{"jsonrpc":"2.0","id":2,"method":"prompts/get","params":{"name":"commit","arguments":{"mode":"context"}}}"#,
-        );
-        let got: Value = serde_json::from_str(&body).unwrap();
-        let text = got["result"]["messages"][0]["content"]["text"]
-            .as_str()
-            .unwrap();
-        assert!(
-            text.contains("“context” mode") && text.contains("Co-authored-by"),
-            "{text}"
-        );
-        let (_, body) = post(
-            port,
-            Some("secret"),
-            "",
-            r#"{"jsonrpc":"2.0","id":3,"method":"prompts/get","params":{"name":"nope"}}"#,
-        );
-        assert_eq!(
-            serde_json::from_str::<Value>(&body).unwrap()["error"]["code"],
-            -32602
-        );
-        let (_, body) = post(
-            port,
-            Some("secret"),
-            "",
-            r#"{"jsonrpc":"2.0","id":4,"method":"tools/list"}"#,
-        );
-        let tools: Value = serde_json::from_str(&body).unwrap();
-        let names: Vec<&str> = tools["result"]["tools"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter_map(|t| t["name"].as_str())
-            .collect();
-        assert!(
-            [
-                "git_commit_plan",
-                "git_diff",
-                "git_commit",
-                "git_rework_plan",
-                "git_show",
-                "git_rework_apply"
-            ]
-            .iter()
-            .all(|n| names.contains(n)),
-            "{names:?}"
-        );
-    }
-}
+#[path = "../../../../test/plugins/builtins/mcp/server/tests.rs"]
+mod tests;

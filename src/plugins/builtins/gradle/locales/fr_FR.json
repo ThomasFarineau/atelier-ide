@@ -1,0 +1,19 @@
+{
+  "gradle.cannot_load_tasks": "Les tâches n'ont pas pu être chargées : {e}",
+  "gradle.command_reload": "Gradle : recharger le projet",
+  "gradle.command_window": "Gradle : fenêtre Gradle",
+  "gradle.default_tasks": "Tâches des plugins du fichier de build. Rechargez pour avoir toutes celles que Gradle connaît.",
+  "gradle.description": "Les projets d'un build Gradle (settings.gradle et ses include) et leurs tâches par groupe, comme dans la fenêtre Gradle d'IntelliJ : tâches des plugins du fichier de build, puis la liste réelle donnée par Gradle au rechargement. Un double-clic lance la tâche avec le wrapper gradlew du build, ou gradle ; mode hors ligne et exécution d'une tâche saisie.",
+  "gradle.execute_task": "Exécuter une tâche Gradle",
+  "gradle.loading": "Chargement des tâches…",
+  "gradle.no_project": "Aucun build Gradle dans ce projet",
+  "gradle.not_found": "Gradle est introuvable : ajoutez un wrapper gradlew au build ou installez Gradle dans le PATH",
+  "gradle.offline": "Mode hors ligne (--offline)",
+  "gradle.open_build_file": "Ouvrir le fichier de build",
+  "gradle.reload": "Recharger tous les projets Gradle",
+  "gradle.run_task": "Exécuter « {task} »",
+  "gradle.show_dependencies": "Afficher les dépendances",
+  "gradle.task_hint": "clean build, :app:run… puis Entrée",
+  "gradle.tasks": "Tâches",
+  "gradle.title": "Gradle"
+}

@@ -63,7 +63,7 @@ impl Agent {
 
 /// The AI a line typed in a terminal starts, if it is one the IDE can connect.
 pub fn detect(line: &str) -> Option<Agent> {
-    let program = line.trim().split_whitespace().next()?;
+    let program = line.split_whitespace().next()?;
     let name = program.rsplit(['/', '\\']).next()?.to_lowercase();
     let name = name
         .trim_end_matches(".exe")
@@ -81,9 +81,10 @@ fn read_json(path: &Path) -> Result<Value, String> {
     match fs::read_to_string(path) {
         Ok(text) if text.trim().is_empty() => Ok(json!({})),
         Ok(text) => serde_json::from_str(&text).map_err(|e| {
-            format!(
-                "{} n'est pas du JSON valide ({e}) : rien n'a été modifié",
-                path.display()
+            trf!(
+                "mcp.not_valid_json_nothing_was",
+                path = path.display(),
+                e = e
             )
         }),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(json!({})),
@@ -104,11 +105,11 @@ fn write_json(path: &Path, value: &Value) -> Result<(), String> {
 fn object<'a>(value: &'a mut Value, key: &str) -> Result<&'a mut Map<String, Value>, String> {
     value
         .as_object_mut()
-        .ok_or("le fichier de configuration n'est pas un objet JSON")?
+        .ok_or(tr!("mcp.configuration_file_not_json_object"))?
         .entry(key)
         .or_insert_with(|| json!({}))
         .as_object_mut()
-        .ok_or_else(|| format!("« {key} » n'est pas un objet JSON"))
+        .ok_or_else(|| trf!("mcp.not_json_object", key = key))
 }
 
 /// Whether the project's configuration for `agent` declares the server (for Codex: at the
@@ -134,9 +135,10 @@ fn connect_codex(config: &Path, url: &str) -> Result<(), String> {
         Err(e) => return Err(format!("{} : {e}", config.display())),
     };
     let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e| {
-        format!(
-            "{} n'est pas du TOML valide ({e}) : rien n'a été modifié",
-            config.display()
+        trf!(
+            "mcp.not_valid_toml_nothing_was",
+            config = config.display(),
+            e = e
         )
     })?;
     let servers = doc.entry("mcp_servers").or_insert_with(|| {
@@ -146,12 +148,12 @@ fn connect_codex(config: &Path, url: &str) -> Result<(), String> {
     });
     let servers = servers
         .as_table_mut()
-        .ok_or("« mcp_servers » n'est pas une table TOML")?;
+        .ok_or(tr!("mcp.mcp_servers_not_toml_table"))?;
     let entry = servers
         .entry(SERVER)
         .or_insert_with(toml_edit::table)
         .as_table_mut()
-        .ok_or("« mcp_servers.atelier » n'est pas une table TOML")?;
+        .ok_or(tr!("mcp.mcp_servers_atelier_not_toml"))?;
     entry["url"] = toml_edit::value(url);
     entry["bearer_token_env_var"] = toml_edit::value(TOKEN_VAR);
     if let Some(parent) = config.parent() {
@@ -166,7 +168,7 @@ fn connect_codex(config: &Path, url: &str) -> Result<(), String> {
 pub fn connect(agent: Agent, root: &Path, url: Option<&str>) -> Result<Vec<PathBuf>, String> {
     let config = agent.config(root);
     if agent == Agent::Codex {
-        let url = url.ok_or("le serveur MCP n'est pas démarré")?;
+        let url = url.ok_or(tr!("mcp.mcp_server_not_started"))?;
         connect_codex(&config, url)?;
         return Ok(vec![config]);
     }
@@ -181,12 +183,12 @@ pub fn connect(agent: Agent, root: &Path, url: Option<&str>) -> Result<Vec<PathB
             let mut settings = read_json(path)?;
             let list = settings
                 .as_object_mut()
-                .ok_or("settings.local.json n'est pas un objet JSON")?
+                .ok_or(tr!("mcp.settings_local_json_not_json"))?
                 .entry("enabledMcpjsonServers")
                 .or_insert_with(|| json!([]));
             let list = list
                 .as_array_mut()
-                .ok_or("« enabledMcpjsonServers » n'est pas une liste")?;
+                .ok_or(tr!("mcp.enabledmcpjsonservers_not_list"))?;
             if !list.iter().any(|s| s == SERVER) {
                 list.push(json!(SERVER));
             }
@@ -203,129 +205,5 @@ pub fn connect(agent: Agent, root: &Path, url: Option<&str>) -> Result<Vec<PathB
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("atelier-mcp-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
-    #[test]
-    fn the_command_lines_of_the_known_ais_are_recognized() {
-        assert_eq!(detect("claude"), Some(Agent::Claude));
-        assert_eq!(detect("  claude --resume  "), Some(Agent::Claude));
-        assert_eq!(
-            detect(r"C:\Users\moi\AppData\Roaming\npm\claude.cmd -p hi"),
-            Some(Agent::Claude)
-        );
-        assert_eq!(detect("gemini"), Some(Agent::Gemini));
-        assert_eq!(detect("codex exec fix"), Some(Agent::Codex));
-        assert_eq!(detect("claudette"), None);
-        assert_eq!(detect("echo claude"), None);
-        assert_eq!(detect(""), None);
-    }
-
-    #[test]
-    fn claude_gets_the_server_in_mcp_json_and_keeps_what_was_there() {
-        let root = scratch("claude");
-        fs::write(
-            root.join(".mcp.json"),
-            r#"{"mcpServers":{"autre":{"command":"x"}}}"#,
-        )
-        .unwrap();
-        assert!(!is_connected(Agent::Claude, &root, None));
-        let written = connect(Agent::Claude, &root, None).unwrap();
-        assert_eq!(written.len(), 2);
-        assert!(is_connected(Agent::Claude, &root, None));
-        let file: Value =
-            serde_json::from_str(&fs::read_to_string(root.join(".mcp.json")).unwrap()).unwrap();
-        assert_eq!(file["mcpServers"]["autre"]["command"], "x");
-        assert_eq!(
-            file["mcpServers"][SERVER]["url"], "${ATELIER_MCP_URL}",
-            "no address or secret in the file"
-        );
-        assert_eq!(
-            file["mcpServers"][SERVER]["headers"]["Authorization"],
-            "Bearer ${ATELIER_MCP_TOKEN}"
-        );
-        let settings: Value = serde_json::from_str(
-            &fs::read_to_string(root.join(".claude/settings.local.json")).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(settings["enabledMcpjsonServers"], json!([SERVER]));
-        // Twice changes nothing more.
-        connect(Agent::Claude, &root, None).unwrap();
-        let settings: Value = serde_json::from_str(
-            &fs::read_to_string(root.join(".claude/settings.local.json")).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(settings["enabledMcpjsonServers"], json!([SERVER]));
-        let _ = fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn codex_gets_a_toml_entry_with_the_current_address_and_keeps_the_rest() {
-        let root = scratch("codex");
-        fs::create_dir_all(root.join(".codex")).unwrap();
-        fs::write(
-            root.join(".codex/config.toml"),
-            "# mon réglage\nmodel = \"o3\"\n\n[mcp_servers.autre]\ncommand = \"npx\"\n",
-        )
-        .unwrap();
-        let first = "http://127.0.0.1:4000/mcp";
-        assert!(!is_connected(Agent::Codex, &root, Some(first)));
-        connect(Agent::Codex, &root, Some(first)).unwrap();
-        assert!(is_connected(Agent::Codex, &root, Some(first)));
-        let text = fs::read_to_string(root.join(".codex/config.toml")).unwrap();
-        assert!(
-            text.contains("# mon réglage")
-                && text.contains("model = \"o3\"")
-                && text.contains("command = \"npx\""),
-            "{text}"
-        );
-        assert!(
-            text.contains("bearer_token_env_var = \"ATELIER_MCP_TOKEN\""),
-            "the secret is not written: {text}"
-        );
-        // The port changed: the entry is stale until it is written again.
-        let second = "http://127.0.0.1:5000/mcp";
-        assert!(!is_connected(Agent::Codex, &root, Some(second)));
-        connect(Agent::Codex, &root, Some(second)).unwrap();
-        assert!(is_connected(Agent::Codex, &root, Some(second)));
-        assert_eq!(
-            fs::read_to_string(root.join(".codex/config.toml"))
-                .unwrap()
-                .matches("[mcp_servers.atelier]")
-                .count(),
-            1
-        );
-        assert!(
-            connect(Agent::Codex, &root, None).is_err(),
-            "no server, no address"
-        );
-        let _ = fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn gemini_gets_its_own_settings_file_and_a_broken_file_is_left_alone() {
-        let root = scratch("gemini");
-        connect(Agent::Gemini, &root, None).unwrap();
-        let file: Value =
-            serde_json::from_str(&fs::read_to_string(root.join(".gemini/settings.json")).unwrap())
-                .unwrap();
-        assert_eq!(file["mcpServers"][SERVER]["httpUrl"], "${ATELIER_MCP_URL}");
-        let broken = scratch("broken");
-        fs::write(broken.join(".mcp.json"), "{ pas du json").unwrap();
-        assert!(connect(Agent::Claude, &broken, None).is_err());
-        assert_eq!(
-            fs::read_to_string(broken.join(".mcp.json")).unwrap(),
-            "{ pas du json",
-            "untouched"
-        );
-        let _ = fs::remove_dir_all(&root);
-        let _ = fs::remove_dir_all(&broken);
-    }
-}
+#[path = "../../../../test/plugins/builtins/mcp/agents/tests.rs"]
+mod tests;

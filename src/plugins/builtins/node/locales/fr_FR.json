@@ -1,0 +1,20 @@
+{
+  "node.command_install": "Node.js : installer les dépendances",
+  "node.command_scripts": "Node.js : scripts npm",
+  "node.description": "Les package.json du projet et leurs scripts, avec leur gestionnaire de paquets (npm, pnpm, Yarn ou Bun, d'après le champ packageManager ou le fichier de verrouillage) : exécuter un script, installer ou mettre à jour les dépendances, voir les paquets obsolètes.",
+  "node.install_dependencies": "Installer les dépendances",
+  "node.jump_to_source": "Aller à la source",
+  "node.modules_missing": "Les dépendances de {package} ne sont pas installées : lancez « {manager} install » depuis la fenêtre npm.",
+  "node.no_package": "Aucun package.json dans ce projet",
+  "node.no_scripts": "Pas de scripts",
+  "node.node_not_found": "Node.js introuvable",
+  "node.not_installed": "non installé",
+  "node.open_package_json": "Ouvrir package.json",
+  "node.outdated": "Voir les paquets obsolètes",
+  "node.refresh": "Actualiser",
+  "node.run_script": "Exécuter « {script} »",
+  "node.run_selected": "Exécuter le script sélectionné",
+  "node.scanning": "Recherche des package.json…",
+  "node.title": "npm",
+  "node.update_dependencies": "Mettre à jour les dépendances"
+}

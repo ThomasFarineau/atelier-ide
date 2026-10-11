@@ -93,8 +93,8 @@ fn build(dir: &Path) -> Result<PathBuf> {
         .arg(hot_dir())
         .current_dir(dir)
         .status()
-        .context("Impossible de lancer cargo")?;
-    anyhow::ensure!(status.success(), "la compilation a échoué");
+        .context(tr!("cannot_start_cargo"))?;
+    anyhow::ensure!(status.success(), "{}", tr!("build_failed"));
     let name = format!("atelier-ide{}", std::env::consts::EXE_SUFFIX);
     Ok(hot_dir().join("debug").join(name))
 }
@@ -112,8 +112,8 @@ fn spawn(exe: &Path, args: &[OsString], session: &Path) -> Result<Running> {
         .env(SESSION_ENV, session)
         .stdin(Stdio::piped())
         .spawn()
-        .with_context(|| format!("Impossible de lancer {}", exe.display()))?;
-    let stdin = child.stdin.take().context("stdin du processus enfant")?;
+        .with_context(|| trf!("cannot_start_3", exe = exe.display()))?;
+    let stdin = child.stdin.take().context(tr!("stdin_child_process"))?;
     Ok(Running {
         child,
         stdin,
@@ -132,7 +132,7 @@ fn stop(mut running: Running) {
         thread::sleep(Duration::from_millis(50));
     }
     if !matches!(running.child.try_wait(), Ok(Some(_))) {
-        eprintln!("[dev] l'IDE ne répond pas, arrêt forcé");
+        eprintln!("[dev] {}", tr!("ide_does_not_answer_forced"));
         let _ = running.child.kill();
         let _ = running.child.wait();
     }
@@ -154,8 +154,8 @@ pub fn supervise() -> Result<()> {
     let args: Vec<OsString> = std::env::args_os().skip(1).filter(|a| a != FLAG).collect();
 
     println!(
-        "[dev] hot reload actif · surveillance de {}",
-        dir.join("src").display()
+        "[dev] {}",
+        trf!("hot_reload_watching", dir = dir.join("src").display())
     );
     // The first child is the binary cargo just built: no extra build at startup.
     let mut running = spawn(&std::env::current_exe()?, &args, &session)?;
@@ -164,7 +164,7 @@ pub fn supervise() -> Result<()> {
     loop {
         thread::sleep(Duration::from_millis(300));
         if let Some(status) = running.child.try_wait()? {
-            println!("[dev] IDE fermé ({status}), fin du mode dev");
+            println!("[dev] {}", trf!("ide_closed_end_dev_mode", status = status));
             return Ok(());
         }
         let now = snapshot(&dir);
@@ -174,12 +174,15 @@ pub fn supervise() -> Result<()> {
         // Let editors finish writing (format on save, several files saved at once).
         thread::sleep(Duration::from_millis(250));
         seen = snapshot(&dir);
-        println!("[dev] modification détectée, compilation…");
+        println!("[dev] {}", tr!("change_detected_building"));
         let started = Instant::now();
         let built = match build(&dir) {
             Ok(exe) => exe,
             Err(e) => {
-                eprintln!("[dev] {e:#} · l'IDE actuel continue de tourner");
+                eprintln!(
+                    "[dev] {}",
+                    trf!("current_ide_keeps_running", e = format!("{:#}", e))
+                );
                 continue;
             }
         };
@@ -189,14 +192,21 @@ pub fn supervise() -> Result<()> {
             std::env::consts::EXE_SUFFIX
         ));
         if let Err(e) = fs::copy(&built, &copy) {
-            eprintln!("[dev] copie de {} impossible : {e}", built.display());
+            eprintln!(
+                "[dev] {}",
+                trf!("cannot_copy", built = built.display(), e = e)
+            );
             continue;
         }
         stop(running);
         running = spawn(&copy, &args, &session)?;
         println!(
-            "[dev] rechargé en {:.1} s (génération {generation})",
-            started.elapsed().as_secs_f32()
+            "[dev] {}",
+            trf!(
+                "reloaded_s_generation",
+                started = format!("{:.1}", started.elapsed().as_secs_f32()),
+                generation = generation
+            )
         );
     }
 }

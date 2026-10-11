@@ -21,6 +21,7 @@ L'exécutable Windows est `target/release/atelier-ide.exe`.
 ## Fonctionnalités
 
 - Interface IntelliJ : vraies icônes « New UI » d'IntelliJ, polices Inter et JetBrains Mono, menu principal (☰), thèmes Islands Dark, Dark et Islands Light, couleurs de coloration syntaxique des schémas IntelliJ Dark/Light.
+- Page **Projets** (Fichier › Tous les projets…, widget de projet ou Rechercher partout), comme l'écran d'accueil d'IntelliJ : les 50 derniers projets avec leur date d'ouverture, une recherche, et pour chacun ouvrir ici ou dans une nouvelle fenêtre, afficher dans l'explorateur, copier le chemin ou retirer de la liste ; un dossier disparu est grisé.
 - Plusieurs projets en même temps : chaque projet s'ouvre dans sa propre fenêtre, comme IntelliJ sous Windows. L'ouverture d'un projet demande « Cette fenêtre » ou « Nouvelle fenêtre ». Le widget de projet liste les projets récents ; un clic droit ouvre directement dans une nouvelle fenêtre.
 - Rechercher partout (Double Maj ou Ctrl+P, Ctrl+Maj+N pour les fichiers) : fichiers du projet, onglets ouverts, actions de l'IDE et des plugins, au clavier.
 - Notifications en balloons (erreurs, opérations Git) et fenêtre d'outils Notifications sur le rail droit.
@@ -28,16 +29,26 @@ L'exécutable Windows est `target/release/atelier-ide.exe`.
 - Éditeur UTF-8 avec onglets, coloration syntaxique, numéros de ligne, undo/redo, recherche exacte, sélection du résultat suivant et indicateur des modifications.
 - HTML, CSS, JavaScript, TypeScript, Java, Python et Rust. La coloration TypeScript utilise la grammaire JavaScript pour ce MVP.
 - Ouvrir, enregistrer, enregistrer sous et enregistrer tous les fichiers modifiés. Confirmation avant fermeture d'un onglet modifié, changement de projet ou sortie. Une modification externe sur disque bloque l'enregistrement ordinaire pour éviter de l'écraser.
-- Paramètres (Ctrl+Alt+S) : apparence, éditeur, raccourcis et plugins. Thème, taille de police, projets récents et activation des plugins sont persistants via le stockage natif eframe.
-- Terminal interactif PowerShell sous Windows, `/bin/sh` sous Linux/macOS, via PTY et analyse VT100. Le shell conserve son état (`cd`, variables, processus). Sortie affichée sans couleurs ANSI ; les séquences de positionnement sont interprétées. Zone de saisie pour les commandes ou mode clavier direct pour les programmes interactifs, les flèches et Ctrl+C. Échap rend le clavier à l'IDE.
+- Paramètres (Ctrl+Alt+S), comme ceux d'IntelliJ : arbre des pages avec recherche (Apparence et comportement, Raccourcis clavier, Éditeur, Plugins, Langages et frameworks, Build, exécution, déploiement), fil d'Ariane, boutons OK, Annuler et Appliquer. Les pages modifient un brouillon : rien ne change avant Appliquer ou OK, Annuler l'oublie, et « Réinitialiser » rétablit une page. Langue, thème, taille de police, projets récents et activation des plugins sont enregistrés dans `settings.json` du dossier de données d'Atelier : `%LOCALAPPDATA%\Atelier` sous Windows, `~/Library/Application Support/Atelier` sous macOS, `$XDG_DATA_HOME/Atelier` (par défaut `~/.local/share/Atelier`) sous Linux. Au premier lancement, les réglages de l'ancien stockage d'eframe y sont repris.
+- Terminal interactif PowerShell sous Windows, `/bin/sh` sous Linux/macOS, via PTY et analyse VT100. Le shell conserve son état (`cd`, variables, processus). Sortie affichée sans couleurs ANSI ; les séquences de positionnement sont interprétées. Zone de saisie pour les commandes ou mode clavier direct pour les programmes interactifs, les flèches et Ctrl+C. Échap rend le clavier à l'IDE. Les adresses (`https://…`) et les chemins du projet avec ligne et colonne (`src/main.rs:12:5`, erreurs de compilation, piles d'appels) sont des liens : soulignés au survol, ils s'ouvrent d'un clic dans le navigateur ou dans l'éditeur, à la bonne ligne.
 - Plugins intégrés, compilés dans l'IDE et actifs dans tous les projets, et plugins externes à commandes, activés séparément pour chaque projet. Aucun plugin externe n'est exécuté au chargement.
 - Intégration Git complète via le plugin intégré Git (voir ci-dessous).
 - Plugin intégré Markdown : pour les fichiers `.md`, trois modes en haut à droite de l'éditeur, comme IntelliJ : éditeur seul, éditeur et aperçu côte à côte (par défaut, défilement synchronisé, séparation redimensionnable), aperçu seul. L'aperçu affiche titres, listes, tableaux, blocs de code colorés, images relatives au fichier et liens ; les cases des listes de tâches se cochent depuis l'aperçu. Les modes sont aussi dans Rechercher partout (« Markdown : … »).
 - Glisser-déposer : un fichier s'ouvre dans un onglet, un dossier propose de l'ouvrir comme projet.
 
+## Langues
+
+L'interface existe en français (`fr_FR`) et en anglais (`en_US`). Au premier lancement, l'IDE prend la langue du système (l'anglais si elle n'est pas disponible) ; elle se change dans Paramètres › Apparence › Langue, sans redémarrer.
+
+Les textes sont dans des fichiers `locales/<identifiant>.json` : celui de la racine pour l'IDE, et le dossier `locales` de chaque plugin ou langage pour les siens (`src/plugins/builtins/git/locales/fr_FR.json`), avec des clés préfixées par son nom (`git.push`). `build.rs` les intègre à l'exécutable. Dans le code, un texte s'écrit par sa clé : `tr!("save")`, ou `trf!("files_count", count = n)` pour un texte avec des valeurs (`"{count} fichiers"`). Une langue s'ajoute avec ses fichiers `<identifiant>.json`, dont la clé `language` donne le nom affiché ; les tests vérifient que chaque langue a toutes les clés, avec les mêmes valeurs, et que le code n'utilise que des clés connues.
+
 ## Exécution
 
-F5 enregistre le fichier actif si nécessaire puis envoie une commande au shell du projet. Les outils doivent être installés et accessibles dans le `PATH`.
+Maj+F10 (ou F5) enregistre le fichier actif si nécessaire puis envoie une commande au shell du projet. Les outils doivent être installés et accessibles dans le `PATH`.
+
+Le widget d'exécution de la barre de titre choisit ce que Maj+F10 lance, comme dans IntelliJ : le **fichier actif** (tableau ci-dessous) ou une **configuration d'exécution**. Une configuration est un nom, une commande tapée telle quelle dans le terminal et un dossier de travail relatif au projet ; elle tourne dans un onglet de terminal à son nom, que l'exécution suivante reprend, et Ctrl+F2 (ou le bouton stop) l'arrête. « Modifier les configurations… » ouvre la liste : on y ajoute une commande shell ou une configuration proposée par le projet (`cargo run/test/build/clippy`, les scripts de `package.json` avec le gestionnaire de son fichier de verrou, `mvn package/test/clean install`, `gradle build/test/run`, avec `mvnw` / `gradlew` s'ils sont là), on la copie, la renomme ou la supprime. Elles sont enregistrées dans `.atelier/run.json`, à partager avec le projet.
+
+Ce que lancent les fenêtres Node.js, Maven et Gradle devient une configuration **temporaire** (en italique dans le widget, les 5 dernières) : relancée par Maj+F10, elle s'enregistre d'un clic (« Enregistrer la configuration »).
 
 | Langage | Action |
 | --- | --- |
@@ -81,6 +92,60 @@ L'éditeur offre complétion, infobulles et soulignement des erreurs pour JavaSc
 - **Problèmes (Alt+6)** : la fenêtre liste les erreurs et avertissements des documents ouverts, groupés par fichier, avec filtres et accès direct à la ligne ; un clic sur le compteur de la barre d'état l'ouvre. Des marques colorées, le long du bord droit de l'éditeur, montrent où sont les problèmes du fichier et y mènent d'un clic.
 - **Serveur de langage** : l'analyse locale (tree-sitter) fonctionne dès l'ouverture d'un fichier. Si `typescript-language-server` est disponible (dans `node_modules/.bin` du projet, dans `~/.atelier/lsp` ou dans le PATH), il répond à sa place avec la précision de TypeScript, y compris pour les fichiers `.ts` et `.tsx`, et l'analyse locale reste le repli. La commande « JavaScript : installer le serveur de langage » de la palette l'installe dans `~/.atelier/lsp` (Node.js requis) sans toucher à l'installation globale ; la barre d'état indique le moteur actif (`tsserver` ou `JS : analyse locale`). Les projets WSL utilisent l'analyse locale.
 
+## Reformater le code
+
+Comme dans IntelliJ, **Ctrl+Alt+L** (menu Code › Reformater le code) reformate le fichier actif, ou seulement les lignes sélectionnées. **Ctrl+Alt+Maj+L** ouvre la fenêtre « Reformater le fichier » : tout le fichier, le texte sélectionné ou seulement le texte modifié depuis le dernier commit (d'après les marques de Git), avec l'option « Optimiser les imports ». **Ctrl+Alt+O** optimise seulement les imports. La barre d'état dit combien de lignes ont changé, ou que le code est déjà bien formaté.
+
+- **Rust** : rustfmt, par rust-analyzer quand il tourne, sinon directement, avec l'édition de la crate et le `rustfmt.toml` du projet. Les fins de ligne du fichier sont gardées.
+- **JavaScript et TypeScript** : le formateur de tsserver (serveur de langage), avec l'indentation du fichier ; l'optimisation des imports trie les imports et retire ceux qui ne servent pas.
+- **JSON** : formaté par l'IDE, avec l'indentation du fichier et l'ordre des clés.
+
+Le texte reformaté arrive par petites modifications : le curseur reste sur le même code et un seul Ctrl+Z annule tout.
+
+## Node.js (npm, pnpm, Yarn, Bun)
+
+Le plugin intégré Node.js ajoute la fenêtre **npm** sur le rail de droite, comme IntelliJ, seulement dans un projet qui a un `package.json` : tous les `package.json` du projet (racine, espaces de travail et sous-dossiers, sans `node_modules`), avec leurs scripts dans l'ordre du fichier. Le gestionnaire de paquets de chaque `package.json` est celui de son champ `packageManager`, sinon celui du fichier de verrouillage du dossier ou d'un dossier parent (`bun.lock(b)`, `pnpm-lock.yaml`, `yarn.lock`, `package-lock.json`), sinon npm.
+
+- Double-clic (ou ▶) sur un script : il s'exécute dans un nouveau terminal, depuis le dossier de son `package.json` (`pnpm run build`…). Sous Windows, les lanceurs `.cmd` sont utilisés pour que la politique d'exécution de PowerShell ne bloque rien.
+- Menu contextuel d'un `package.json` : installer ou mettre à jour les dépendances, voir les paquets obsolètes, ouvrir le fichier ; d'un script : l'exécuter ou aller à sa ligne.
+- Des dépendances déclarées mais pas installées sont signalées une fois par une notification.
+- Rechercher partout : « Node.js : installer les dépendances », « Node.js : scripts npm ».
+
+## Maven et Gradle
+
+Les plugins intégrés **Maven** et **Gradle** ajoutent leurs fenêtres sur le rail de droite, comme IntelliJ, seulement dans un projet qui a un `pom.xml` (Maven) ou un `settings.gradle` / `build.gradle` (Gradle) ; ailleurs, ni leur fenêtre ni leurs commandes n'apparaissent.
+
+- **Maven** : tous les `pom.xml` du projet (racine et modules, sans `target`), avec pour chacun le **cycle de vie** (`clean` à `deploy`), les **plugins** et leurs goals (ceux du `pom.xml` et ceux de tout projet), les **profils** à cocher et les **dépendances** déclarées. Un double-clic lance la phase ou le goal dans un nouveau terminal avec le wrapper `mvnw` du projet, sinon `mvn`, et `-f` vers le bon `pom.xml`. La barre d'outils recharge les projets, lance un goal saisi (`clean install`, `dependency:tree`…) et bascule les modes hors ligne (`-o`) et sans tests (`-DskipTests`).
+- **Gradle** : les projets du build (`settings.gradle(.kts)`, `rootProject.name` et `include`) et leurs **tâches par groupe**. Avant tout appel à Gradle, la fenêtre montre les tâches des plugins du fichier de build (`java`, `application`, Spring Boot, Kotlin…) ; **Recharger** demande ensuite à Gradle la liste réelle (`tasks --all`), en arrière-plan. Un double-clic lance la tâche avec `gradlew`, sinon `gradle` (`:app:build` pour un sous-projet), avec le mode hors ligne si coché ; le menu d'un projet affiche ses dépendances ou ouvre son fichier de build.
+
+## Traductions (i18n)
+
+Le plugin intégré **Traductions** gère les fichiers de traduction d'un projet à partir d'une **source** (la langue de référence), enregistrée dans `.atelier/i18n.json`. La source peut être :
+
+- **un fichier** ; les autres langues sont trouvées à côté de lui :
+  - `locales/fr.json`, `locales/en_US.json` : un fichier par langue dans un dossier ;
+  - `locales/fr/common.json`, `locales/en/common.json` : un dossier par langue ;
+  - `messages.properties`, `messages_fr.properties` : bundles Java (le fichier sans suffixe est la langue par défaut) ;
+- **le dossier d'une langue** (`locales/fr`) : chaque fichier dedans, sous-dossiers compris, est un espace de noms et ses clés s'écrivent `espace:clé` (`common:menu.open`, `auth/login:title`), comme avec i18next. Les autres langues sont les dossiers voisins ; un espace de noms qu'une langue n'a pas encore est créé à la première valeur écrite ;
+- **une expression régulière** sur les chemins des fichiers du projet (relatifs, avec `/`), avec un groupe `(?<lang>…)` pour la langue et, facultatif, `(?<ns>…)` pour l'espace de noms : `src/i18n/messages\.(?<lang>\w+)\.json`, `app/(?<ns>\w+)/lang/(?<lang>[a-z]{2})\.json`. On y précise la langue de référence (par défaut l'anglais s'il est là, sinon la première). Sans `ns`, une langue qui a plusieurs fichiers les distingue par leur chemin.
+
+Les JSON peuvent être plats (`"menu.open"`) ou imbriqués (`{"menu": {"open": …}}`). La fenêtre **Traductions** (en bas) propose d'abord comme source les fichiers et dossiers de langue qui ressemblent à des traductions, le fichier actif, ou une expression régulière. Elle montre ensuite toutes les clés dans toutes les langues : manquantes en rouge, vides ou avec d'autres variables que la source (`{name}`, `{{count}}`, `%s`, `${x}`) en orange, identiques à la source en gris, avec le pourcentage traduit de chaque langue. Un clic sur une cellule la modifie et l'écrit dans son fichier (à sa place, avec l'indentation du fichier) ; on y ajoute une langue (fichier créé avec toutes les clés de la source) ou une clé (dans toutes les langues), et le menu d'une clé l'ouvre dans la source ou la supprime partout. Le tableau suit les fichiers modifiés hors de l'IDE.
+
+L'outil MCP **`i18n`** donne la même chose aux IA : `action` vaut `languages` (les langues), `check` (toutes les langues comparées à la source), `check_language` (une langue en détail, avec `language`) ou `add_language` (crée une langue, valeurs vides ou, avec `fill: "source"`, le texte de la source). Les résultats listent les clés manquantes, en trop, vides, aux variables différentes et identiques à la source. `source` choisit un fichier ou un dossier source, `pattern` (avec `source_language`) une expression régulière.
+
+## Intelligence du code (Rust)
+
+Les fichiers `.rs` ont leur propre support (`src/languages/rust/`), sur le même modèle que JavaScript : une analyse locale avec tree-sitter dès l'ouverture, puis `rust-analyzer` quand il est installé.
+
+- **Sans serveur** : erreurs de syntaxe, structure du fichier (Ctrl+F12 : fonctions, structs et leurs champs, enums et leurs variantes, traits, blocs `impl`, modules, constantes, macros), occurrences du nom sous le curseur, Ctrl+clic vers la déclaration dans le fichier (variables locales, paramètres, éléments), complétion des noms du fichier, du prélude, des mots clés et de modèles (`fn`, `test`, `tmod`, `impl`, `match`, `println`…).
+- **Avec `rust-analyzer`** : complétion des membres après `.` et `::`, infobulles avec types et documentation, erreurs du compilateur et `cargo check` à l'enregistrement, navigation dans tout le projet et ses dépendances (déclaration, type, implémentations, utilisations), renommage (Maj+F6) et actions rapides (Alt+Entrée). Atelier utilise le `rust-analyzer` de rustup (`rustup component add rust-analyzer`, aussi depuis Rechercher partout : « Rust : installer le serveur de langage ») ou celui du PATH. Un projet dont la racine n'a pas de `Cargo.toml` voit ses crates des sous-dossiers déclarées au serveur.
+
+## Intelligence du code (Java)
+
+Les fichiers `.java` ont le même modèle (`src/languages/java/`) : analyse locale avec tree-sitter dès l'ouverture (erreurs de syntaxe, structure du fichier avec classes, interfaces, enums, records, méthodes, constructeurs et champs, occurrences, déclaration dans le fichier, complétion des noms, des mots clés, des types courants et des modèles d'IntelliJ `psvm`, `sout`, `fori`, `iter`, `ifn`, `try`, `test`…), puis **jdtls** (Eclipse JDT Language Server) pour tout le reste : complétion des membres, infobulles, erreurs du compilateur, navigation dans le projet et ses dépendances Maven ou Gradle, renommage, actions rapides, Reformater le code et Optimiser les imports.
+
+jdtls s'installe depuis Rechercher partout (« Java : installer le serveur de langage ») dans `~/.atelier/lsp/jdtls`, et démarre avec un Java 21 ou plus récent (`JAVA_HOME`, sinon le PATH) ; un `jdtls` du PATH convient aussi. Chaque projet a son dossier de travail jdtls dans `~/.atelier/lsp/jdtls-data`.
+
 ## Plugins
 
 Les plugins intégrés (Git, Markdown) font partie de l'exécutable et peuvent étendre l'interface : fenêtres d'outils, barre de titre, gouttière de l'éditeur, couleurs de l'arborescence, raccourcis et palette (trait `BuiltinPlugin` dans `src/builtin.rs`). Ils sont activés par défaut pour tous les projets.
@@ -107,17 +172,25 @@ Les arguments sont transmis comme des valeurs littérales, avec l'échappement d
 | Raccourci | Action |
 | --- | --- |
 | Ctrl+O | Ouvrir un fichier |
-| Ctrl+N | Nouveau document |
+| Ctrl+N | Aller au symbole (classes, fonctions et types du projet) |
+| Alt+Inser | Nouveau document |
 | Ctrl+S | Enregistrer |
 | Ctrl+Shift+S | Enregistrer sous |
-| Ctrl+W | Fermer l'onglet |
+| Ctrl+F4 | Fermer l'onglet |
+| Ctrl+W / Ctrl+Maj+W | Étendre / réduire la sélection (mot, chaîne, contenu des parenthèses, parenthèses, ligne, fichier) |
+| Ctrl+Maj+J | Joindre les lignes |
+| F2 / Maj+F2 | Problème suivant / précédent du fichier (les erreurs d'abord) |
+| Ctrl+Maj+U | Basculer majuscules / minuscules |
+| Alt+Maj+Haut / Bas (ou Ctrl+Maj) | Déplacer la ligne ou les lignes sélectionnées |
+| Ctrl+D / Ctrl+Y | Dupliquer / supprimer la ligne (Ctrl+Y rétablit juste après une annulation) |
 | Ctrl+F | Rechercher dans le fichier |
 | Double Maj / Ctrl+P | Rechercher partout |
 | Ctrl+Shift+N | Aller au fichier |
 | Ctrl+Alt+S | Paramètres |
 | Alt+1 | Fenêtre Projet |
-| Ctrl+` | Afficher/masquer le terminal |
-| F5 | Exécuter |
+| Alt+F12 / Ctrl+` | Afficher/masquer le terminal |
+| Maj+F10 / F5 | Exécuter |
+| Ctrl+F2 | Arrêter (Ctrl+C dans le terminal actif) |
 | Ctrl+Espace | Complétion du code |
 | Alt+Entrée | Actions rapides (importer…) |
 | Ctrl+F12 | Structure du fichier |
@@ -158,7 +231,8 @@ Le processus lancé surveille `src/`, `Cargo.toml` et `Cargo.lock`. À chaque mo
 - `src/app.rs` : coquille de l'IDE (barre de titre, rails, fenêtres d'outils, onglets, éditeur, barre d'état, dialogues), raccourcis et cycle de vie des documents.
 - `src/ui.rs` : look and feel IntelliJ partagé avec les plugins (thèmes, polices, icônes, widgets).
 - `src/highlight.rs` : coloration syntaxique aux couleurs d'IntelliJ.
-- `src/languages/` : intelligence du code — `mod.rs` (types, `Provider`, `Service`), `lsp/` (client du Language Server Protocol) et `javascript/` (analyse tree-sitter, complétion, infobulles, tables des API de JavaScript et Node.js, serveur TypeScript).
+- `src/languages/` : intelligence du code — `mod.rs` (types, `Provider`, `Service`), `lsp/` (client du Language Server Protocol, conversion des réponses et `provider.rs`, le fournisseur générique d'un langage à serveur), `javascript/` (analyse tree-sitter, complétion, infobulles, tables des API de JavaScript et Node.js, serveur TypeScript), `rust/` (tree-sitter, rust-analyzer, rustfmt), `java/` (tree-sitter, jdtls), `format.rs` (Reformater le code) et `syntax.rs` (erreurs de syntaxe des grammaires).
+- `src/i18n.rs` et les dossiers `locales/` : langues de l'interface (voir « Langues »).
 - `src/editor/assist.rs` : popup de complétion, soulignement des erreurs et infobulle de l'éditeur.
 - `src/project.rs` : documents, détection des langages, accès aux fichiers.
 - `src/terminal.rs` : pseudo-terminal, shell et écran VT100.
@@ -231,6 +305,15 @@ l'interface, la fenêtre ne se fige pas). Un autre client MCP peut s'y connecter
 Chaque connexion d'une IA au serveur MCP est une **session du projet**, enregistrée dans `.atelier/sessions/` (le
 dossier est ignoré par git : `.atelier/.gitignore`). La fenêtre **Sessions IA** (Alt+7) les liste, avec l'IA, l'heure,
 les appels faits à l'IDE et les notes laissées.
+
+Son onglet **IA installées** montre l'état de Claude Code, Codex et Gemini CLI : installée ou non (programme trouvé dans le
+PATH, sa version, un bouton qui lance son installation par npm sinon), connectée ou non au serveur MCP de l'IDE pour ce
+projet (bouton pour la connecter), et son usage lu dans les fichiers qu'elle garde sur l'ordinateur (`~/.claude/projects`,
+`~/.codex/sessions`, `~/.gemini/tmp`) : tokens sur 24 heures, 7 et 30 jours (détail entrée / cache / sortie au survol),
+la part de ce projet, les sessions et réponses, les modèles utilisés, la dernière utilisation, les sessions et appels
+passés par Atelier et, pour Codex, les limites d'usage de l'abonnement (fenêtre de 5 h et semaine, avec leur
+réinitialisation). Rien n'est demandé aux serveurs des IA : seul l'usage de cet ordinateur est compté. Les fichiers ne
+sont relus que s'ils ont changé, en arrière-plan, au plus une fois par minute tant que l'onglet est affiché.
 
 Le protocole ne montre pas la conversation, seulement les appels d'outils. Le contexte est donc tenu par l'IDE : l'IA
 est invitée (instructions du serveur) à noter l'objectif, les décisions, les tâches restantes et l'avancement avec

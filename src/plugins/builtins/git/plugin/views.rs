@@ -2,6 +2,7 @@
 //! popup, the diff viewer, the merge conflict resolver and the dialogs.
 
 use super::*;
+use crate::i18n::Text;
 use crate::plugins::builtins::git::conflict::Choice;
 use crate::plugins::builtins::git::diff::RowKind;
 use crate::plugins::builtins::git::graph::Edge;
@@ -25,10 +26,11 @@ const LANES: [Color32; 8] = [
 ];
 /// Horizontal distance between two lanes of the graph.
 const LANE_W: f32 = 14.0;
-const GROUPS: [(&str, Kind); 3] = [
-    ("Conflits de fusion", Kind::Conflicted),
-    ("Modifications", Kind::Modified),
-    ("Fichiers non versionnés", Kind::Untracked),
+/// Groups of the changes. The key of the title is also the key of the group, whatever the language.
+const GROUPS: [(Text, Kind); 3] = [
+    (Text("git.merge_conflicts"), Kind::Conflicted),
+    (Text("git.changes"), Kind::Modified),
+    (Text("git.unversioned_files"), Kind::Untracked),
 ];
 
 // ---- Small drawing helpers ---------------------------------------------------------------
@@ -322,7 +324,7 @@ fn paint_change(ui: &Ui, rect: Rect, x: f32, change: &Change, t: &Theme) {
 
 fn change_tooltip(change: &Change) -> String {
     match &change.orig {
-        Some(orig) => format!("{orig}, renommé en {}", change.path),
+        Some(orig) => trf!("git.renamed", orig = orig, path = change.path),
         None => change.path.clone(),
     }
 }
@@ -427,7 +429,7 @@ impl GitPlugin {
         let head = &self.snap.head;
         match (&head.branch, &head.oid) {
             (Some(branch), _) => branch.clone(),
-            (None, Some(oid)) => format!("HEAD détaché {}", short(oid)),
+            (None, Some(oid)) => trf!("git.detached_head", oid = short(oid)),
             (None, None) => "Git".into(),
         }
     }
@@ -435,10 +437,10 @@ impl GitPlugin {
     fn state_label(&self) -> Option<&'static str> {
         match self.snap.state {
             State::Clean => None,
-            State::Merging => Some("Fusion en cours"),
-            State::Rebasing => Some("Rebase en cours"),
-            State::CherryPicking => Some("Cherry-pick en cours"),
-            State::Reverting => Some("Revert en cours"),
+            State::Merging => Some(tr!("git.merging")),
+            State::Rebasing => Some(tr!("git.rebasing")),
+            State::CherryPicking => Some(tr!("git.cherry_picking")),
+            State::Reverting => Some(tr!("git.reverting")),
         }
     }
 
@@ -462,7 +464,7 @@ impl GitPlugin {
     pub(super) fn branch_widget(&mut self, ui: &mut Ui, _host: &mut dyn Host) {
         if self.repo.is_none() {
             if self.project.is_some() {
-                let r = kit::icon_text_button(ui, Some("git"), "Contrôle de version", true);
+                let r = kit::icon_text_button(ui, Some("git"), tr!("git.version_control"), true);
                 if r.clicked() {
                     self.toggle_branch_popup(
                         ui.ctx(),
@@ -474,8 +476,8 @@ impl GitPlugin {
             return;
         }
         let label = self.head_label();
-        let r =
-            kit::icon_text_button(ui, Some("branch"), &label, true).on_hover_text("Branches Git");
+        let r = kit::icon_text_button(ui, Some("branch"), &label, true)
+            .on_hover_text(tr!("git.git_branches"));
         let (ahead, behind) = (self.snap.head.ahead, self.snap.head.behind);
         let mut clicked = r.clicked();
         let mut anchor = r.rect;
@@ -493,10 +495,10 @@ impl GitPlugin {
                 behind,
             );
             clicked |= sync
-                .on_hover_text(format!(
-                    "{} à pousser, {} à récupérer",
-                    plural(ahead as usize, "commit", "commits"),
-                    plural(behind as usize, "commit", "commits")
+                .on_hover_text(trf!(
+                    "git.push_pull",
+                    ahead = plural(ahead as usize, "commit", "commits"),
+                    behind = plural(behind as usize, "commit", "commits")
                 ))
                 .clicked();
             anchor = anchor.union(rect);
@@ -538,7 +540,10 @@ impl GitPlugin {
                 font,
                 t.text_secondary,
             );
-            if response.on_hover_text("Branche Git courante").clicked() {
+            if response
+                .on_hover_text(tr!("git.current_git_branch"))
+                .clicked()
+            {
                 self.toggle_branch_popup(
                     ui.ctx(),
                     rect.right_top() - vec2(0.0, 4.0),
@@ -581,11 +586,11 @@ impl GitPlugin {
                         ui.set_width(WIDTH);
                         ui.spacing_mut().item_spacing.y = 0.0;
                         if self.repo.is_none() {
-                            if item(ui, Some("add"), "Créer un dépôt Git") {
+                            if item(ui, Some("add"), tr!("git.create_git_repository")) {
                                 self.init(host);
                                 close = true;
                             }
-                            if item(ui, Some("git"), "Cloner un dépôt…") {
+                            if item(ui, Some("git"), tr!("git.clone_repository_dialog")) {
                                 self.run_command("git.clone", host);
                                 close = true;
                             }
@@ -594,7 +599,7 @@ impl GitPlugin {
                         let search = kit::search_field(
                             ui,
                             &mut self.branch_filter,
-                            "Rechercher une branche ou une action",
+                            tr!("git.search_branch_action"),
                             WIDTH,
                         );
                         if pass <= opened + 1 {
@@ -603,18 +608,23 @@ impl GitPlugin {
                         ui.add_space(6.0);
                         let filter = self.branch_filter.trim().to_lowercase();
                         let actions = [
-                            ("update", "Mettre à jour le projet…", "Ctrl+T", "git.update"),
-                            ("commit", "Commit…", "Ctrl+K", "git.commit"),
-                            ("push", "Pousser…", "Ctrl+Shift+K", "git.push"),
-                            ("fetch", "Récupérer (fetch)", "", "git.fetch"),
-                            ("add", "Nouvelle branche…", "", "git.branch"),
+                            (
+                                "update",
+                                tr!("git.update_project_dialog"),
+                                "Ctrl+T",
+                                "git.update",
+                            ),
+                            ("commit", tr!("git.commit_dialog"), "Ctrl+K", "git.commit"),
+                            ("push", tr!("git.push_dialog"), "Ctrl+Shift+K", "git.push"),
+                            ("fetch", tr!("git.fetch"), "", "git.fetch"),
+                            ("add", tr!("git.new_branch_dialog"), "", "git.branch"),
                             (
                                 "tag",
-                                "Checkout d'un tag ou d'une révision…",
+                                tr!("git.checkout_tag_revision_dialog"),
                                 "",
                                 "git.checkout",
                             ),
-                            ("settings", "Gérer les remotes…", "", "git.remotes"),
+                            ("settings", tr!("git.manage_remotes"), "", "git.remotes"),
                         ];
                         let mut run = None;
                         for (icon, label, keys, command) in actions {
@@ -644,7 +654,9 @@ impl GitPlugin {
                                     .branch_sub
                                     .as_ref()
                                     .map(|(b, _)| (b.name.clone(), b.remote));
-                                for (title, remote) in [("Locales", false), ("Distantes", true)] {
+                                for (title, remote) in
+                                    [(Text("git.local"), false), (Text("git.remote"), true)]
+                                {
                                     let list: Vec<Branch> = self
                                         .snap
                                         .branches
@@ -658,7 +670,7 @@ impl GitPlugin {
                                     if list.is_empty() {
                                         continue;
                                     }
-                                    let key = format!("popup:{title}");
+                                    let key = format!("popup:{}", title.0);
                                     let open = !filter.is_empty() || !self.collapsed.contains(&key);
                                     let (rect, r) =
                                         ui.allocate_exact_size(vec2(WIDTH, 26.0), Sense::click());
@@ -671,7 +683,7 @@ impl GitPlugin {
                                         ui,
                                         rect,
                                         rect.left() + 26.0,
-                                        title,
+                                        title.get(),
                                         t.text_secondary,
                                         kit::semibold(12.0),
                                     );
@@ -808,11 +820,7 @@ impl GitPlugin {
             self.checkout(Target::Branch(name.clone()), host);
             done = true;
         }
-        if item(
-            ui,
-            Some("add"),
-            &format!("Nouvelle branche depuis « {name} »…"),
-        ) {
+        if item(ui, Some("add"), &trf!("git.new_branch_from", name = name)) {
             self.dialog = Some(Dialog::NewBranch {
                 from: Some(name.clone()),
                 name: String::new(),
@@ -821,11 +829,11 @@ impl GitPlugin {
             done = true;
         }
         if branch.current {
-            if item(ui, Some("update"), "Mettre à jour…") {
+            if item(ui, Some("update"), tr!("git.update_dialog")) {
                 self.open_update();
                 done = true;
             }
-            if item(ui, Some("push"), "Pousser…") {
+            if item(ui, Some("push"), tr!("git.push_dialog")) {
                 self.open_push(host);
                 done = true;
             }
@@ -834,25 +842,29 @@ impl GitPlugin {
             if item(
                 ui,
                 Some("merge"),
-                &format!("Fusionner « {name} » dans « {current} »"),
+                &trf!("git.merge_into", name = name, current = current),
             ) {
                 self.merge(name.clone(), host);
                 done = true;
             }
-            if item(ui, None, &format!("Rebaser « {current} » sur « {name} »")) {
+            if item(
+                ui,
+                None,
+                &trf!("git.rebase_onto", current = current, name = name),
+            ) {
                 self.rebase(name.clone(), host);
                 done = true;
             }
         }
         menu_separator(ui);
-        if item(ui, Some("edit"), "Renommer…") {
+        if item(ui, Some("edit"), tr!("git.rename_dialog")) {
             self.dialog = Some(Dialog::RenameBranch {
                 old: name.clone(),
                 name: name.clone(),
             });
             done = true;
         }
-        if !branch.current && item(ui, Some("delete"), "Supprimer…") {
+        if !branch.current && item(ui, Some("delete"), tr!("git.delete_dialog")) {
             self.dialog = Some(Dialog::DeleteBranch { name, force: false });
             done = true;
         }
@@ -882,11 +894,7 @@ impl GitPlugin {
             self.checkout(target, host);
             done = true;
         }
-        if item(
-            ui,
-            Some("add"),
-            &format!("Nouvelle branche depuis « {name} »…"),
-        ) {
+        if item(ui, Some("add"), &trf!("git.new_branch_from", name = name)) {
             self.dialog = Some(Dialog::NewBranch {
                 from: Some(name.clone()),
                 name: String::new(),
@@ -898,17 +906,21 @@ impl GitPlugin {
         if item(
             ui,
             Some("merge"),
-            &format!("Fusionner « {name} » dans « {current} »"),
+            &trf!("git.merge_into", name = name, current = current),
         ) {
             self.merge(name.clone(), host);
             done = true;
         }
-        if item(ui, None, &format!("Rebaser « {current} » sur « {name} »")) {
+        if item(
+            ui,
+            None,
+            &trf!("git.rebase_onto", current = current, name = name),
+        ) {
             self.rebase(name.clone(), host);
             done = true;
         }
         menu_separator(ui);
-        if item(ui, Some("delete"), "Supprimer du serveur…") {
+        if item(ui, Some("delete"), tr!("git.delete_from_server")) {
             self.delete_remote_branch(name);
             done = true;
         }
@@ -942,13 +954,13 @@ impl GitPlugin {
     fn no_repository(&mut self, ui: &mut Ui, host: &mut dyn Host) {
         ui.add_space(24.0);
         ui.vertical_centered(|ui| {
-            secondary(ui, "Ce projet n'est pas sous contrôle de version.");
+            secondary(ui, tr!("git.project_not_under_version_control"));
             ui.add_space(10.0);
-            if kit::primary_button(ui, "Créer un dépôt Git").clicked() {
+            if kit::primary_button(ui, tr!("git.create_git_repository")).clicked() {
                 self.init(host);
             }
             ui.add_space(4.0);
-            if kit::button(ui, "Cloner un dépôt…").clicked() {
+            if kit::button(ui, tr!("git.clone_repository_dialog")).clicked() {
                 self.run_command("git.clone", host);
             }
         });
@@ -967,11 +979,10 @@ impl GitPlugin {
         let t = self.theme;
         let mut action = None;
         toolbar(ui, |ui| {
-            if kit::icon_button(ui, "refresh", "Actualiser").clicked() {
+            if kit::icon_button(ui, "refresh", tr!("git.refresh")).clicked() {
                 self.invalidate();
             }
-            if kit::icon_button(ui, "rollback", "Annuler les modifications…  Ctrl+Alt+Z").clicked()
-            {
+            if kit::icon_button(ui, "rollback", tr!("git.rollback_ctrl_alt_z")).clicked() {
                 let mut changes: Vec<Change> = self
                     .checked()
                     .into_iter()
@@ -985,26 +996,26 @@ impl GitPlugin {
                 action = Some(ChangeAction::Rollback(changes));
             }
             let selected = self.selected_change();
-            if kit::icon_button_enabled(ui, "diff", selected.is_some(), "Afficher le diff  Ctrl+D")
+            if kit::icon_button_enabled(ui, "diff", selected.is_some(), tr!("git.show_diff_ctrl_d"))
                 .clicked()
                 && let Some(change) = selected
             {
                 action = Some(ChangeAction::Diff(change));
             }
             tool_separator(ui);
-            if kit::icon_button(ui, "update", "Mettre à jour le projet…  Ctrl+T").clicked() {
+            if kit::icon_button(ui, "update", tr!("git.update_project_ctrl_t")).clicked() {
                 self.open_update();
             }
-            if kit::icon_button(ui, "push", "Pousser…  Ctrl+Shift+K").clicked() {
+            if kit::icon_button(ui, "push", tr!("git.push_ctrl_shift_k")).clicked() {
                 self.open_push(host);
             }
             tool_separator(ui);
-            if kit::icon_button(ui, "expandAll", "Tout déplier").clicked() {
+            if kit::icon_button(ui, "expandAll", tr!("git.expand_all")).clicked() {
                 self.collapsed.retain(|k| !k.starts_with("changes:"));
             }
-            if kit::icon_button(ui, "collapseAll", "Tout replier").clicked() {
+            if kit::icon_button(ui, "collapseAll", tr!("git.collapse_all")).clicked() {
                 for (title, _) in GROUPS {
-                    self.collapsed.insert(format!("changes:{title}"));
+                    self.collapsed.insert(format!("changes:{}", title.0));
                 }
             }
         });
@@ -1021,19 +1032,19 @@ impl GitPlugin {
                     secondary(
                         ui,
                         if self.snap.state == State::Merging {
-                            "Résolvez les conflits puis commitez."
+                            tr!("git.resolve_conflicts_then_commit")
                         } else {
-                            "Résolvez les conflits puis continuez."
+                            tr!("git.resolve_conflicts_then_continue")
                         },
                     );
                     ui.add_space(4.0);
                     ui.horizontal(|ui| {
                         if self.snap.state != State::Merging
-                            && kit::primary_button(ui, "Continuer").clicked()
+                            && kit::primary_button(ui, tr!("git.continue")).clicked()
                         {
                             self.continue_operation(host);
                         }
-                        if kit::button(ui, "Abandonner").clicked() {
+                        if kit::button(ui, tr!("git.abort")).clicked() {
                             self.abort_operation();
                         }
                     });
@@ -1050,11 +1061,16 @@ impl GitPlugin {
             .show_separator_line(true)
             .show_inside(ui, |ui| {
                 ui.horizontal(|ui| {
-                    if kit::checkbox(ui, &mut self.amend, "Modifier le dernier commit").changed() {
+                    if kit::checkbox(ui, &mut self.amend, tr!("git.amend_last_commit")).changed() {
                         self.toggle_amend();
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let r = kit::icon_toggle(ui, "settings", self.signoff, "Options du commit");
+                        let r = kit::icon_toggle(
+                            ui,
+                            "settings",
+                            self.signoff,
+                            tr!("git.commit_options"),
+                        );
                         Popup::menu(&r)
                             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                             .show(|ui| {
@@ -1066,7 +1082,7 @@ impl GitPlugin {
                 ui.add_space(2.0);
                 let edit = ui.add(
                     TextEdit::multiline(&mut self.message)
-                        .hint_text("Message du commit")
+                        .hint_text(tr!("git.commit_message"))
                         .frame(false)
                         .desired_rows(5)
                         .desired_width(f32::INFINITY)
@@ -1081,18 +1097,18 @@ impl GitPlugin {
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     let label = if self.amend {
-                        "Modifier le commit"
+                        tr!("git.amend_commit")
                     } else {
                         "Commit"
                     };
                     if kit::primary_button(ui, label)
-                        .on_hover_text("Ctrl+Entrée")
+                        .on_hover_text(tr!("git.ctrl_enter"))
                         .clicked()
                         || submit
                     {
                         self.commit(host, false);
                     }
-                    if kit::button(ui, "Commit et pousser…").clicked() {
+                    if kit::button(ui, tr!("git.commit_push")).clicked() {
                         self.commit(host, true);
                     }
                 });
@@ -1106,9 +1122,9 @@ impl GitPlugin {
                     .show(ui, |ui| self.changes_tree(ui, &mut action));
                 if self.loaded && self.snap.changes.is_empty() {
                     let rect = ui.max_rect();
-                    kit::paint_centered(ui, rect, "Aucune modification");
+                    kit::paint_centered(ui, rect, tr!("git.no_changes"));
                 } else if !self.loaded {
-                    kit::paint_centered(ui, ui.max_rect(), "Chargement…");
+                    kit::paint_centered(ui, ui.max_rect(), tr!("git.loading"));
                 }
             });
         if let Some(action) = action {
@@ -1134,7 +1150,7 @@ impl GitPlugin {
             if members.is_empty() {
                 continue;
             }
-            let key = format!("changes:{title}");
+            let key = format!("changes:{}", title.0);
             let open = !self.collapsed.contains(&key);
             let included = members.iter().filter(|c| self.included(c)).count();
             let state = match included {
@@ -1145,16 +1161,24 @@ impl GitPlugin {
             let (rect, response) = tree_row(ui, false);
             let left = rect.left() + 4.0;
             kit::paint_chevron(ui, pos2(left + 10.0, rect.center().y), open);
-            let end = kit::paint_text(ui, rect, left + 46.0, title, t.text, body());
+            let end = kit::paint_text(ui, rect, left + 46.0, title.get(), t.text, body());
             kit::paint_text(
                 ui,
                 rect,
                 end + 8.0,
-                &plural(members.len(), "fichier", "fichiers"),
+                &plural(members.len(), tr!("git.file"), tr!("git.files")),
                 t.text_secondary,
                 body(),
             );
-            if row_check(ui, Id::new(("git_group", title)), left + 22.0, rect, state).clicked() {
+            if row_check(
+                ui,
+                Id::new(("git_group", title.0)),
+                left + 22.0,
+                rect,
+                state,
+            )
+            .clicked()
+            {
                 for change in &members {
                     self.set_included(change, state != Some(true));
                 }
@@ -1229,20 +1253,20 @@ impl GitPlugin {
         let mut command: Option<(&str, String)> = None;
         let selected = self.stash_selected.clone();
         toolbar(ui, |ui| {
-            if kit::icon_button(ui, "refresh", "Actualiser").clicked() {
+            if kit::icon_button(ui, "refresh", tr!("git.refresh")).clicked() {
                 self.invalidate();
             }
-            if kit::icon_button(ui, "shelve", "Mettre de côté…").clicked() {
+            if kit::icon_button(ui, "shelve", tr!("git.stash_dialog")).clicked() {
                 self.run_command("git.stash", host);
             }
             tool_separator(ui);
             let enabled = selected.is_some();
-            if kit::icon_button_enabled(ui, "unshelve", enabled, "Appliquer").clicked()
+            if kit::icon_button_enabled(ui, "unshelve", enabled, tr!("git.apply")).clicked()
                 && let Some(name) = &selected
             {
                 command = Some(("apply", name.clone()));
             }
-            if kit::icon_button_enabled(ui, "delete", enabled, "Supprimer…").clicked()
+            if kit::icon_button_enabled(ui, "delete", enabled, tr!("git.delete_dialog")).clicked()
                 && let Some(name) = &selected
             {
                 command = Some(("drop", name.clone()));
@@ -1277,9 +1301,9 @@ impl GitPlugin {
                         ui.set_min_width(200.0);
                         ui.spacing_mut().item_spacing.y = 0.0;
                         for (icon, label, verb) in [
-                            (Some("unshelve"), "Appliquer", "apply"),
-                            (None, "Restaurer (pop)", "pop"),
-                            (Some("delete"), "Supprimer…", "drop"),
+                            (Some("unshelve"), tr!("git.apply"), "apply"),
+                            (None, tr!("git.pop"), "pop"),
+                            (Some("delete"), tr!("git.delete_dialog"), "drop"),
                         ] {
                             if item(ui, icon, label) {
                                 command = Some((verb, stash.name.clone()));
@@ -1300,7 +1324,7 @@ impl GitPlugin {
                     }
                 }
                 if self.snap.stashes.is_empty() {
-                    kit::paint_centered(ui, ui.max_rect(), "Aucune modification mise de côté");
+                    kit::paint_centered(ui, ui.max_rect(), tr!("git.no_stashed_changes"));
                 }
             });
         if let (Some(change), Some(name)) = (diff, selected) {
@@ -1321,21 +1345,21 @@ impl GitPlugin {
         match command {
             Some(("drop", name)) => {
                 let label = name.clone();
-                let pending = self.pending("Suppression du stash", After::Nothing, move |git| {
+                let pending = self.pending(tr!("git.dropping_stash"), After::Nothing, move |git| {
                     git.run(&["stash", "drop", &name])
                 });
                 self.confirm(
-                    "Supprimer le stash",
-                    format!("{label} sera définitivement supprimé."),
+                    tr!("git.drop_stash"),
+                    trf!("git.will_permanently_deleted", label = label),
                     Vec::new(),
                     pending,
                 );
             }
             Some((verb, name)) if host.save_files() => {
                 let label = if verb == "pop" {
-                    "Restauration du stash"
+                    tr!("git.popping_stash")
                 } else {
-                    "Application du stash"
+                    tr!("git.applying_stash")
                 };
                 self.git(label, &["stash", verb, &name]);
             }
@@ -1365,7 +1389,7 @@ impl GitPlugin {
             .resizable(false)
             .frame(Frame::NONE.inner_margin(Margin::symmetric(4, 2)))
             .show_inside(ui, |ui| {
-                if kit::icon_button(ui, "delete", "Effacer").clicked()
+                if kit::icon_button(ui, "delete", tr!("git.clear")).clicked()
                     && let Ok(mut console) = self.console.lock()
                 {
                     console.clear();
@@ -1386,7 +1410,7 @@ impl GitPlugin {
                             kit::paint_centered(
                                 ui,
                                 ui.max_rect(),
-                                "Les commandes Git lancées par l'IDE s'affichent ici.",
+                                tr!("git.git_commands_run_by_ide"),
                             );
                         }
                         let font = FontId::monospace(13.0);
@@ -1461,13 +1485,13 @@ impl GitPlugin {
     fn branches_view(&mut self, ui: &mut Ui, host: &mut dyn Host, action: &mut Option<LogAction>) {
         let t = self.theme;
         toolbar(ui, |ui| {
-            if kit::icon_button(ui, "add", "Nouvelle branche…").clicked() {
+            if kit::icon_button(ui, "add", tr!("git.new_branch_dialog")).clicked() {
                 self.run_command("git.branch", host);
             }
-            if kit::icon_button(ui, "fetch", "Récupérer (fetch)").clicked() {
+            if kit::icon_button(ui, "fetch", tr!("git.fetch")).clicked() {
                 self.fetch();
             }
-            if kit::icon_button(ui, "update", "Mettre à jour le projet…  Ctrl+T").clicked() {
+            if kit::icon_button(ui, "update", tr!("git.update_project_ctrl_t")).clicked() {
                 self.open_update();
             }
         });
@@ -1483,7 +1507,7 @@ impl GitPlugin {
                     ui,
                     rect,
                     rect.left() + 26.0,
-                    "HEAD (branche courante)",
+                    tr!("git.head_current_branch"),
                     t.text,
                     body(),
                 );
@@ -1491,17 +1515,17 @@ impl GitPlugin {
                     filter_to = Some(toggle("HEAD"));
                 }
                 let branches = self.snap.branches.clone();
-                for (title, remote) in [("Locales", false), ("Distantes", true)] {
+                for (title, remote) in [(Text("git.local"), false), (Text("git.remote"), true)] {
                     let list: Vec<&Branch> =
                         branches.iter().filter(|b| b.remote == remote).collect();
                     if list.is_empty() {
                         continue;
                     }
-                    let key = format!("log:{title}");
+                    let key = format!("log:{}", title.0);
                     let open = !self.collapsed.contains(&key);
                     let (rect, response) = tree_row(ui, false);
                     kit::paint_chevron(ui, pos2(rect.left() + 14.0, rect.center().y), open);
-                    kit::paint_text(ui, rect, rect.left() + 26.0, title, t.text, body());
+                    kit::paint_text(ui, rect, rect.left() + 26.0, title.get(), t.text, body());
                     if response.clicked() {
                         self.toggle_collapsed(key);
                     }
@@ -1594,17 +1618,17 @@ impl GitPlugin {
             ui.spacing_mut().item_spacing.x = 4.0;
             ui.add_space(4.0);
             let width = (ui.available_width() * 0.3).clamp(120.0, 240.0);
-            kit::search_field(ui, &mut self.log.filter, "Texte ou hash", width);
+            kit::search_field(ui, &mut self.log.filter, tr!("git.text_hash"), width);
             let label = match self.log.query.branch.as_deref() {
                 Some(branch) => format!("Branche : {branch}"),
-                None => "Branche".to_string(),
+                None => tr!("git.branch").to_string(),
             };
             let r = kit::icon_text_button(ui, None, &label, true);
             let mut branch: Option<Option<String>> = None;
             Popup::menu(&r).show(|ui| {
                 ui.set_min_width(200.0);
                 ui.spacing_mut().item_spacing.y = 0.0;
-                if menu_item(ui, None, "Toutes les branches", "").clicked() {
+                if menu_item(ui, None, tr!("git.all_branches"), "").clicked() {
                     branch = Some(None);
                 }
                 if menu_item(ui, None, "HEAD", "").clicked() {
@@ -1630,13 +1654,13 @@ impl GitPlugin {
             }
             let label = match &self.log.author {
                 Some(author) => format!("Auteur : {author}"),
-                None => "Auteur".to_string(),
+                None => tr!("git.author").to_string(),
             };
             let r = kit::icon_text_button(ui, None, &label, true);
             Popup::menu(&r).show(|ui| {
                 ui.set_min_width(200.0);
                 ui.spacing_mut().item_spacing.y = 0.0;
-                if menu_item(ui, None, "Tous les auteurs", "").clicked() {
+                if menu_item(ui, None, tr!("git.all_authors"), "").clicked() {
                     self.log.author = None;
                 }
                 menu_separator(ui);
@@ -1658,14 +1682,14 @@ impl GitPlugin {
             });
             if let Some(path) = self.log.query.path.clone() {
                 let t = self.theme;
-                ui.label(RichText::new(format!("Fichier : {path}")).color(t.link));
-                if kit::icon_button(ui, "closeSmall", "Tout l'historique").clicked() {
+                ui.label(RichText::new(trf!("git.file_2", path = path)).color(t.link));
+                if kit::icon_button(ui, "closeSmall", tr!("git.whole_history")).clicked() {
                     self.log.query.path = None;
                     self.log.stale = true;
                 }
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if kit::icon_button(ui, "refresh", "Actualiser").clicked() {
+                if kit::icon_button(ui, "refresh", tr!("git.refresh")).clicked() {
                     self.log.stale = true;
                 }
                 if self.log.loading.is_some() {
@@ -1692,9 +1716,9 @@ impl GitPlugin {
             .collect();
         if rows.is_empty() {
             let text = if self.log.loading.is_some() {
-                "Chargement…"
+                tr!("git.loading")
             } else {
-                "Aucun commit"
+                tr!("git.no_commits")
             };
             kit::paint_centered(ui, ui.available_rect_before_wrap(), text);
             return;
@@ -1809,7 +1833,7 @@ impl GitPlugin {
     fn details_view(&self, ui: &mut Ui, action: &mut Option<LogAction>) {
         let t = self.theme;
         let Some((hash, message, files)) = &self.log.details else {
-            kit::paint_centered(ui, ui.max_rect(), "Aucun commit sélectionné");
+            kit::paint_centered(ui, ui.max_rect(), tr!("git.no_commit_selected"));
             return;
         };
         let commit = self.log.rows.iter().find(|c| &c.hash == hash);
@@ -1833,7 +1857,7 @@ impl GitPlugin {
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 4.0;
                             ui.label(RichText::new(short(hash)).color(t.text_secondary));
-                            if kit::icon_button(ui, "copy", "Copier le hash").clicked() {
+                            if kit::icon_button(ui, "copy", tr!("git.copy_hash")).clicked() {
                                 ui.ctx().copy_text(hash.clone());
                             }
                             if let Some(c) = commit {
@@ -1841,7 +1865,10 @@ impl GitPlugin {
                             }
                         });
                         if let Some(c) = commit {
-                            secondary(ui, format!("le {}", c.date.replace(' ', " à ")));
+                            secondary(
+                                ui,
+                                trf!("git.on", date = c.date.replace(' ', tr!("git.at"))),
+                            );
                             if !c.refs.is_empty() {
                                 ui.add_space(6.0);
                                 ui.horizontal_wrapped(|ui| {
@@ -1896,7 +1923,7 @@ impl GitPlugin {
                             ui,
                             rect,
                             end + 8.0,
-                            &plural(files.len(), "fichier", "fichiers"),
+                            &plural(files.len(), tr!("git.file"), tr!("git.files")),
                             t.text_secondary,
                             body(),
                         );
@@ -1911,15 +1938,15 @@ impl GitPlugin {
                             response.context_menu(|ui| {
                                 ui.set_min_width(220.0);
                                 ui.spacing_mut().item_spacing.y = 0.0;
-                                if item(ui, Some("diff"), "Afficher le diff") {
+                                if item(ui, Some("diff"), tr!("git.show_diff")) {
                                     *action = Some(LogAction::Diff(change.clone()));
                                 }
                                 if change.kind != Kind::Deleted
-                                    && item(ui, None, "Ouvrir la copie locale")
+                                    && item(ui, None, tr!("git.open_local_copy"))
                                 {
                                     *action = Some(LogAction::Open(change.path.clone()));
                                 }
-                                if item(ui, Some("history"), "Historique du fichier") {
+                                if item(ui, Some("history"), tr!("git.file_history")) {
                                     *action = Some(LogAction::History(change.path.clone()));
                                 }
                             });
@@ -1958,12 +1985,12 @@ impl GitPlugin {
             LogAction::Undo => self.undo_commit(),
             LogAction::DeleteTag(tag) => {
                 let name = tag.clone();
-                let pending = self.pending("Suppression du tag", After::Nothing, move |git| {
+                let pending = self.pending(tr!("git.deleting_tag"), After::Nothing, move |git| {
                     git.run(&["tag", "-d", &name])
                 });
                 self.confirm(
-                    "Supprimer le tag",
-                    format!("Le tag local {tag} sera supprimé."),
+                    tr!("git.delete_tag"),
+                    trf!("git.local_tag_will_deleted", tag = tag),
                     Vec::new(),
                     pending,
                 );
@@ -2008,10 +2035,11 @@ impl GitPlugin {
             .show(ctx, |ui| {
                 let mut rebuild = false;
                 toolbar(ui, |ui| {
-                    if kit::icon_button(ui, "up", "Différence précédente  Maj+F7").clicked() {
+                    if kit::icon_button(ui, "up", tr!("git.previous_difference_shift_f7")).clicked()
+                    {
                         view.step(false);
                     }
-                    if kit::icon_button(ui, "down", "Différence suivante  F7").clicked() {
+                    if kit::icon_button(ui, "down", tr!("git.next_difference_f7")).clicked() {
                         view.step(true);
                     }
                     let n = view.starts.len();
@@ -2019,24 +2047,30 @@ impl GitPlugin {
                     secondary(
                         ui,
                         if n == 0 {
-                            "Aucune différence".to_string()
+                            tr!("git.no_differences").to_string()
                         } else {
                             format!(
                                 "{}/{}",
                                 view.current + 1,
-                                plural(n, "différence", "différences")
+                                plural(n, tr!("git.difference"), tr!("git.differences"))
                             )
                         },
                     );
                     tool_separator(ui);
-                    if kit::icon_toggle(ui, "sideBySide", view.side_by_side, "Côte à côte")
-                        .clicked()
+                    if kit::icon_toggle(
+                        ui,
+                        "sideBySide",
+                        view.side_by_side,
+                        tr!("git.side_by_side"),
+                    )
+                    .clicked()
                         && !view.side_by_side
                     {
                         view.side_by_side = true;
                         rebuild = true;
                     }
-                    if kit::icon_toggle(ui, "unified", !view.side_by_side, "Unifié").clicked()
+                    if kit::icon_toggle(ui, "unified", !view.side_by_side, tr!("git.unified"))
+                        .clicked()
                         && view.side_by_side
                     {
                         view.side_by_side = false;
@@ -2044,7 +2078,7 @@ impl GitPlugin {
                     }
                     tool_separator(ui);
                     rebuild |=
-                        kit::checkbox(ui, &mut view.collapse, "Masquer les lignes identiques")
+                        kit::checkbox(ui, &mut view.collapse, tr!("git.hide_identical_lines"))
                             .changed();
                 });
                 if rebuild {
@@ -2055,7 +2089,7 @@ impl GitPlugin {
                     kit::paint_centered(
                         ui,
                         ui.available_rect_before_wrap(),
-                        "Fichier binaire : contenu non comparable.",
+                        tr!("git.binary_file_content_cannot_compared"),
                     );
                     return;
                 }
@@ -2112,9 +2146,13 @@ impl GitPlugin {
                             painter.text(
                                 rect.center(),
                                 Align2::CENTER_CENTER,
-                                format!(
-                                    "{} masquées : cliquez pour tout afficher",
-                                    plural(row.hidden, "ligne identique", "lignes identiques")
+                                trf!(
+                                    "git.hidden_click_show_everything",
+                                    hidden = plural(
+                                        row.hidden,
+                                        tr!("git.identical_line"),
+                                        tr!("git.identical_lines")
+                                    )
                                 ),
                                 FontId::proportional(12.0),
                                 color,
@@ -2147,7 +2185,7 @@ impl GitPlugin {
         let mut open = true;
         let (mut apply, mut edit, mut cancel) = (false, false, false);
         let total = conflict::conflicts(&resolver.segments);
-        egui::Window::new(format!("Fusionner les révisions de {}", resolver.path))
+        egui::Window::new(trf!("git.merge_revisions", path = resolver.path))
             .id(Id::new("git_resolver"))
             .open(&mut open)
             .default_size([1000.0, 640.0])
@@ -2161,10 +2199,10 @@ impl GitPlugin {
                     .count();
                 toolbar(ui, |ui| {
                     for (icon, label, choice) in [
-                        ("arrowRight", "Tout accepter à gauche (local)", Choice::Ours),
+                        ("arrowRight", tr!("git.accept_all_left_local"), Choice::Ours),
                         (
                             "arrowLeft",
-                            "Tout accepter à droite (entrant)",
+                            tr!("git.accept_all_right_incoming"),
                             Choice::Theirs,
                         ),
                     ] {
@@ -2177,7 +2215,7 @@ impl GitPlugin {
                         }
                     }
                     tool_separator(ui);
-                    if kit::icon_button(ui, "magicResolve", "Réinitialiser les choix").clicked() {
+                    if kit::icon_button(ui, "magicResolve", tr!("git.reset_choices")).clicked() {
                         for segment in &mut resolver.segments {
                             if let Segment::Conflict(c) = segment {
                                 c.choice = None;
@@ -2192,11 +2230,16 @@ impl GitPlugin {
                         };
                         ui.label(
                             RichText::new(if remaining == 0 {
-                                "Tous les conflits sont résolus".to_string()
+                                tr!("git.all_conflicts_resolved").to_string()
                             } else {
-                                format!(
-                                    "{remaining} sur {}",
-                                    plural(total, "conflit à résoudre", "conflits à résoudre")
+                                trf!(
+                                    "git.of",
+                                    remaining = remaining,
+                                    total = plural(
+                                        total,
+                                        tr!("git.conflict_resolve"),
+                                        tr!("git.conflicts_resolve")
+                                    )
                                 )
                             })
                             .color(color),
@@ -2208,15 +2251,15 @@ impl GitPlugin {
                     .show_separator_line(false)
                     .show_inside(ui, |ui| {
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            cancel = kit::button(ui, "Annuler").clicked();
+                            cancel = kit::button(ui, tr!("git.cancel")).clicked();
                             let label = if remaining == 0 {
-                                "Appliquer et marquer comme résolu"
+                                tr!("git.apply_mark_as_resolved")
                             } else {
-                                "Appliquer"
+                                tr!("git.apply")
                             };
                             apply = kit::primary_button(ui, label).clicked();
                             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                                edit = kit::button(ui, "Ouvrir dans l'éditeur").clicked();
+                                edit = kit::button(ui, tr!("git.open_editor")).clicked();
                             });
                         });
                     });
@@ -2260,7 +2303,11 @@ impl GitPlugin {
         let mut force = false;
         let mut remove_remote = None;
         let modal = egui::Modal::new(Id::new("git_dialog"))
-            .frame(Frame::popup(&ctx.style()).inner_margin(20).corner_radius(10))
+            .frame(
+                Frame::popup(&ctx.style())
+                    .inner_margin(20)
+                    .corner_radius(10),
+            )
             .show(ctx, |ui| {
                 ui.set_width(480.0);
                 ui.spacing_mut().item_spacing.y = 8.0;
@@ -2276,85 +2323,96 @@ impl GitPlugin {
                                 .corner_radius(6)
                                 .inner_margin(4)
                                 .show(ui, |ui| {
-                                    egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
-                                        ui.spacing_mut().item_spacing.y = 0.0;
-                                        for path in items.iter() {
-                                            let (rect, _) = ui.allocate_exact_size(
-                                                vec2(ui.available_width(), kit::ROW),
-                                                Sense::hover(),
-                                            );
-                                            let change = self
-                                                .snap
-                                                .changes
-                                                .iter()
-                                                .find(|c| &c.path == path)
-                                                .cloned()
-                                                .unwrap_or(Change {
-                                                    path: path.clone(),
-                                                    orig: None,
-                                                    kind: Kind::Modified,
-                                                });
-                                            paint_change(ui, rect, rect.left() + 6.0, &change, &t);
-                                        }
-                                    });
+                                    egui::ScrollArea::vertical()
+                                        .max_height(220.0)
+                                        .show(ui, |ui| {
+                                            ui.spacing_mut().item_spacing.y = 0.0;
+                                            for path in items.iter() {
+                                                let (rect, _) = ui.allocate_exact_size(
+                                                    vec2(ui.available_width(), kit::ROW),
+                                                    Sense::hover(),
+                                                );
+                                                let change = self
+                                                    .snap
+                                                    .changes
+                                                    .iter()
+                                                    .find(|c| &c.path == path)
+                                                    .cloned()
+                                                    .unwrap_or(Change {
+                                                        path: path.clone(),
+                                                        orig: None,
+                                                        kind: Kind::Modified,
+                                                    });
+                                                paint_change(
+                                                    ui,
+                                                    rect,
+                                                    rect.left() + 6.0,
+                                                    &change,
+                                                    &t,
+                                                );
+                                            }
+                                        });
                                 });
                         }
-                        (ok, cancel) = kit::dialog_buttons(ui, "Confirmer");
+                        (ok, cancel) = kit::dialog_buttons(ui, tr!("git.confirm"));
                     }
                     Dialog::NewBranch {
                         from,
                         name,
                         checkout,
                     } => {
-                        kit::dialog_title(ui, "Nouvelle branche");
+                        kit::dialog_title(ui, tr!("git.new_branch"));
                         if let Some(from) = from {
                             secondary(ui, format!("Depuis {}", from.get(..40).unwrap_or(from)));
                         }
-                        labeled(ui, "Nom :", |ui| field(ui, name, "nom-de-branche")).request_focus();
-                        kit::checkbox(ui, checkout, "Basculer sur la branche");
-                        (ok, cancel) = kit::dialog_buttons(ui, "Créer");
+                        labeled(ui, tr!("git.name"), |ui| field(ui, name, "nom-de-branche"))
+                            .request_focus();
+                        kit::checkbox(ui, checkout, tr!("git.checkout_branch"));
+                        (ok, cancel) = kit::dialog_buttons(ui, tr!("git.create"));
                     }
                     Dialog::RenameBranch { old, name } => {
-                        kit::dialog_title(ui, &format!("Renommer la branche « {old} »"));
-                        labeled(ui, "Nouveau nom :", |ui| field(ui, name, "")).request_focus();
-                        (ok, cancel) = kit::dialog_buttons(ui, "Renommer");
+                        kit::dialog_title(ui, &trf!("git.rename_branch", old = old));
+                        labeled(ui, tr!("git.new_name"), |ui| field(ui, name, "")).request_focus();
+                        (ok, cancel) = kit::dialog_buttons(ui, tr!("git.rename"));
                     }
                     Dialog::DeleteBranch { name, force } => {
-                        kit::dialog_title(ui, &format!("Supprimer la branche « {name} »"));
-                        kit::checkbox(ui, force, "Forcer même si elle n'est pas fusionnée (-D)");
-                        (ok, cancel) = kit::dialog_buttons(ui, "Supprimer");
+                        kit::dialog_title(ui, &trf!("git.delete_branch", name = name));
+                        kit::checkbox(ui, force, tr!("git.force_even_if_not_merged"));
+                        (ok, cancel) = kit::dialog_buttons(ui, tr!("git.delete"));
                     }
                     Dialog::NewTag { rev, name, message } => {
-                        kit::dialog_title(ui, "Nouveau tag");
-                        secondary(ui, format!("Sur le commit {}", short(rev)));
-                        labeled(ui, "Nom :", |ui| field(ui, name, "v1.0.0")).request_focus();
-                        labeled(ui, "Message :", |ui| field(ui, message, "Tag annoté (optionnel)"));
-                        (ok, cancel) = kit::dialog_buttons(ui, "Créer");
+                        kit::dialog_title(ui, tr!("git.new_tag"));
+                        secondary(ui, trf!("git.on_commit", rev = short(rev)));
+                        labeled(ui, tr!("git.name"), |ui| field(ui, name, "v1.0.0"))
+                            .request_focus();
+                        labeled(ui, tr!("git.message"), |ui| {
+                            field(ui, message, tr!("git.annotated_tag_optional"))
+                        });
+                        (ok, cancel) = kit::dialog_buttons(ui, tr!("git.create"));
                     }
                     Dialog::Revision { rev } => {
-                        kit::dialog_title(ui, "Checkout d'un tag ou d'une révision");
-                        labeled(ui, "Révision :", |ui| field(ui, rev, "v1.0.0, a1b2c3d, HEAD~2…"))
-                            .request_focus();
-                        secondary(ui, "La copie de travail passera en HEAD détaché.");
+                        kit::dialog_title(ui, tr!("git.checkout_tag_revision"));
+                        labeled(ui, tr!("git.revision"), |ui| {
+                            field(ui, rev, "v1.0.0, a1b2c3d, HEAD~2…")
+                        })
+                        .request_focus();
+                        secondary(ui, tr!("git.working_copy_will_detached_head"));
                         (ok, cancel) = kit::dialog_buttons(ui, "Checkout");
                     }
                     Dialog::SmartCheckout { target } => {
                         let name = match target {
-                            Target::Branch(n) | Target::Remote(n) | Target::Revision(n) => n.clone(),
+                            Target::Branch(n) | Target::Remote(n) | Target::Revision(n) => {
+                                n.clone()
+                            }
                         };
-                        kit::dialog_title(ui, &format!("Checkout de « {name} »"));
-                        ui.add(
-                            egui::Label::new(
-                                "Vous avez des modifications locales qui seraient écrasées. Le checkout intelligent les met de côté, change de branche puis les restaure.",
-                            )
-                            .wrap(),
-                        );
+                        kit::dialog_title(ui, &trf!("git.checkout", name = name));
+                        ui.add(egui::Label::new(tr!("git.you_have_local_changes_would")).wrap());
                         ui.add_space(10.0);
                         cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            cancel |= kit::button(ui, "Annuler").clicked();
-                            force |= kit::button(ui, "Forcer le checkout").clicked();
-                            ok |= kit::primary_button(ui, "Checkout intelligent").clicked();
+                            cancel |= kit::button(ui, tr!("git.cancel")).clicked();
+                            force |= kit::button(ui, tr!("git.force_checkout")).clicked();
+                            ok |= kit::primary_button(ui, tr!("git.smart_checkout")).clicked();
                         });
                     }
                     Dialog::Push {
@@ -2366,9 +2424,10 @@ impl GitPlugin {
                         commits,
                         upstream,
                     } => {
-                        kit::dialog_title(ui, "Pousser les commits");
+                        kit::dialog_title(ui, tr!("git.push_commits"));
                         ui.horizontal(|ui| {
-                            let (icon, _) = ui.allocate_exact_size(Vec2::splat(16.0), Sense::hover());
+                            let (icon, _) =
+                                ui.allocate_exact_size(Vec2::splat(16.0), Sense::hover());
                             kit::paint_icon(ui, "branch", icon);
                             ui.label(branch.as_str());
                             paint_arrow_right(ui);
@@ -2389,7 +2448,7 @@ impl GitPlugin {
                                     .margin(Margin::symmetric(8, 5)),
                             );
                             if !*upstream {
-                                ui.label(RichText::new("Nouvelle").color(t.success));
+                                ui.label(RichText::new(tr!("git.new")).color(t.success));
                             }
                         });
                         Frame::new()
@@ -2400,67 +2459,98 @@ impl GitPlugin {
                                 ui.set_width(ui.available_width());
                                 ui.set_min_height(120.0);
                                 if commits.is_empty() {
-                                    secondary(ui, "Aucun commit à pousser");
+                                    secondary(ui, tr!("git.no_commits_push"));
                                 }
-                                egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
-                                    ui.spacing_mut().item_spacing.y = 0.0;
-                                    for commit in commits.iter() {
-                                        let (rect, _) = ui.allocate_exact_size(
-                                            vec2(ui.available_width(), kit::ROW),
-                                            Sense::hover(),
-                                        );
-                                        kit::paint_icon(
-                                            ui,
-                                            "vcsCommit",
-                                            Rect::from_min_size(pos2(rect.left() + 4.0, rect.center().y - 8.0), Vec2::splat(16.0)),
-                                        );
-                                        let (hash, subject) = commit.split_once("  ").unwrap_or(("", commit));
-                                        let end = kit::paint_text(ui, rect, rect.left() + 26.0, subject, t.text, body());
-                                        kit::paint_text(ui, rect, end + 8.0, hash, t.text_secondary, body());
-                                    }
-                                });
+                                egui::ScrollArea::vertical()
+                                    .max_height(220.0)
+                                    .show(ui, |ui| {
+                                        ui.spacing_mut().item_spacing.y = 0.0;
+                                        for commit in commits.iter() {
+                                            let (rect, _) = ui.allocate_exact_size(
+                                                vec2(ui.available_width(), kit::ROW),
+                                                Sense::hover(),
+                                            );
+                                            kit::paint_icon(
+                                                ui,
+                                                "vcsCommit",
+                                                Rect::from_min_size(
+                                                    pos2(rect.left() + 4.0, rect.center().y - 8.0),
+                                                    Vec2::splat(16.0),
+                                                ),
+                                            );
+                                            let (hash, subject) =
+                                                commit.split_once("  ").unwrap_or(("", commit));
+                                            let end = kit::paint_text(
+                                                ui,
+                                                rect,
+                                                rect.left() + 26.0,
+                                                subject,
+                                                t.text,
+                                                body(),
+                                            );
+                                            kit::paint_text(
+                                                ui,
+                                                rect,
+                                                end + 8.0,
+                                                hash,
+                                                t.text_secondary,
+                                                body(),
+                                            );
+                                        }
+                                    });
                             });
                         if !*upstream {
-                            secondary(ui, "La branche distante sera créée et deviendra la branche amont.");
+                            secondary(ui, tr!("git.remote_branch_will_created_become"));
                         }
                         ui.horizontal(|ui| {
                             kit::checkbox(ui, force, "Forcer (--force-with-lease)");
                             ui.add_space(12.0);
-                            kit::checkbox(ui, tags, "Pousser les tags");
+                            kit::checkbox(ui, tags, tr!("git.push_tags"));
                         });
-                        (ok, cancel) = kit::dialog_buttons(ui, "Pousser");
+                        (ok, cancel) = kit::dialog_buttons(ui, tr!("git.push"));
                     }
                     Dialog::Update { rebase, autostash } => {
-                        kit::dialog_title(ui, "Mettre à jour le projet");
-                        kit::section(ui, "Type de mise à jour");
-                        kit::radio_value(ui, rebase, false, "Fusionner les commits entrants (merge)");
-                        kit::radio_value(ui, rebase, true, "Rebaser les commits locaux (rebase)");
+                        kit::dialog_title(ui, tr!("git.update_project"));
+                        kit::section(ui, tr!("git.update_type"));
+                        kit::radio_value(ui, rebase, false, tr!("git.merge_incoming_commits"));
+                        kit::radio_value(ui, rebase, true, tr!("git.rebase_local_commits"));
                         ui.add_space(4.0);
-                        kit::checkbox(
-                            ui,
-                            autostash,
-                            "Mettre de côté les modifications locales pendant la mise à jour",
-                        );
-                        (ok, cancel) = kit::dialog_buttons(ui, "Mettre à jour");
+                        kit::checkbox(ui, autostash, tr!("git.stash_local_changes_during_update"));
+                        (ok, cancel) = kit::dialog_buttons(ui, tr!("git.update"));
                     }
                     Dialog::Stash { message, untracked } => {
-                        kit::dialog_title(ui, "Mettre de côté les modifications");
-                        labeled(ui, "Message :", |ui| field(ui, message, "Optionnel")).request_focus();
-                        kit::checkbox(ui, untracked, "Inclure les fichiers non versionnés");
-                        (ok, cancel) = kit::dialog_buttons(ui, "Mettre de côté");
+                        kit::dialog_title(ui, tr!("git.stash_changes"));
+                        labeled(ui, tr!("git.message"), |ui| {
+                            field(ui, message, tr!("git.optional"))
+                        })
+                        .request_focus();
+                        kit::checkbox(ui, untracked, tr!("git.include_unversioned_files"));
+                        (ok, cancel) = kit::dialog_buttons(ui, tr!("git.stash"));
                     }
                     Dialog::Reset { rev, subject, mode } => {
-                        kit::dialog_title(ui, "Réinitialiser la branche courante");
+                        kit::dialog_title(ui, tr!("git.reset_current_branch"));
                         ui.horizontal(|ui| {
                             ui.label(RichText::new(short(rev)).color(t.text_secondary));
                             ui.label(subject.as_str());
                         });
                         ui.add_space(4.0);
                         for (value, label, help) in [
-                            (ResetMode::Soft, "Soft", "Les modifications des commits annulés restent indexées."),
-                            (ResetMode::Mixed, "Mixed", "Les modifications restent dans la copie de travail, non indexées."),
-                            (ResetMode::Hard, "Hard", "Toutes les modifications sont perdues."),
-                            (ResetMode::Keep, "Keep", "Garde les modifications locales ; échoue si elles sont touchées."),
+                            (
+                                ResetMode::Soft,
+                                "Soft",
+                                tr!("git.changes_undone_commits_stay_staged"),
+                            ),
+                            (
+                                ResetMode::Mixed,
+                                "Mixed",
+                                tr!("git.changes_stay_working_copy_unstaged"),
+                            ),
+                            (ResetMode::Hard, "Hard", tr!("git.all_changes_lost")),
+                            (
+                                ResetMode::Keep,
+                                "Keep",
+                                tr!("git.keeps_local_changes_fails_if"),
+                            ),
                         ] {
                             kit::radio_value(ui, mode, value, label);
                             ui.horizontal(|ui| {
@@ -2468,32 +2558,35 @@ impl GitPlugin {
                                 secondary(ui, help);
                             });
                         }
-                        (ok, cancel) = kit::dialog_buttons(ui, "Réinitialiser");
+                        (ok, cancel) = kit::dialog_buttons(ui, tr!("git.reset"));
                     }
                     Dialog::Clone { url, parent, name } => {
-                        kit::dialog_title(ui, "Cloner un dépôt");
+                        kit::dialog_title(ui, tr!("git.clone_repository"));
                         labeled(ui, "URL :", |ui| {
-                            field(ui, url, "https://github.com/utilisateur/projet.git")
+                            field(ui, url, tr!("git.https_github_com_user_project"))
                         })
                         .request_focus();
-                        labeled(ui, "Dossier parent :", |ui| {
+                        labeled(ui, tr!("git.parent_folder_label"), |ui| {
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                if kit::icon_button(ui, "folder", "Choisir le dossier").clicked()
+                                if kit::icon_button(ui, "folder", tr!("git.choose_folder"))
+                                    .clicked()
                                     && let Some(dir) = rfd::FileDialog::new()
                                         .set_directory(parent.as_str())
                                         .pick_folder()
                                 {
                                     *parent = dir.display().to_string();
                                 }
-                                field(ui, parent, "Dossier parent");
+                                field(ui, parent, tr!("git.parent_folder"));
                             });
                         });
-                        labeled(ui, "Nom :", |ui| field(ui, name, "Déduit de l'URL"));
-                        secondary(ui, "Le projet cloné s'ouvre à la fin du clonage.");
-                        (ok, cancel) = kit::dialog_buttons(ui, "Cloner");
+                        labeled(ui, tr!("git.name"), |ui| {
+                            field(ui, name, tr!("git.from_url"))
+                        });
+                        secondary(ui, tr!("git.cloned_project_opens_when_cloning"));
+                        (ok, cancel) = kit::dialog_buttons(ui, tr!("git.clone"));
                     }
                     Dialog::Remotes { name, url } => {
-                        kit::dialog_title(ui, "Remotes Git");
+                        kit::dialog_title(ui, tr!("git.git_remotes"));
                         Frame::new()
                             .stroke(stroke(1.0, t.border))
                             .corner_radius(6)
@@ -2502,42 +2595,67 @@ impl GitPlugin {
                                 ui.set_width(ui.available_width());
                                 ui.spacing_mut().item_spacing.y = 0.0;
                                 if self.snap.remotes.is_empty() {
-                                    secondary(ui, "Aucun remote");
+                                    secondary(ui, tr!("git.no_remotes"));
                                 }
                                 for remote in &self.snap.remotes {
                                     let (rect, response) = tree_row(ui, false);
-                                    let end = kit::paint_text(ui, rect, rect.left() + 8.0, &remote.name, t.text, body());
-                                    kit::paint_text(ui, rect, end.max(rect.left() + 90.0), &remote.url, t.text_secondary, body());
+                                    let end = kit::paint_text(
+                                        ui,
+                                        rect,
+                                        rect.left() + 8.0,
+                                        &remote.name,
+                                        t.text,
+                                        body(),
+                                    );
+                                    kit::paint_text(
+                                        ui,
+                                        rect,
+                                        end.max(rect.left() + 90.0),
+                                        &remote.url,
+                                        t.text_secondary,
+                                        body(),
+                                    );
                                     if response.contains_pointer() {
                                         let button = Rect::from_min_size(
                                             pos2(rect.right() - 28.0, rect.center().y - 11.0),
                                             Vec2::splat(22.0),
                                         );
-                                        let r = ui.interact(button, Id::new(("git_remote_remove", &remote.name)), Sense::click());
+                                        let r = ui.interact(
+                                            button,
+                                            Id::new(("git_remote_remove", &remote.name)),
+                                            Sense::click(),
+                                        );
                                         kit::paint_hover(ui, button, &r, false);
-                                        kit::paint_icon(ui, "remove", Rect::from_center_size(button.center(), Vec2::splat(16.0)));
-                                        if r.on_hover_text("Supprimer").clicked() {
+                                        kit::paint_icon(
+                                            ui,
+                                            "remove",
+                                            Rect::from_center_size(
+                                                button.center(),
+                                                Vec2::splat(16.0),
+                                            ),
+                                        );
+                                        if r.on_hover_text(tr!("git.delete")).clicked() {
                                             remove_remote = Some(remote.name.clone());
                                         }
                                     }
                                 }
                             });
                         ui.add_space(4.0);
-                        kit::section(ui, "Ajouter un remote");
-                        labeled(ui, "Nom :", |ui| field(ui, name, "origin"));
+                        kit::section(ui, tr!("git.add_remote"));
+                        labeled(ui, tr!("git.name"), |ui| field(ui, name, "origin"));
                         labeled(ui, "URL :", |ui| field(ui, url, "https://…"));
                         ui.add_space(10.0);
                         cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            cancel |= kit::button(ui, "Fermer").clicked();
-                            ok |= kit::primary_button(ui, "Ajouter").clicked();
+                            cancel |= kit::button(ui, tr!("git.close")).clicked();
+                            ok |= kit::primary_button(ui, tr!("git.add")).clicked();
                         });
                     }
                 }
             });
         cancel |= modal.should_close();
         if let Some(remote) = remove_remote {
-            self.git("Suppression du remote", &["remote", "remove", &remote]);
+            self.git(tr!("git.removing_remote"), &["remote", "remove", &remote]);
         }
         if cancel && !ok && !force {
             return;
@@ -2557,24 +2675,24 @@ impl GitPlugin {
             } => self.create_branch(name.trim().to_string(), from, checkout),
             Dialog::RenameBranch { old, name } => {
                 let name = name.trim().to_string();
-                match repo::ensure_name(&name, "Nom de branche") {
-                    Ok(()) => self.git("Renommage", &["branch", "-m", &old, &name]),
+                match repo::ensure_name(&name, tr!("git.branch_name")) {
+                    Ok(()) => self.git(tr!("git.renaming"), &["branch", "-m", &old, &name]),
                     Err(e) => self.toast(e.to_string(), true),
                 }
             }
             Dialog::DeleteBranch { name, force } => self.git(
-                "Suppression de la branche",
+                tr!("git.deleting_branch"),
                 &["branch", if force { "-D" } else { "-d" }, &name],
             ),
             Dialog::NewTag { rev, name, message } => {
                 let name = name.trim().to_string();
-                if let Err(e) = repo::ensure_name(&name, "Nom de tag") {
+                if let Err(e) = repo::ensure_name(&name, tr!("git.tag_name")) {
                     self.toast(e.to_string(), true);
                 } else if message.trim().is_empty() {
-                    self.git("Nouveau tag", &["tag", &name, &rev]);
+                    self.git(tr!("git.new_tag"), &["tag", &name, &rev]);
                 } else {
                     self.git(
-                        "Nouveau tag",
+                        tr!("git.new_tag"),
                         &["tag", "-a", &name, "-m", message.trim(), &rev],
                     );
                 }
@@ -2611,7 +2729,7 @@ impl GitPlugin {
                     });
                     self.confirm(
                         "Reset --hard",
-                        "Toutes les modifications locales non commitées seront perdues.".into(),
+                        tr!("git.all_local_changes_not_committed").into(),
                         Vec::new(),
                         pending,
                     );
@@ -2622,10 +2740,10 @@ impl GitPlugin {
             Dialog::Clone { url, parent, name } => self.clone_repo(url, parent, name),
             Dialog::Remotes { name, url } => {
                 let (name, url) = (name.trim().to_string(), url.trim().to_string());
-                if repo::ensure_name(&name, "Nom de remote").is_err() || url.is_empty() {
-                    self.toast("Renseignez le nom et l'URL du remote", true);
+                if repo::ensure_name(&name, tr!("git.remote_name")).is_err() || url.is_empty() {
+                    self.toast(tr!("git.enter_name_url_remote"), true);
                 } else {
-                    self.git("Ajout du remote", &["remote", "add", &name, &url]);
+                    self.git(tr!("git.adding_remote"), &["remote", "add", &name, &url]);
                 }
                 self.dialog = Some(Dialog::Remotes {
                     name: String::new(),
@@ -2661,25 +2779,25 @@ fn change_menu(ui: &mut Ui, change: &Change) -> Option<ChangeAction> {
         entry(
             ui,
             Some("merge"),
-            "Résoudre…",
+            tr!("git.resolve"),
             ChangeAction::Resolve(path.clone()),
         );
         entry(
             ui,
             None,
-            "Accepter la version locale (ours)",
+            tr!("git.accept_yours"),
             ChangeAction::Accept(path.clone(), false),
         );
         entry(
             ui,
             None,
-            "Accepter la version entrante (theirs)",
+            tr!("git.accept_theirs"),
             ChangeAction::Accept(path.clone(), true),
         );
         entry(
             ui,
             Some("greenCheckmark"),
-            "Marquer comme résolu",
+            tr!("git.mark_as_resolved"),
             ChangeAction::Resolved(path.clone()),
         );
         menu_separator(ui);
@@ -2687,14 +2805,14 @@ fn change_menu(ui: &mut Ui, change: &Change) -> Option<ChangeAction> {
     entry(
         ui,
         Some("diff"),
-        "Afficher le diff",
+        tr!("git.show_diff"),
         ChangeAction::Diff(change.clone()),
     );
     if change.kind != Kind::Deleted {
         entry(
             ui,
             Some("edit"),
-            "Ouvrir le fichier",
+            tr!("git.open_file"),
             ChangeAction::Open(path.clone()),
         );
     }
@@ -2702,39 +2820,39 @@ fn change_menu(ui: &mut Ui, change: &Change) -> Option<ChangeAction> {
         entry(
             ui,
             Some("add"),
-            "Ajouter à Git",
+            tr!("git.add_git"),
             ChangeAction::Add(vec![path.clone()]),
         );
         entry(
             ui,
             Some("hide"),
-            "Ajouter au .gitignore",
+            tr!("git.add_gitignore"),
             ChangeAction::Ignore(path.clone()),
         );
         entry(
             ui,
             Some("delete"),
-            "Supprimer le fichier…",
+            tr!("git.delete_file"),
             ChangeAction::Rollback(vec![change.clone()]),
         );
     } else {
         entry(
             ui,
             Some("history"),
-            "Historique du fichier",
+            tr!("git.file_history"),
             ChangeAction::History(path.clone()),
         );
         if change.kind != Kind::Conflicted {
             entry(
                 ui,
                 Some("rollback"),
-                "Annuler les modifications…",
+                tr!("git.rollback"),
                 ChangeAction::Rollback(vec![change.clone()]),
             );
         }
     }
     menu_separator(ui);
-    if item(ui, Some("copy"), "Copier le chemin") {
+    if item(ui, Some("copy"), tr!("git.copy_path")) {
         ui.ctx().copy_text(path);
     }
     action
@@ -2754,7 +2872,7 @@ fn commit_menu(
             action = Some(a);
         }
     };
-    if item(ui, Some("copy"), "Copier le hash") {
+    if item(ui, Some("copy"), tr!("git.copy_hash")) {
         ui.ctx().copy_text(hash.clone());
     }
     menu_separator(ui);
@@ -2766,14 +2884,14 @@ fn commit_menu(
         entry(
             ui,
             Some("branch"),
-            &format!("Checkout de « {} »", r.name),
+            &trf!("git.checkout", name = r.name),
             LogAction::Checkout(Target::Branch(r.name.clone())),
         );
         if let Some(current) = current {
             entry(
                 ui,
                 Some("merge"),
-                &format!("Fusionner « {} » dans « {current} »", r.name),
+                &trf!("git.merge_into", name = r.name, current = current),
                 LogAction::Merge(r.name.clone()),
             );
         }
@@ -2781,19 +2899,19 @@ fn commit_menu(
     entry(
         ui,
         None,
-        "Checkout de la révision",
+        tr!("git.checkout_revision"),
         LogAction::Checkout(Target::Revision(hash.clone())),
     );
     entry(
         ui,
         Some("add"),
-        "Nouvelle branche…",
+        tr!("git.new_branch_dialog"),
         LogAction::NewBranch(hash.clone()),
     );
     entry(
         ui,
         Some("tag"),
-        "Nouveau tag…",
+        tr!("git.new_tag_dialog"),
         LogAction::NewTag(hash.clone()),
     );
     menu_separator(ui);
@@ -2806,20 +2924,20 @@ fn commit_menu(
     entry(
         ui,
         Some("rollback"),
-        "Revert du commit",
+        tr!("git.revert_commit"),
         LogAction::Revert(hash.clone(), merge),
     );
     entry(
         ui,
         None,
-        "Réinitialiser la branche courante ici…",
+        tr!("git.reset_current_branch_here"),
         LogAction::Reset(hash.clone(), commit.subject.clone()),
     );
     if head == Some(hash.as_str()) && !commit.parents.is_empty() {
         entry(
             ui,
             Some("undo"),
-            "Annuler le commit (garder les modifications)",
+            tr!("git.undo_commit_keep_changes"),
             LogAction::Undo,
         );
     }
@@ -2834,7 +2952,7 @@ fn commit_menu(
             entry(
                 ui,
                 Some("delete"),
-                &format!("Supprimer le tag « {} »", tag.name),
+                &trf!("git.delete_tag_name", name = tag.name),
                 LogAction::DeleteTag(tag.name.clone()),
             );
         }
@@ -3060,23 +3178,37 @@ fn conflict_block(ui: &mut Ui, t: &Theme, number: usize, c: &mut conflict::Confl
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                ui.label(RichText::new(format!("Conflit {number}")).font(kit::semibold(13.0)));
+                ui.label(
+                    RichText::new(trf!("git.conflict", number = number)).font(kit::semibold(13.0)),
+                );
                 let (text, color) = match c.choice {
-                    None => ("non résolu", t.conflict),
-                    Some(Choice::Ours) => ("version locale", t.success),
-                    Some(Choice::Theirs) => ("version entrante", t.success),
-                    Some(Choice::OursThenTheirs) => ("locale puis entrante", t.success),
-                    Some(Choice::TheirsThenOurs) => ("entrante puis locale", t.success),
+                    None => (tr!("git.not_resolved_lower"), t.conflict),
+                    Some(Choice::Ours) => (tr!("git.local_version"), t.success),
+                    Some(Choice::Theirs) => (tr!("git.incoming_version"), t.success),
+                    Some(Choice::OursThenTheirs) => {
+                        (tr!("git.local_then_incoming_lower"), t.success)
+                    }
+                    Some(Choice::TheirsThenOurs) => {
+                        (tr!("git.incoming_then_local_lower"), t.success)
+                    }
                 };
                 ui.label(RichText::new(text).color(color));
             });
             ui.columns(2, |columns| {
                 let sides = [
                     ("Local", &c.ours_label, &c.ours, Some(Choice::Ours)),
-                    ("Entrant", &c.theirs_label, &c.theirs, Some(Choice::Theirs)),
+                    (
+                        tr!("git.incoming"),
+                        &c.theirs_label,
+                        &c.theirs,
+                        Some(Choice::Theirs),
+                    ),
                 ];
                 for (ui, (title, label, text, side)) in columns.iter_mut().zip(sides) {
-                    ui.label(RichText::new(format!("{title} : {label}")).color(t.text_secondary));
+                    ui.label(
+                        RichText::new(trf!("git.text", title = title, label = label))
+                            .color(t.text_secondary),
+                    );
                     let chosen = c.choice == side;
                     let fill = match c.choice {
                         None => t.conflict.gamma_multiply(0.12),
@@ -3099,28 +3231,33 @@ fn conflict_block(ui: &mut Ui, t: &Theme, number: usize, c: &mut conflict::Confl
                 }
             });
             if let Some(base) = &c.base {
-                egui::CollapsingHeader::new("Ancêtre commun")
+                egui::CollapsingHeader::new(tr!("git.common_ancestor"))
                     .id_salt(("git_base", number))
                     .show(ui, |ui| {
                         ui.label(RichText::new(base.trim_end_matches('\n')).monospace());
                     });
             }
             ui.horizontal_wrapped(|ui| {
-                kit::radio_value(ui, &mut c.choice, Some(Choice::Ours), "Garder local");
-                kit::radio_value(ui, &mut c.choice, Some(Choice::Theirs), "Garder entrant");
+                kit::radio_value(ui, &mut c.choice, Some(Choice::Ours), tr!("git.keep_local"));
+                kit::radio_value(
+                    ui,
+                    &mut c.choice,
+                    Some(Choice::Theirs),
+                    tr!("git.keep_incoming"),
+                );
                 kit::radio_value(
                     ui,
                     &mut c.choice,
                     Some(Choice::OursThenTheirs),
-                    "Local puis entrant",
+                    tr!("git.local_then_incoming"),
                 );
                 kit::radio_value(
                     ui,
                     &mut c.choice,
                     Some(Choice::TheirsThenOurs),
-                    "Entrant puis local",
+                    tr!("git.incoming_then_local"),
                 );
-                kit::radio_value(ui, &mut c.choice, None, "Non résolu");
+                kit::radio_value(ui, &mut c.choice, None, tr!("git.not_resolved"));
             });
         });
     ui.add_space(8.0);
