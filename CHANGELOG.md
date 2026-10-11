@@ -1,6 +1,7 @@
 # Changelog
 
-Toutes les versions d'Atelier IDE. Les entrées viennent des fichiers de `.changeset/` (voir « Versions et releases » dans le README).
+Every version of Atelier IDE. The entries come from the files of `.changeset/` (see [Versions & releases](https://thomasfarineau.github.io/atelier-ide/contributing/releases)).
+
 ## 0.1.1 (2026-10-11)
 
 ### Features
