@@ -12,7 +12,7 @@ use eframe::egui::{
 };
 use std::path::Path;
 
-const FONT_SIZE: f32 = 13.0;
+pub(crate) const FONT_SIZE: f32 = 13.0;
 
 const DARK: [u32; 16] = [
     0x000000, 0xcd3131, 0x0dbc79, 0xe5e510, 0x2472c8, 0xbc3fbc, 0x11a8cd, 0xe5e5e5, 0x666666,
@@ -127,6 +127,48 @@ fn key_bytes(key: Key, m: Modifiers, application: bool) -> Option<Vec<u8>> {
     })
 }
 
+/// What `lines` turns of the wheel send to a program that took the screen, the pointer on
+/// `cell` (row, column): wheel events in the encoding it asked for, else the arrow keys.
+pub fn wheel_bytes(screen: &vt100::Screen, up: bool, lines: usize, cell: (u16, u16)) -> Vec<u8> {
+    use vt100::{MouseProtocolEncoding, MouseProtocolMode};
+    let mut out = Vec::new();
+    if screen.mouse_protocol_mode() == MouseProtocolMode::None {
+        let arrow: &[u8] = match (up, screen.application_cursor()) {
+            (true, true) => b"OA",
+            (true, false) => b"[A",
+            (false, true) => b"OB",
+            (false, false) => b"[B",
+        };
+        for _ in 0..lines {
+            out.extend_from_slice(arrow);
+        }
+        return out;
+    }
+    let button: u32 = if up { 64 } else { 65 };
+    let (row, col) = (u32::from(cell.0) + 1, u32::from(cell.1) + 1);
+    for _ in 0..lines {
+        match screen.mouse_protocol_encoding() {
+            MouseProtocolEncoding::Sgr => {
+                out.extend(format!("[<{button};{col};{row}M").into_bytes());
+            }
+            MouseProtocolEncoding::Utf8 => {
+                out.extend_from_slice(b"[M");
+                for value in [button, col, row] {
+                    let c = char::from_u32(32 + value).unwrap_or(' ');
+                    out.extend(c.to_string().into_bytes());
+                }
+            }
+            MouseProtocolEncoding::Default => {
+                out.extend_from_slice(b"[M");
+                for value in [button, col, row] {
+                    out.push((32 + value).min(255) as u8);
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Text of the selection, rows joined by line breaks, trailing spaces removed.
 fn selected_text(screen: &vt100::Screen, from: (u16, u16), to: (u16, u16)) -> String {
     let (_, cols) = screen.size();
@@ -220,18 +262,6 @@ pub fn show(
     let focused = response.has_focus();
     term.focused = focused;
 
-    // Mouse wheel scrolls the history.
-    if response.hovered() && !term.screen_ref().alternate_screen() {
-        // Small steps add up until they make a line, in both directions.
-        term.wheel += ui.input(|i| i.smooth_scroll_delta.y);
-        let lines = (term.wheel / row_h).trunc();
-        if lines != 0.0 {
-            term.wheel -= lines * row_h;
-            term.scroll(lines as isize);
-            *selection = Selection::default();
-        }
-    }
-
     // Mouse selection.
     let cell_at = |p: Pos2| -> (u16, u16) {
         let row = ((p.y - rect.top()) / row_h)
@@ -242,6 +272,27 @@ pub fn show(
             .clamp(0.0, cols as f32 - 1.0) as u16;
         (row, col)
     };
+    // The wheel scrolls the history. A program that took the whole screen (an editor, a pager,
+    // an AI) or asked for the mouse gets it instead, as wheel events or arrow keys.
+    if response.hovered() {
+        // Small steps add up until they make a line, in both directions.
+        term.wheel += ui.input(|i| i.smooth_scroll_delta.y);
+        let lines = (term.wheel / row_h).trunc();
+        if lines != 0.0 {
+            term.wheel -= lines * row_h;
+            let screen = term.screen_ref();
+            if screen.alternate_screen()
+                || screen.mouse_protocol_mode() != vt100::MouseProtocolMode::None
+            {
+                let cell = response.hover_pos().map_or((0, 0), cell_at);
+                let bytes = wheel_bytes(screen, lines > 0.0, lines.abs() as usize, cell);
+                let _ = term.write(&bytes);
+            } else {
+                term.scroll(lines as isize);
+                *selection = Selection::default();
+            }
+        }
+    }
     // Links: the one under the pointer is underlined, a click opens it.
     let hovered_link = response.hover_pos().and_then(|p| {
         link_at(term.screen_ref(), cell_at(p), cols, root).map(|l| (cell_at(p).0, l))
@@ -265,8 +316,10 @@ pub fn show(
     };
     if let Some(p) = response.interact_pointer_pos() {
         if response.drag_started() || response.clicked() {
+            // A drag is known once the pointer has moved: it starts where the button went down.
+            let origin = ui.input(|i| i.pointer.press_origin()).unwrap_or(p);
             *selection = Selection {
-                anchor: Some(cell_at(p)),
+                anchor: Some(cell_at(origin)),
                 head: cell_at(p),
             };
         } else if response.dragged() {
