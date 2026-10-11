@@ -1,0 +1,59 @@
+# Versions and releases, like Changesets: each change worth a line in the changelog comes with a
+# file in `.changeset/` (`knope document-change`). On `main`, `.github/workflows/prepare-release.yml`
+# keeps a "chore: prepare release" pull request up to date; merging it releases the version
+# (`.github/workflows/release.yml`).
+
+# Only the change files decide the version and the changelog, not the commit messages.
+[changes]
+ignore_conventional_commits = true
+
+[package]
+versioned_files = ["Cargo.toml", "Cargo.lock"]
+changelog = "CHANGELOG.md"
+# The archives, the bootstraps and SHA256SUMS built by `.github/workflows/build.yml`. Knope
+# publishes the release only once they are all uploaded, so the bootstrap never sees it without them.
+assets = "artifacts/*"
+
+[[workflows]]
+name = "document-change"
+
+[[workflows.steps]]
+type = "CreateChangeFile"
+
+[[workflows]]
+name = "prepare-release"
+
+[[workflows.steps]]
+type = "Command"
+command = "git switch -C release"
+
+[[workflows.steps]]
+type = "PrepareRelease"
+
+[[workflows.steps]]
+type = "Command"
+command = "git commit -m \"chore: prepare release $version\""
+
+[[workflows.steps]]
+type = "Command"
+command = "git push --force --set-upstream origin release"
+
+[[workflows.steps]]
+type = "CreatePullRequest"
+base = "main"
+
+[workflows.steps.title]
+template = "chore: prepare release $version"
+
+[workflows.steps.body]
+template = "Merging this pull request releases $version.\n\n$changelog"
+
+[[workflows]]
+name = "release"
+
+[[workflows.steps]]
+type = "Release"
+
+[github]
+owner = "ThomasFarineau"
+repo = "atelier-ide"

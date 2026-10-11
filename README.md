@@ -246,13 +246,38 @@ Références techniques : [eframe](https://docs.rs/eframe/0.33.3/eframe/) et [po
 
 ## Installation et mises à jour
 
-Chaque tag `vX.Y.Z` lance le workflow `Release` (`.github/workflows/release.yml`) : il compile l'IDE et son
-bootstrap pour Windows, Linux et macOS (Intel et Apple Silicon) et publie une release GitHub.
+### Versions et releases
 
-```bash
-# la version de Cargo.toml doit être celle du tag
-git tag v0.1.0 && git push origin v0.1.0
-```
+Les versions sont gérées par [Knope](https://knope.tech) (`knope.toml`), comme avec Changesets. Ce sont les fichiers de
+`.changeset/` qui décident de la version et du changelog, pas les messages de commit.
+
+1. **Dans la PR** : un changement à signaler s'accompagne d'un fichier de changement, créé par `knope document-change`
+   (type puis résumé) ou écrit à la main dans `.changeset/<résumé>.md` :
+
+   ```md
+   ---
+   default: minor
+   ---
+
+   # Le terminal affiche la mémoire et le CPU de chaque onglet
+
+   Détails facultatifs, en Markdown.
+   ```
+
+   `major` pour un changement cassant, `minor` pour une nouveauté, `patch` pour une correction. Tant que la version
+   est en `0.x`, `major` donne `0.(x+1).0` et `minor` comme `patch` incrémentent le dernier chiffre.
+2. **Sur `main`** : le workflow `Prepare release` (`.github/workflows/prepare-release.yml`) ouvre ou met à jour la PR
+   « chore: prepare release X.Y.Z » depuis la branche `release`. Elle change la version de `Cargo.toml` et
+   `Cargo.lock`, ajoute la section de `CHANGELOG.md` et supprime les fichiers de changement utilisés.
+3. **Au merge de cette PR** : le workflow `Release` (`.github/workflows/release.yml`) compile l'IDE et son bootstrap
+   pour Windows, Linux et macOS (Intel et Apple Silicon) avec `.github/workflows/build.yml`, puis `knope release`
+   crée le tag `vX.Y.Z` et publie la release GitHub avec les notes du changelog. La release reste un brouillon
+   tant que tous les fichiers ne sont pas envoyés.
+
+Le workflow `Build` se lance aussi à la main pour compiler sans publier. Il faut autoriser « Allow GitHub Actions to
+create and approve pull requests » (Settings › Actions › General) pour que la PR de release puisse être créée.
+
+### Bootstrap
 
 On ne télécharge qu'une fois le **bootstrap** (`atelier-<os>-<arch>`, `.exe` sur Windows) de la dernière release et on
 le lance toujours à la place de l'IDE. À chaque démarrage il :
