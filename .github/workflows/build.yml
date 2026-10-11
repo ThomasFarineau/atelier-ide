@@ -1,7 +1,8 @@
 name: Build
 
 # Builds the IDE and its bootstrap for Windows, Linux and macOS and keeps the files as artifacts.
-# `release.yml` calls it before publishing a release; started by hand, it only builds.
+# `prepare-release.yml` calls it on the release branch (a preview, and the cache of the release),
+# `release.yml` before publishing a release; started by hand, it only builds.
 
 on:
   workflow_call:
@@ -48,9 +49,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      # Only the compiled dependencies are worth keeping: downloading them takes seconds, compiling
+      # them takes minutes, and each target compiles its own. A release (pull_request event)
+      # restores the cache that `prepare-release.yml` saved on `main` but saves none: the cache of
+      # a pull request is visible only to that pull request.
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+          save-if: ${{ github.event_name != 'pull_request' }}
 
       - name: Build
         run: cargo build --release --locked --bins --target ${{ matrix.target }}
@@ -78,3 +84,4 @@ jobs:
           name: atelier-${{ matrix.os_name }}-${{ matrix.arch }}
           path: dist/*
           if-no-files-found: error
+          retention-days: 7

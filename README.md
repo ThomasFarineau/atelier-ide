@@ -268,10 +268,13 @@ Les versions sont gérées par [Knope](https://knope.tech) (`knope.toml`), comme
    est en `0.x`, `major` donne `0.(x+1).0` et `minor` comme `patch` incrémentent le dernier chiffre.
 2. **Sur `main`** : le workflow `Prepare release` (`.github/workflows/prepare-release.yml`) ouvre ou met à jour la PR
    « chore: prepare release X.Y.Z » depuis la branche `release`. Elle change la version de `Cargo.toml` et
-   `Cargo.lock`, ajoute la section de `CHANGELOG.md` et supprime les fichiers de changement utilisés.
+   `Cargo.lock`, ajoute la section de `CHANGELOG.md` et supprime les fichiers de changement utilisés. Le workflow
+   compile ensuite la branche `release` : les fichiers sont à essayer dans les artefacts du run, et les dépendances
+   compilées restent en cache pour la release.
 3. **Au merge de cette PR** : le workflow `Release` (`.github/workflows/release.yml`) compile l'IDE et son bootstrap
    pour Windows, Linux et macOS (Intel et Apple Silicon) avec `.github/workflows/build.yml`, puis `knope release`
-   crée le tag `vX.Y.Z` et publie la release GitHub avec les notes du changelog. La release reste un brouillon
+   crée le tag `vX.Y.Z` et publie la release GitHub avec les notes du changelog. Grâce au cache, seul le code
+   d'Atelier est recompilé. La release reste un brouillon
    tant que tous les fichiers ne sont pas envoyés.
 
 Le workflow `Build` se lance aussi à la main pour compiler sans publier. Il faut autoriser « Allow GitHub Actions to

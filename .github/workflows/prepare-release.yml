@@ -2,7 +2,8 @@ name: Prepare release
 
 # On every push to `main` with change files in `.changeset/`, `knope prepare-release` computes the
 # next version, writes CHANGELOG.md and opens (or updates) the "chore: prepare release" pull
-# request from the `release` branch. Merging it starts `release.yml`.
+# request from the `release` branch, then builds that branch (`build.yml`). Merging the pull
+# request starts `release.yml`.
 #
 # Needs "Allow GitHub Actions to create and approve pull requests" in Settings › Actions.
 
@@ -24,6 +25,8 @@ jobs:
     # The merge of a release pull request has nothing left to prepare.
     if: "!contains(github.event.head_commit.message, 'chore: prepare release')"
     runs-on: ubuntu-latest
+    outputs:
+      pending: ${{ steps.changes.outputs.pending }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -54,3 +57,12 @@ jobs:
         run: knope prepare-release --verbose
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Builds the release branch while the pull request waits: the files can be tried before merging,
+  # and the compiled dependencies are cached on `main`, where the release build finds them.
+  build:
+    needs: prepare-release
+    if: needs.prepare-release.outputs.pending == 'true'
+    uses: ./.github/workflows/build.yml
+    with:
+      ref: release
