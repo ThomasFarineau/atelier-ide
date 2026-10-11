@@ -41,6 +41,8 @@ tar = { version = "0.4", default-features = false }
 # The language of the system, the default language of the interface.
 sys-locale = "0.3"
 tree-sitter-java = "0.23"
+rodio = { version = "0.23", default-features = false, features = ["playback", "mp3", "wav", "flac", "vorbis", "mp4"] }
+lzma-rs = "0.3"
 
 
 [target.'cfg(windows)'.build-dependencies]

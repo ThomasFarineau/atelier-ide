@@ -817,3 +817,57 @@ fn a_mouse_drag_selects_from_where_the_button_went_down() {
     assert_eq!(view.anchor, pressed_at);
     assert!(view.cursor > pressed_at, "{} {}", view.anchor, view.cursor);
 }
+
+/// A video and a song open in the media player, which draws without the text editor.
+#[test]
+fn media_files_open_in_the_player() {
+    let dir = std::env::temp_dir().join(format!("atelier-media-app-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let song = dir.join("song.wav");
+    // 0.1 s of silence, 8 kHz mono 16-bit.
+    let mut wav = Vec::new();
+    for chunk in [
+        &b"RIFF"[..],
+        &1636u32.to_le_bytes(),
+        b"WAVEfmt ",
+        &16u32.to_le_bytes(),
+    ] {
+        wav.extend_from_slice(chunk);
+    }
+    for value in [1u16, 1] {
+        wav.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [8000u32, 16000] {
+        wav.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [2u16, 16] {
+        wav.extend_from_slice(&value.to_le_bytes());
+    }
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&1600u32.to_le_bytes());
+    wav.extend(std::iter::repeat_n(0u8, 1600));
+    fs::write(&song, wav).unwrap();
+    let clip = dir.join("clip.mp4");
+    fs::write(&clip, b"not really a video").unwrap();
+    let ctx = egui::Context::default();
+    let mut ide = ide();
+    ide.apply_theme(&ctx);
+    ide.open_file(song);
+    ide.open_file(clip);
+    ide.wait_loaded();
+    assert_eq!(ide.documents.len(), 2);
+    let mut time = 0.0;
+    for active in [0, 1, 0] {
+        ide.active = active;
+        for _ in 0..10 {
+            time += 0.05;
+            frame_with(&ctx, &mut ide, time, vec![]);
+        }
+    }
+    assert!(
+        ide.documents.iter().all(|d| d.text.is_empty()),
+        "not read as text"
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
