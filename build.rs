@@ -115,6 +115,8 @@ fn windows_identity() {
         .set("InternalName", "atelier-ide")
         .set("OriginalFilename", "atelier-ide.exe")
         .set_icon("assets/logo/atelier.ico");
+    // The other `rerun-if-changed` lines would leave the old icon in the program.
+    println!("cargo:rerun-if-changed=assets/logo/atelier.ico");
     // Without the Windows SDK the program still builds, under its file name only.
     if let Err(e) = resource.compile() {
         println!("cargo:warning=nom du produit non intégré à l'exécutable : {e}");

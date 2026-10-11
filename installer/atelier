@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+# The atelier command for Git Bash and other Unix shells on Windows, like bin/code of VS Code.
+exec "$(dirname "$(realpath "$0")")/../atelier.exe" "$@"
