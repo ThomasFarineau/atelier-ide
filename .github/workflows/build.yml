@@ -77,7 +77,25 @@ jobs:
           fi
           # The program users download once.
           cp "$out/atelier$ext" "dist/atelier-${{ matrix.os_name }}-${{ matrix.arch }}$ext"
-          rm -r dist/stage
+
+      - name: Windows installer
+        if: matrix.os_name == 'windows'
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.*)"' | Select-Object -First 1).Matches.Groups[1].Value
+          # The installed IDE knows its release: the bootstrap downloads nothing at the first start.
+          Set-Content -Path dist\stage\VERSION -Value "v$version" -NoNewline
+          $find = { Get-ChildItem "$env:ProgramFiles\Inno Setup *\ISCC.exe", "${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName }
+          $iscc = & $find
+          if (-not $iscc) {
+            choco install innosetup --no-progress -y
+            $iscc = & $find
+          }
+          & $iscc /Qp "/DAppVersion=$version" "/DSourceDir=$PWD\dist\stage" "/DOutputDir=$PWD\dist" installer\atelier.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Clean up
+        run: rm -r dist/stage
 
       - uses: actions/upload-artifact@v4
         with:

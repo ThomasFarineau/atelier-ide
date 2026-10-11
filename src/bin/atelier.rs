@@ -29,6 +29,9 @@
 #[macro_use]
 #[path = "../i18n.rs"]
 mod i18n;
+// The window shown while the bootstrap checks for an update, like the updaters of Discord or VS Code.
+#[path = "atelier/splash.rs"]
+mod splash;
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -63,6 +66,25 @@ const MAX_ARCHIVE: u64 = 1 << 30;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+/// Where an update stands, for the window of the bootstrap.
+#[derive(Clone, Debug, PartialEq)]
+enum Progress {
+    Checking,
+    Downloading {
+        tag: String,
+        done: u64,
+        total: u64,
+    },
+    Installing {
+        tag: String,
+    },
+    Starting,
+    /// The IDE could not start; the message says why.
+    Failed(String),
+    /// The IDE is started: the window can close.
+    Done,
+}
+
 fn main() {
     i18n::set(i18n::system());
     let dir = install_dir();
@@ -79,12 +101,33 @@ fn main() {
             .show();
         return;
     }
-    let mut log = String::new();
     let app_present = dir.join(APP_DIR).join(EXE).exists();
     let skip = env::var_os("ATELIER_NO_UPDATE").is_some();
-    if !skip && (args.is_empty() || !app_present || check_is_due(&dir)) {
+    let check = !skip && (args.is_empty() || !app_present || check_is_due(&dir));
+    // Started from its shortcut, or with nothing installed yet, the bootstrap shows its window.
+    // The `atelier <path>` command stays silent, so that it is instant.
+    if check && (args.is_empty() || !app_present) {
+        splash::run(dir, args);
+        return;
+    }
+    if let Progress::Failed(message) = check_and_start(&dir, args, check, &|_| {}) {
+        fail(&message);
+    }
+}
+
+/// Checks for an update when `check` (telling `progress` how it goes), then starts the IDE. What
+/// that came to: [`Progress::Done`], or [`Progress::Failed`].
+fn check_and_start(
+    dir: &Path,
+    args: Vec<OsString>,
+    check: bool,
+    progress: &dyn Fn(Progress),
+) -> Progress {
+    let mut log = String::new();
+    if check {
         let _ = fs::write(dir.join("last_check"), now().to_string());
-        match update(&dir) {
+        progress(Progress::Checking);
+        match update(dir, progress) {
             Ok(message) => log.push_str(&format!("{message}\n")),
             Err(e) => log.push_str(&trf!("cannot_update", e = e)),
         }
@@ -92,10 +135,12 @@ fn main() {
     let _ = fs::write(dir.join("bootstrap.log"), &log);
     let app = dir.join(APP_DIR).join(EXE);
     if !app.exists() {
-        fail(&trf!("atelier_ide_not_installed_could", log = log));
+        return Progress::Failed(trf!("atelier_ide_not_installed_could", log = log));
     }
-    if let Err(e) = Command::new(&app).args(args).spawn() {
-        fail(&trf!("cannot_start_2", app = app.display(), e = e));
+    progress(Progress::Starting);
+    match Command::new(&app).args(args).spawn() {
+        Ok(_) => Progress::Done,
+        Err(e) => Progress::Failed(trf!("cannot_start_2", app = app.display(), e = e)),
     }
 }
 
@@ -163,6 +208,16 @@ fn agent(timeout: Duration) -> ureq::Agent {
 
 /// A GET with the headers GitHub wants, and the token when there is one.
 fn get(agent: &ureq::Agent, url: &str, accept: &str) -> Result<Vec<u8>> {
+    get_with(agent, url, accept, &mut |_| {})
+}
+
+/// [`get`], telling `read` how many bytes have come so far.
+fn get_with(
+    agent: &ureq::Agent,
+    url: &str,
+    accept: &str,
+    read: &mut dyn FnMut(u64),
+) -> Result<Vec<u8>> {
     let mut request = agent
         .get(url)
         .header("User-Agent", "atelier-bootstrap")
@@ -171,26 +226,43 @@ fn get(agent: &ureq::Agent, url: &str, accept: &str) -> Result<Vec<u8>> {
         request = request.header("Authorization", &format!("Bearer {token}"));
     }
     let mut response = request.call()?;
-    Ok(response
+    let mut reader = response
         .body_mut()
         .with_config()
         .limit(MAX_ARCHIVE)
-        .read_to_vec()?)
+        .reader();
+    let mut data = Vec::new();
+    let mut chunk = vec![0; 64 * 1024];
+    loop {
+        let n = reader.read(&mut chunk)?;
+        if n == 0 {
+            return Ok(data);
+        }
+        data.extend_from_slice(&chunk[..n]);
+        read(data.len() as u64);
+    }
 }
 
 /// Checks for a newer release and installs it. What happened, for the log.
-fn update(dir: &Path) -> Result<String> {
+fn update(dir: &Path, progress: &dyn Fn(Progress)) -> Result<String> {
     cleanup(dir);
     let installed = fs::read_to_string(dir.join(APP_DIR).join("VERSION"))
         .ok()
         .map(|v| v.trim().to_string());
     let present = dir.join(APP_DIR).join(EXE).exists();
     let repo = env::var("ATELIER_REPO").unwrap_or_else(|_| REPO.to_string());
-    let release: Value = serde_json::from_slice(&get(
+    let latest = get(
         &agent(CHECK_TIMEOUT),
         &format!("https://api.github.com/repos/{repo}/releases/latest"),
         "application/vnd.github+json",
-    )?)?;
+    );
+    // GitHub answers 404 both for a repository without a release and for a private one.
+    if let Err(e) = &latest
+        && let Some(ureq::Error::StatusCode(404)) = e.downcast_ref::<ureq::Error>()
+    {
+        return Err(trf!("no_release_found", repo = repo).into());
+    }
+    let release: Value = serde_json::from_slice(&latest?)?;
     let tag = release["tag_name"]
         .as_str()
         .ok_or(tr!("answer_github_without_version"))?
@@ -218,7 +290,22 @@ fn update(dir: &Path) -> Result<String> {
     let sums = String::from_utf8(get(&slow, &address(sums), "application/octet-stream")?)?;
     let expected =
         checksum_of(&sums, &name).ok_or_else(|| trf!("missing_from_sha256sums", name = name))?;
-    let archive = get(&slow, &address(asset), "application/octet-stream")?;
+    let total = asset["size"].as_u64().unwrap_or(0);
+    let downloading = |done| {
+        progress(Progress::Downloading {
+            tag: tag.clone(),
+            done,
+            total,
+        })
+    };
+    downloading(0);
+    let archive = get_with(
+        &slow,
+        &address(asset),
+        "application/octet-stream",
+        &mut |done| downloading(done),
+    )?;
+    progress(Progress::Installing { tag: tag.clone() });
     let actual = hex(&Sha256::digest(&archive));
     if actual != expected {
         return Err(trf!("wrong_checksum", name = name).into());
@@ -265,8 +352,12 @@ fn install_cli(dir: &Path) -> Result<String> {
              if (($p -split ';') -notcontains '{folder}') {{ \
              [Environment]::SetEnvironmentVariable('Path',($p.TrimEnd(';')+';{folder}'),'User') }}"
         );
+        // Without this flag, PowerShell opens a console window over the IDE that is starting.
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         let status = Command::new("powershell")
             .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .creation_flags(CREATE_NO_WINDOW)
             .status()?;
         if !status.success() {
             return Err(tr!("powershell_could_not_change_path").into());
