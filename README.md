@@ -9,6 +9,7 @@
   <a href="https://github.com/ThomasFarineau/atelier-ide/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/ThomasFarineau/atelier-ide/ci.yml?branch=main&label=CI"></a>
   <a href="https://github.com/ThomasFarineau/atelier-ide/actions/workflows/docs.yml"><img alt="Docs" src="https://img.shields.io/github/actions/workflow/status/ThomasFarineau/atelier-ide/docs.yml?branch=main&label=docs"></a>
   <a href="https://github.com/ThomasFarineau/atelier-ide/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/ThomasFarineau/atelier-ide/total?color=047cff"></a>
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-8b39f6"></a>
   <img alt="Rust 2024" src="https://img.shields.io/badge/Rust-2024-dea584?logo=rust&logoColor=white">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-555">
 </p>
@@ -64,3 +65,7 @@ The documentation lives in [`docs/`](docs) (VitePress, with [Bun](https://bun.sh
 ```bash
 cd docs && bun install && bun run dev
 ```
+
+## License
+
+Atelier IDE is released under the [MIT License](LICENSE). The bundled Inter and JetBrains Mono fonts are under the SIL Open Font License (`assets/fonts/`).

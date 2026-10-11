@@ -106,6 +106,10 @@ export default defineConfig({
   themeConfig: {
     logo: '/logo.svg',
     socialLinks: [{ icon: 'github', link: repo }],
+    footer: {
+      message: `Released under the <a href="${repo}/blob/main/LICENSE">MIT License</a>.`,
+      copyright: 'Copyright © 2026 Thomas Farineau',
+    },
     search: {
       provider: 'local',
       options: {
@@ -153,6 +157,10 @@ export default defineConfig({
         sidebar: sidebar('/fr', fr),
         editLink: { pattern: `${repo}/edit/main/docs/:path`, text: 'Modifier cette page sur GitHub' },
         outline: { label: 'Sur cette page' },
+        footer: {
+          message: `Publié sous <a href="${repo}/blob/main/LICENSE">licence MIT</a>.`,
+          copyright: 'Copyright © 2026 Thomas Farineau',
+        },
         docFooter: { prev: 'Page précédente', next: 'Page suivante' },
         lastUpdated: { text: 'Mis à jour le' },
         returnToTopLabel: 'Retour en haut',
