@@ -94,3 +94,95 @@ fn the_files_that_import_a_name_follow() {
     assert!(by_file("unrelated.js").is_none(), "another `helper`");
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// Renaming an imported name from a file that uses it renames it where it is declared and in
+/// the other files that import it, as renaming it at its declaration does.
+#[test]
+fn renaming_an_import_renames_its_declaration_and_the_other_importers() {
+    let root = std::env::temp_dir().join(format!("atelier-rename-import-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("lib")).unwrap();
+    std::fs::write(
+        root.join("lib/util.js"),
+        "export function helper() {}
+helper();
+",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("other.js"),
+        "import { helper } from './lib/util.js';
+helper();
+",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("aliased.js"),
+        "import { helper as h } from './lib/util.js';
+h();
+",
+    )
+    .unwrap();
+    let main = root.join("main.js");
+    let (text, offset) = at("import { helper } from './lib/util.js';
+hel|per();
+");
+    std::fs::write(&main, &text).unwrap();
+    let plan = rename(&text, offset, "assist", Some(&main), &root).unwrap();
+    assert_eq!(
+        apply(&text, &plan[0].edits),
+        "import { assist } from './lib/util.js';
+assist();
+"
+    );
+    let changed = |name: &str| {
+        let file = plan
+            .iter()
+            .find(|f| f.path.as_ref().is_some_and(|p| p.ends_with(name)))
+            .unwrap_or_else(|| panic!("{name} changes"));
+        apply(
+            &std::fs::read_to_string(root.join(name)).unwrap(),
+            &file.edits,
+        )
+    };
+    assert_eq!(
+        changed("lib/util.js"),
+        "export function assist() {}
+assist();
+"
+    );
+    assert_eq!(
+        changed("other.js"),
+        "import { assist } from './lib/util.js';
+assist();
+"
+    );
+    assert_eq!(
+        changed("aliased.js"),
+        "import { assist as h } from './lib/util.js';
+h();
+"
+    );
+    assert!(
+        !plan
+            .iter()
+            .any(|f| f.path.as_ref().is_some_and(|p| p.ends_with("main.js"))),
+        "main.js is the document itself"
+    );
+    // A name the declaring file already has would be merged with this one.
+    std::fs::write(
+        root.join("lib/util.js"),
+        "export function helper() {}
+export const assist = 1;
+",
+    )
+    .unwrap();
+    assert!(rename(&text, offset, "assist", Some(&main), &root).is_err());
+    // An alias is local: only the document changes.
+    let (aliased, at_alias) = at("import { helper as h } from './lib/util.js';
+|h();
+");
+    let plan = rename(&aliased, at_alias, "g", Some(&main), &root).unwrap();
+    assert_eq!(plan.len(), 1);
+    let _ = std::fs::remove_dir_all(&root);
+}
