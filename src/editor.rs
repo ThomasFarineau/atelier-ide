@@ -7,10 +7,16 @@
 
 mod actions;
 mod assist;
+mod context;
 mod fold;
+mod intel;
+mod multi;
+mod spell;
+mod templates;
 
 use crate::{
     highlight::Incremental,
+    languages::lsp::extras::{HintKind, InlayHint},
     plugins::builtin::{Command, LineMark, MarkKind},
     ui::Theme,
 };
@@ -39,6 +45,9 @@ struct Change {
     inserted: String,
     before: (usize, usize),
     after: (usize, usize),
+    /// The changes of one keystroke at several carets share a group, other than 0: they undo
+    /// and redo together.
+    group: u64,
 }
 
 /// View state of a document in the editor.
@@ -64,6 +73,14 @@ pub struct EditorState {
     /// Grows with every change of the text, for the language service.
     rev: u64,
     assist: AssistState,
+    intel: intel::IntelState,
+    crumbs: context::CrumbState,
+    spell: spell::SpellState,
+    /// The language of the document, as of the last frame.
+    language: String,
+    /// The hints of the language server, sorted, and the request that brings the next ones.
+    hints: Vec<InlayHint>,
+    hints_state: intel::HintsState,
     /// Foldable regions of the text, and the ones that are collapsed (by opening offset).
     regions: Vec<fold::Region>,
     folded: Vec<usize>,
@@ -79,6 +96,15 @@ pub struct EditorState {
     own_press: bool,
     /// The selections Extend Selection went from, and to, for Shrink Selection.
     expanded: Vec<((usize, usize), Range<usize>)>,
+    /// The carets besides the primary one (`cursor` and `anchor`), the last added last.
+    extras: Vec<multi::Caret>,
+    /// The group of the changes being made at several carets, 0 outside of them.
+    group: u64,
+    next_group: u64,
+    /// The mouse selects columns (Alt+Shift+Insert).
+    pub column_mode: bool,
+    /// Line and display column where a column selection began.
+    column_anchor: Option<(usize, usize)>,
 }
 
 impl Default for EditorState {
@@ -99,6 +125,12 @@ impl Default for EditorState {
             scroll_fraction: 0.0,
             rev: 0,
             assist: AssistState::default(),
+            intel: Default::default(),
+            crumbs: Default::default(),
+            spell: Default::default(),
+            language: String::new(),
+            hints: Vec::new(),
+            hints_state: Default::default(),
             regions: Vec::new(),
             folded: Vec::new(),
             fold_rev: u64::MAX,
@@ -107,6 +139,87 @@ impl Default for EditorState {
             fold_press: false,
             own_press: false,
             expanded: Vec::new(),
+            extras: Vec::new(),
+            group: 0,
+            next_group: 0,
+            column_mode: false,
+            column_anchor: None,
+        }
+    }
+}
+
+/// A hint of the language server on a line, for the layout.
+struct HintCol {
+    /// Display column of the character it comes before.
+    column: usize,
+    label: String,
+    /// The caret at that column is before the hint (a type) rather than after it (an argument).
+    before_caret: bool,
+}
+
+/// Puts the hints of a line in the layout between the pieces of its text.
+struct Hints {
+    hints: std::vec::IntoIter<HintCol>,
+    next: Option<HintCol>,
+    column: usize,
+    format: egui::TextFormat,
+}
+
+impl Hints {
+    fn new(hints: Vec<HintCol>, opt: &Options) -> Self {
+        let mut hints = hints.into_iter();
+        let next = hints.next();
+        Self {
+            hints,
+            next,
+            column: 0,
+            format: egui::TextFormat {
+                font_id: FontId::new(opt.font.size * 0.85, opt.font.family.clone()),
+                color: opt.theme.text_secondary,
+                background: opt.theme.hover,
+                ..egui::TextFormat::default()
+            },
+        }
+    }
+
+    fn put(&mut self, job: &mut egui::text::LayoutJob) {
+        if let Some(hint) = self.next.take() {
+            job.append(&hint.label, 0.0, self.format.clone());
+            self.next = self.hints.next();
+        }
+    }
+
+    /// Appends a piece of the line, with the hints that fall inside it.
+    fn append(&mut self, job: &mut egui::text::LayoutJob, piece: &str, format: egui::TextFormat) {
+        let mut rest = piece;
+        loop {
+            let length = rest.chars().count();
+            match &self.next {
+                Some(hint) if hint.column <= self.column + length => {
+                    let take = hint.column.saturating_sub(self.column);
+                    let at = rest.char_indices().nth(take).map_or(rest.len(), |(i, _)| i);
+                    if at > 0 {
+                        job.append(&rest[..at], 0.0, format.clone());
+                    }
+                    self.column += take;
+                    rest = &rest[at..];
+                    self.put(job);
+                }
+                _ => {
+                    if !rest.is_empty() {
+                        job.append(rest, 0.0, format);
+                    }
+                    self.column += length;
+                    return;
+                }
+            }
+        }
+    }
+
+    /// The hints at the end of the line.
+    fn finish(&mut self, job: &mut egui::text::LayoutJob) {
+        while self.next.is_some() {
+            self.put(job);
         }
     }
 }
@@ -124,6 +237,18 @@ pub struct Options<'a> {
     pub assist: Option<Assist<'a>>,
     /// The matches of the find bar, sorted.
     pub search: &'a [Range<usize>],
+    /// The text can be read, selected and copied, not changed.
+    pub read_only: bool,
+    /// Hints of the language server in the code (types, names of arguments).
+    pub inlay_hints: bool,
+    /// The lines that open the blocks around the top of the window stay on top.
+    pub sticky_lines: bool,
+    /// The path of the code at the caret above the editor.
+    pub breadcrumbs: bool,
+    /// The lines (0-based) that have a bookmark.
+    pub bookmarks: &'a [usize],
+    /// The misspelled words of the comments and strings are underlined.
+    pub spellcheck: bool,
 }
 
 #[derive(Default)]
@@ -145,6 +270,34 @@ pub struct Output {
     pub file_edits: Vec<(std::path::PathBuf, Vec<crate::languages::TextEdit>)>,
     /// A message for the status bar (after Reformat Code).
     pub message: Option<String>,
+}
+
+/// What a read-only editor does with an event: it moves, selects, folds and copies, nothing more.
+fn allowed_when_read_only(event: &egui::Event) -> bool {
+    match event {
+        egui::Event::Copy => true,
+        egui::Event::Key {
+            key,
+            pressed: true,
+            modifiers,
+            ..
+        } => match key {
+            Key::ArrowLeft
+            | Key::ArrowRight
+            | Key::ArrowUp
+            | Key::ArrowDown
+            | Key::PageUp
+            | Key::PageDown
+            | Key::Home
+            | Key::End
+            | Key::Escape => !(modifiers.shift && (modifiers.alt || modifiers.command)) || *key == Key::Escape,
+            Key::A | Key::W | Key::M | Key::Period | Key::Minus | Key::Equals | Key::Plus => {
+                modifiers.command
+            }
+            _ => false,
+        },
+        _ => false,
+    }
 }
 
 fn is_word(c: char) -> bool {
@@ -222,6 +375,8 @@ impl EditorState {
             .unwrap_or(0);
         self.indexed_len = text.len();
         self.rev += 1;
+        // The text changed outside of the editor: the other carets mean nothing any more.
+        self.extras.clear();
         self.cursor = self.clamp(text, self.cursor);
         self.anchor = self.clamp(text, self.anchor);
         if let Some(highlight) = &mut self.highlight {
@@ -506,6 +661,29 @@ impl EditorState {
                 *open < range.start
             }
         });
+        // The typos after the edit move with the text; the ones it touches go.
+        if !self.spell.typos.is_empty() {
+            self.spell.typos.retain_mut(|typo| {
+                if typo.start >= range.end {
+                    typo.start = (typo.start as isize + delta) as usize;
+                    typo.end = (typo.end as isize + delta) as usize;
+                    true
+                } else {
+                    typo.end <= range.start
+                }
+            });
+        }
+        // The hints after the edit move with the text; the ones inside it go.
+        if !self.hints.is_empty() {
+            self.hints.retain_mut(|hint| {
+                if hint.offset >= range.end {
+                    hint.offset = (hint.offset as isize + delta) as usize;
+                    true
+                } else {
+                    hint.offset <= range.start
+                }
+            });
+        }
         let first = self.line_of(range.start);
         let last = self.line_of(range.start + insert.len());
         for index in first..=last {
@@ -523,8 +701,10 @@ impl EditorState {
             inserted: insert.to_string(),
             before,
             after: (end, end),
+            group: self.group,
         };
         let merge = typing
+            && self.group == 0
             && self.last_typing.is_some_and(|t| t.elapsed() < MERGE_DELAY)
             && change.removed.is_empty()
             && !insert.contains('\n')
@@ -572,8 +752,16 @@ impl EditorState {
         let Some(change) = self.undo.pop() else {
             return false;
         };
+        self.extras.clear();
+        let group = change.group;
         self.apply(text, &change, true);
         self.redo.push(change);
+        // The other changes of the keystroke go with it.
+        while group != 0 && self.undo.last().is_some_and(|c| c.group == group) {
+            let change = self.undo.pop().expect("checked");
+            self.apply(text, &change, true);
+            self.redo.push(change);
+        }
         true
     }
 
@@ -581,8 +769,15 @@ impl EditorState {
         let Some(change) = self.redo.pop() else {
             return false;
         };
+        self.extras.clear();
+        let group = change.group;
         self.apply(text, &change, false);
         self.undo.push(change);
+        while group != 0 && self.redo.last().is_some_and(|c| c.group == group) {
+            let change = self.redo.pop().expect("checked");
+            self.apply(text, &change, false);
+            self.undo.push(change);
+        }
         true
     }
 
@@ -894,13 +1089,30 @@ impl EditorState {
     }
 
     /// Keyboard and clipboard events while the editor has the focus.
-    fn handle_events(&mut self, ui: &Ui, text: &mut String, language: &str, page: isize) -> bool {
+    fn handle_events(
+        &mut self,
+        ui: &Ui,
+        text: &mut String,
+        language: &str,
+        page: isize,
+        read_only: bool,
+    ) -> bool {
         let events = ui.input(|i| i.events.clone());
         let before = text.len();
         let mut changed = false;
         let mut typed_char = None;
         let mut erased = false;
         for event in events {
+            if read_only && !allowed_when_read_only(&event) {
+                continue;
+            }
+            if self.has_extras()
+                && let Some(edited) = self.multi_event(ui, text, language, &event, page)
+            {
+                changed |= edited;
+                typed_char = None;
+                continue;
+            }
             match event {
                 egui::Event::Text(typed) => {
                     // A list that can be filtered takes what is typed.
@@ -971,6 +1183,45 @@ impl EditorState {
         if let Some(changed) = self.assist_key(text, key, m) {
             return changed;
         }
+        match key {
+            // Alt+J, Ctrl+Alt+Shift+J, Alt+Shift+J: the carets.
+            Key::J if m.alt && m.command && m.shift => {
+                self.select_all_occurrences(text);
+                return false;
+            }
+            Key::J if m.alt && m.shift => {
+                self.unselect_occurrence();
+                return false;
+            }
+            Key::J if m.alt && !m.command => {
+                self.add_next_occurrence(text);
+                return false;
+            }
+            Key::Insert if m.alt && m.shift => {
+                self.toggle_column_mode();
+                return false;
+            }
+            _ => {}
+        }
+        if key == Key::T && m.command && m.alt && !m.shift {
+            self.open_surround(text, language);
+            return false;
+        }
+        if self.intel_key(key, m) {
+            return false;
+        }
+        self.key_core(text, language, key, m, page)
+    }
+
+    /// The keys that act on the text and the caret, without the completion popup.
+    fn key_core(
+        &mut self,
+        text: &mut String,
+        language: &str,
+        key: Key,
+        m: Modifiers,
+        page: isize,
+    ) -> bool {
         let extend = m.shift;
         let word = m.command || m.alt;
         let line = self.line_of(self.cursor);
@@ -999,8 +1250,12 @@ impl EditorState {
                 self.move_to(pos, extend);
                 self.preferred_column = None;
             }
-            Key::ArrowUp | Key::ArrowDown if m.shift && (m.alt || m.command) => {
+            Key::ArrowUp | Key::ArrowDown if m.shift && m.alt => {
                 self.move_lines(text, key == Key::ArrowUp);
+                return true;
+            }
+            Key::ArrowUp | Key::ArrowDown if m.shift && m.command => {
+                self.move_statement(text, key == Key::ArrowUp);
                 return true;
             }
             Key::ArrowUp => self.vertical(text, -1, extend),
@@ -1174,7 +1429,8 @@ impl EditorState {
 
     // ---- Drawing ------------------------------------------------------------------------
 
-    /// Galley of a visible line, colored when highlighting has reached it.
+    /// Galley of a visible line, colored when highlighting has reached it, with the hints of the
+    /// language server between the characters they belong to.
     fn galley(
         &mut self,
         ui: &Ui,
@@ -1193,6 +1449,7 @@ impl EditorState {
         let line = &full[..head];
         let mut job = egui::text::LayoutJob::default();
         let format = |color| egui::TextFormat::simple(opt.font.clone(), color);
+        let mut hints = Hints::new(self.hint_cols(text, index, head), opt);
         let spans = self
             .highlight
             .as_mut()
@@ -1204,9 +1461,9 @@ impl EditorState {
                 for (range, color) in spans {
                     let range = range.start.min(head)..range.end.min(head);
                     if range.start > end {
-                        job.append(
+                        hints.append(
+                            &mut job,
                             &display(&line[end..range.start]),
-                            0.0,
                             format(opt.theme.text),
                         );
                     }
@@ -1214,16 +1471,17 @@ impl EditorState {
                         && line.is_char_boundary(range.start)
                         && line.is_char_boundary(range.end)
                     {
-                        job.append(&display(&line[range.clone()]), 0.0, format(color));
+                        hints.append(&mut job, &display(&line[range.clone()]), format(color));
                         end = range.end;
                     }
                 }
                 if end < line.len() {
-                    job.append(&display(&line[end..]), 0.0, format(opt.theme.text));
+                    hints.append(&mut job, &display(&line[end..]), format(opt.theme.text));
                 }
             }
-            _ => job.append(&display(line), 0.0, format(opt.theme.text)),
+            _ => hints.append(&mut job, &display(line), format(opt.theme.text)),
         }
+        hints.finish(&mut job);
         if let Some((_, tail_start, last)) = fold {
             let chip = egui::TextFormat {
                 background: opt.theme.hover,
@@ -1243,6 +1501,73 @@ impl EditorState {
         ui.fonts_mut(|f| f.layout_job(job))
     }
 
+    // ---- Hints --------------------------------------------------------------------------
+
+    /// The hints of a line, in order. Only the ones before `head` (a byte offset in the line)
+    /// when the line is collapsed.
+    fn hint_cols(&self, text: &str, index: usize, head: usize) -> Vec<HintCol> {
+        if self.hints.is_empty() {
+            return Vec::new();
+        }
+        let start = self.lines[index];
+        let line = self.line(text, index);
+        let from = self.hints.partition_point(|h| h.offset < start);
+        self.hints[from..]
+            .iter()
+            .take_while(|h| h.offset <= start + line.len())
+            .filter(|h| h.offset - start <= head && line.is_char_boundary(h.offset - start))
+            .map(|h| {
+                let parameter = h.kind == HintKind::Parameter;
+                HintCol {
+                    column: column_of(line, h.offset - start),
+                    label: if parameter {
+                        format!("{} ", h.label)
+                    } else {
+                        h.label.clone()
+                    },
+                    before_caret: !parameter,
+                }
+            })
+            .collect()
+    }
+
+    /// The column of the galley for the display column `column` of a line: what the hints before
+    /// it add.
+    fn visual_column(&self, text: &str, index: usize, column: usize) -> usize {
+        if self.hints.is_empty() {
+            return column;
+        }
+        let head = self.line(text, index).len();
+        column
+            + self
+                .hint_cols(text, index, head)
+                .iter()
+                .filter(|h| h.column < column || (h.column == column && !h.before_caret))
+                .map(|h| h.label.chars().count())
+                .sum::<usize>()
+    }
+
+    /// The display column of a column of the galley: a hint takes the column it is before.
+    fn source_column(&self, text: &str, index: usize, visual: usize) -> usize {
+        if self.hints.is_empty() {
+            return visual;
+        }
+        let head = self.line(text, index).len();
+        let mut added = 0;
+        for hint in self.hint_cols(text, index, head) {
+            let start = hint.column + added;
+            let length = hint.label.chars().count();
+            if visual < start {
+                break;
+            }
+            if visual < start + length {
+                return hint.column;
+            }
+            added += length;
+        }
+        visual - added
+    }
+
     /// Byte offset under a point of the text area.
     #[allow(clippy::too_many_arguments)]
     fn hit(
@@ -1260,6 +1585,7 @@ impl EditorState {
         let mut column = galley
             .cursor_from_pos(vec2(pos.x - origin.x - text_x, row / 2.0))
             .index;
+        column = self.source_column(text, index, column);
         // On a collapsed line the placeholder and the closing are not text of this line.
         if let Some(r) = self.folded_at(index) {
             column = column.min(column_of(
@@ -1273,6 +1599,9 @@ impl EditorState {
     /// Draws the editor and handles its input.
     pub fn show(&mut self, ui: &mut Ui, id: Id, text: &mut String, opt: &Options) -> Output {
         self.sync(text);
+        if self.language != opt.language {
+            self.language = opt.language.to_string();
+        }
         if self
             .highlight
             .as_ref()
@@ -1282,6 +1611,9 @@ impl EditorState {
         }
         self.refresh_folds(text, opt.language);
         self.assist_frame(ui, text, opt);
+        self.intel_frame(ui, text, opt);
+        self.spell_frame(ui, text, opt);
+        self.spell_fixes_alone(text, opt);
         let t = opt.theme;
         let (row, char_width) =
             ui.fonts_mut(|f| (f.row_height(&opt.font), f.glyph_width(&opt.font, 'M')));
@@ -1313,6 +1645,10 @@ impl EditorState {
             self.apply_edits(text, edits);
             output.changed = true;
         }
+        self.crumbs_frame(ui, text, opt);
+        if opt.breadcrumbs && opt.assist.is_some() {
+            self.show_crumbs(ui, text, opt);
+        }
         let viewport_height = ui.available_height();
         let page = ((viewport_height / row) as isize - 2).max(1);
         let area = egui::ScrollArea::both()
@@ -1321,7 +1657,14 @@ impl EditorState {
             .show_viewport(ui, |ui, viewport| {
                 let width =
                     (text_x + (self.longest as f32 + 8.0) * char_width).max(ui.available_width());
-                let height = self.row_count() as f32 * row + (viewport_height - 2.0 * row).max(0.0);
+                // The scroll stops when the last line reaches the bottom, with a little room
+                // under it; a file shorter than the window does not scroll at all.
+                let rows = self.row_count() as f32 * row;
+                let height = if rows > viewport_height {
+                    rows + row
+                } else {
+                    rows
+                };
                 let (rect, response) =
                     ui.allocate_exact_size(vec2(width, height), Sense::click_and_drag());
                 let origin = rect.min;
@@ -1332,6 +1675,20 @@ impl EditorState {
                     response.request_focus();
                 }
                 let focused = response.has_focus();
+                // The lines kept on top while the block they open is in view.
+                let top_row = (viewport.min.y / row).ceil().max(0.0) as usize;
+                let sticky = if opt.sticky_lines {
+                    self.sticky_lines(text, top_row)
+                } else {
+                    Vec::new()
+                };
+                let sticky_rect = (!sticky.is_empty()).then(|| {
+                    Rect::from_min_size(
+                        // From the very top of what is visible: no sliver of scrolled text above.
+                        pos2(origin.x + viewport.min.x, ui.clip_rect().top()),
+                        vec2(viewport.width(), sticky.len() as f32 * row),
+                    )
+                });
                 // Leaving the editor closes the popup (not before it ever had the focus).
                 self.assist.focus_changed(focused);
                 if focused {
@@ -1346,7 +1703,8 @@ impl EditorState {
                             },
                         )
                     });
-                    output.changed |= self.handle_events(ui, text, opt.language, page);
+                    output.changed |=
+                        self.handle_events(ui, text, opt.language, page, opt.read_only);
                 }
                 // Mouse: click places the caret, drag selects, double and triple click select
                 // the word and the line. The gutter selects whole lines.
@@ -1360,8 +1718,21 @@ impl EditorState {
                     popup_click = true;
                     output.changed |= taken;
                 }
-                let over_popup =
-                    pointer.is_some_and(|p| self.popup_rect().is_some_and(|r| r.contains(p)));
+                let over_sticky =
+                    pointer.is_some_and(|p| sticky_rect.is_some_and(|r| r.contains(p)));
+                let over_popup = over_sticky
+                    || pointer.is_some_and(|p| self.popup_rect().is_some_and(|r| r.contains(p)));
+                // A click on a kept line goes to it.
+                if let (Some(pos), Some(area)) = (pointer, sticky_rect)
+                    && over_sticky
+                    && ui.input(|i| i.pointer.primary_pressed())
+                {
+                    let which = ((pos.y - area.top()) / row).floor().max(0.0) as usize;
+                    if let Some(&line) = sticky.get(which) {
+                        let at = self.lines[line];
+                        self.select(at, at);
+                    }
+                }
                 // Ctrl + click goes to the declaration instead of placing the caret.
                 let ctrl = ui.input(|i| i.modifiers.command);
                 if let Some(pos) = pointer
@@ -1383,6 +1754,7 @@ impl EditorState {
                 if !ui.input(|i| i.pointer.primary_down()) {
                     self.fold_press = false;
                     self.own_press = false;
+                    self.column_anchor = None;
                 }
                 if response.hovered() && ui.input(|i| i.pointer.primary_pressed()) {
                     self.own_press = true;
@@ -1409,7 +1781,13 @@ impl EditorState {
                                         head_end - self.lines[line],
                                     );
                                     let x = pos.x - origin.x - text_x;
-                                    x >= galley.pos_from_cursor(CCursor::new(head)).min.x - 1.0
+                                    x >= galley
+                                        .pos_from_cursor(CCursor::new(
+                                            self.visual_column(text, line, head),
+                                        ))
+                                        .min
+                                        .x
+                                        - 1.0
                                         && x <= galley.size().x + 2.0
                                 };
                             if on_marker || on_placeholder {
@@ -1434,16 +1812,32 @@ impl EditorState {
                     // the pointer has moved, a few pixels further.
                     let pressed = ui.input(|i| i.pointer.primary_pressed());
                     let extend = ui.input(|i| i.modifiers.shift) || !pressed;
+                    let (alt, shift) = ui.input(|i| (i.modifiers.alt, i.modifiers.shift));
+                    let columns = !in_gutter && ((alt && !shift) || self.column_mode);
                     if in_gutter {
+                        self.clear_extras();
                         let line = self.line_of(at);
                         let end = self.lines.get(line + 1).copied().unwrap_or(text.len());
                         if !extend {
                             self.anchor = self.lines[line];
                         }
                         self.cursor = end;
+                    } else if pressed && alt && shift {
+                        // Alt+Shift+click: another caret.
+                        self.toggle_caret(at);
+                    } else if columns {
+                        // Alt+drag: a block of columns, a caret on each of its lines.
+                        let line =
+                            self.line_at(((pos.y - origin.y) / row).floor().max(0.0) as usize);
+                        let column = ((pos.x - origin.x - text_x) / char_width)
+                            .round()
+                            .max(0.0) as usize;
+                        let from = *self.column_anchor.get_or_insert((line, column));
+                        self.select_columns(text, from, (line, column));
                     } else if pressed {
-                        self.move_to(at, ui.input(|i| i.modifiers.shift));
-                    } else {
+                        self.clear_extras();
+                        self.move_to(at, shift);
+                    } else if !(alt && shift) {
                         self.cursor = at;
                     }
                     self.preferred_column = None;
@@ -1513,6 +1907,13 @@ impl EditorState {
                 let first =
                     ((viewport.min.y / row).floor().max(0.0) as usize).min(self.row_count());
                 let last = (((viewport.max.y / row).ceil() as usize) + 1).min(self.row_count());
+                self.hints_frame(
+                    ui,
+                    text,
+                    opt,
+                    self.line_at(first),
+                    self.line_at(last.saturating_sub(1)),
+                );
                 // Highlighting: the visible lines first, then the rest of the file, a few
                 // milliseconds per frame.
                 if let Some(highlight) = &mut self.highlight {
@@ -1534,6 +1935,8 @@ impl EditorState {
                 let pair = self.matching_bracket(text);
                 let caret_line = self.line_of(self.cursor);
                 let selection = self.selection();
+                let extra_selections = self.extra_selections();
+                let extra_cursors = self.extra_cursors();
                 let text_left = origin.x + text_x;
                 for shown in first..last {
                     let index = self.line_at(shown);
@@ -1549,29 +1952,37 @@ impl EditorState {
                     let range = self.line_range(text, index);
                     // Selection on this line, including its line break.
                     let line_end = self.lines.get(index + 1).copied().unwrap_or(text.len());
-                    if selection.start < line_end.max(range.end + 1)
-                        && selection.end > range.start
-                        && !selection.is_empty()
-                    {
-                        let line = self.line(text, index);
-                        let from = column_of(line, selection.start.saturating_sub(range.start));
-                        let to_end = selection.end > range.end;
-                        let to = column_of(
-                            line,
-                            selection.end.min(range.end)
-                                - range.start.min(selection.end.min(range.end)),
-                        );
-                        let x0 = galley.pos_from_cursor(CCursor::new(from)).min.x;
-                        let x1 = galley.pos_from_cursor(CCursor::new(to)).min.x
-                            + if to_end { char_width * 0.6 } else { 0.0 };
-                        painter.rect_filled(
-                            Rect::from_min_max(
-                                pos2(text_left + x0, y),
-                                pos2(text_left + x1, y + row),
-                            ),
-                            0.0,
-                            t.text_selection,
-                        );
+                    for selection in std::iter::once(&selection).chain(&extra_selections) {
+                        if selection.start < line_end.max(range.end + 1)
+                            && selection.end > range.start
+                            && !selection.is_empty()
+                        {
+                            let line = self.line(text, index);
+                            let from = column_of(line, selection.start.saturating_sub(range.start));
+                            let to_end = selection.end > range.end;
+                            let to = column_of(
+                                line,
+                                selection.end.min(range.end)
+                                    - range.start.min(selection.end.min(range.end)),
+                            );
+                            let x0 = galley
+                                .pos_from_cursor(CCursor::new(self.visual_column(text, index, from)))
+                                .min
+                                .x;
+                            let x1 = galley
+                                .pos_from_cursor(CCursor::new(self.visual_column(text, index, to)))
+                                .min
+                                .x
+                                + if to_end { char_width * 0.6 } else { 0.0 };
+                            painter.rect_filled(
+                                Rect::from_min_max(
+                                    pos2(text_left + x0, y),
+                                    pos2(text_left + x1, y + row),
+                                ),
+                                0.0,
+                                t.text_selection,
+                            );
+                        }
                     }
                     self.range_highlights(
                         &painter,
@@ -1635,7 +2046,11 @@ impl EditorState {
                         if blink < 0.6 || ((blink * 1.2) as u32).is_multiple_of(2) {
                             let column =
                                 column_of(self.line(text, index), self.cursor - range.start);
-                            let x = text_left + galley.pos_from_cursor(CCursor::new(column)).min.x;
+                            let x = text_left
+                                + galley
+                                    .pos_from_cursor(CCursor::new(self.visual_column(text, index, column)))
+                                    .min
+                                    .x;
                             painter.line_segment(
                                 [pos2(x, y + 1.0), pos2(x, y + row - 1.0)],
                                 Stroke::new(2.0_f32, t.text),
@@ -1649,6 +2064,24 @@ impl EditorState {
                             });
                         }
                         ui.ctx().request_repaint_after(Duration::from_millis(500));
+                    }
+                    // The other carets.
+                    if focused {
+                        for &cursor in &extra_cursors {
+                            if cursor < range.start || cursor > range.end {
+                                continue;
+                            }
+                            let column = column_of(self.line(text, index), cursor - range.start);
+                            let x = text_left
+                                + galley
+                                    .pos_from_cursor(CCursor::new(self.visual_column(text, index, column)))
+                                    .min
+                                    .x;
+                            painter.line_segment(
+                                [pos2(x, y + 1.0), pos2(x, y + row - 1.0)],
+                                Stroke::new(2.0_f32, t.text),
+                            );
+                        }
                     }
                 }
                 // Gutter, fixed while the text scrolls horizontally underneath.
@@ -1701,6 +2134,20 @@ impl EditorState {
                         opt.font.clone(),
                         color,
                     );
+                    if opt.bookmarks.contains(&index) {
+                        let x = left + 3.0;
+                        painter.add(egui::Shape::convex_polygon(
+                            vec![
+                                pos2(x, y + 3.0),
+                                pos2(x + 7.0, y + 3.0),
+                                pos2(x + 7.0, y + row - 3.0),
+                                pos2(x + 3.5, y + row - 6.0),
+                                pos2(x, y + row - 3.0),
+                            ],
+                            t.accent,
+                            Stroke::NONE,
+                        ));
+                    }
                     for mark in marks_at(index) {
                         let x = left + marks_x + 2.0;
                         if mark.kind == MarkKind::Deleted {
@@ -1718,7 +2165,40 @@ impl EditorState {
                         }
                     }
                 }
+                if let Some(area) = sticky_rect {
+                    let full = Rect::from_min_size(
+                        area.min,
+                        vec2(area.width().max(ui.clip_rect().width()), area.height()),
+                    );
+                    painter.rect_filled(full, 0.0, t.island);
+                    for (i, &line) in sticky.iter().enumerate() {
+                        let y = area.top() + i as f32 * row;
+                        let galley = self.galley(ui, text, line, opt);
+                        painter.galley(
+                            pos2(text_left, y + (row - galley.size().y) / 2.0),
+                            galley,
+                            t.text,
+                        );
+                        painter.rect_filled(
+                            Rect::from_min_size(pos2(left, y), vec2(gutter, row)),
+                            0.0,
+                            t.island,
+                        );
+                        painter.text(
+                            pos2(left + marks_x - 6.0, y + row / 2.0),
+                            egui::Align2::RIGHT_CENTER,
+                            (line + 1).to_string(),
+                            opt.font.clone(),
+                            t.line_number,
+                        );
+                    }
+                    painter.line_segment(
+                        [full.left_bottom(), full.right_bottom()],
+                        Stroke::new(1.0_f32, t.separator),
+                    );
+                }
                 self.assist_paint(ui, text, opt, origin, text_left, row, hover_pos);
+                self.intel_paint(ui, text, opt, origin, text_left, row);
                 if self.scroll_to_cursor {
                     self.scroll_to_cursor = false;
                     let line = self.line_of(self.cursor);
@@ -1737,9 +2217,9 @@ impl EditorState {
             self.scroll_to_cursor = true;
             ui.ctx().request_repaint();
         }
-        // The stripe of problems along the right edge, as IntelliJ's: a mark per problem at its
-        // place in the whole file; a click goes there.
-        if let Some(line) = self.problem_stripe(ui, area.inner_rect, id, row) {
+        // The stripe of problems and Git changes along the right edge, as IntelliJ's: a mark per
+        // problem or change at its place in the whole file; a click goes there.
+        if let Some(line) = self.problem_stripe(ui, area.inner_rect, id, row, opt.marks) {
             let pos = self.lines[line.min(self.lines.len() - 1)];
             self.select(pos, pos);
         }
@@ -1763,3 +2243,15 @@ mod tests;
 #[cfg(test)]
 #[path = "../test/editor/ctrl_y_tests.rs"]
 mod ctrl_y_tests;
+
+#[cfg(test)]
+#[path = "../test/editor/multi_tests.rs"]
+mod multi_tests;
+
+#[cfg(test)]
+#[path = "../test/editor/hints_tests.rs"]
+mod hints_tests;
+
+#[cfg(test)]
+#[path = "../test/editor/context_tests.rs"]
+mod context_tests;

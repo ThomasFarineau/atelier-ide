@@ -6,6 +6,7 @@
 //! ready are kept and sent once it is.
 
 pub mod convert;
+pub mod extras;
 pub mod provider;
 
 use anyhow::{Context as _, Result, anyhow, bail};
@@ -177,6 +178,10 @@ impl Client {
                     "codeAction": {
                         "codeActionLiteralSupport": {"codeActionKind": {"valueSet": ["quickfix", "refactor", "source"]}}
                     },
+                    "signatureHelp": {"signatureInformation": {"documentationFormat": ["markdown", "plaintext"], "parameterInformation": {"labelOffsetSupport": true}, "activeParameterSupport": true}},
+                    "inlayHint": {},
+                    "callHierarchy": {},
+                    "typeHierarchy": {},
                     "publishDiagnostics": {"relatedInformation": false}
                 },
                 "workspace": {"workspaceFolders": true, "configuration": false}

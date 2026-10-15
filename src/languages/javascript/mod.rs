@@ -251,6 +251,12 @@ impl Provider for JavaScript {
         matches!(language, "js" | "ts")
     }
 
+    fn lsp_target(&mut self, doc: &DocRef) -> Option<(Arc<lsp::Client>, String)> {
+        let client = self.client().filter(|c| c.ready())?.clone();
+        let data = self.docs.get(&doc.key)?;
+        Some((client, data.uri.clone().filter(|_| data.opened)?))
+    }
+
     fn update(&mut self, doc: &DocRef, text: &str, version: u64) {
         self.poll_control();
         self.ensure_server();

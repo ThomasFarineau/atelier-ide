@@ -775,6 +775,10 @@ impl<L: Language> Provider for LspProvider<L> {
         answer
     }
 
+    fn lsp_target(&mut self, doc: &DocRef) -> Option<(Arc<Client>, String)> {
+        self.target(doc.key)
+    }
+
     fn status(&self) -> String {
         if with_control(self.lang.control(), |c| c.installing) {
             return self.lang.installing().into();

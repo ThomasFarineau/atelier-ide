@@ -4,9 +4,7 @@
 
 use super::{Ide, SHORTCUTS, Settings};
 use crate::ui::{self, Theme};
-use eframe::egui::{
-    self, Align, FontId, Layout, Margin, Rect, RichText, Sense, UiBuilder, pos2, vec2,
-};
+use eframe::egui::{self, Align, FontId, Layout, Rect, RichText, Sense, UiBuilder, pos2, vec2};
 use std::collections::BTreeSet;
 
 const TREE_WIDTH: f32 = 264.0;
@@ -22,31 +20,33 @@ pub(super) enum Page {
     Keymap,
     Editor,
     EditorGeneral,
-    EditorFont,
+    Fonts,
     Plugins,
     Languages,
     JavaScript,
     Rust,
     Build,
     RunTools,
+    Sync,
 }
 
 impl Page {
     /// The tree, in the order it is shown: each page and the group it belongs to.
-    pub(super) const TREE: [(Page, Option<Page>); 13] = [
+    pub(super) const TREE: [(Page, Option<Page>); 14] = [
         (Page::AppearanceBehavior, None),
         (Page::Appearance, Some(Page::AppearanceBehavior)),
+        (Page::Fonts, Some(Page::AppearanceBehavior)),
         (Page::LanguageRegion, Some(Page::AppearanceBehavior)),
         (Page::Keymap, None),
         (Page::Editor, None),
         (Page::EditorGeneral, Some(Page::Editor)),
-        (Page::EditorFont, Some(Page::Editor)),
         (Page::Plugins, None),
         (Page::Languages, None),
         (Page::JavaScript, Some(Page::Languages)),
         (Page::Rust, Some(Page::Languages)),
         (Page::Build, None),
         (Page::RunTools, Some(Page::Build)),
+        (Page::Sync, None),
     ];
 
     pub(super) fn title(self) -> &'static str {
@@ -57,13 +57,14 @@ impl Page {
             Page::Keymap => tr!("keymap"),
             Page::Editor => tr!("editor"),
             Page::EditorGeneral => tr!("general"),
-            Page::EditorFont => tr!("font_2"),
+            Page::Fonts => tr!("fonts"),
             Page::Plugins => tr!("plugins"),
             Page::Languages => tr!("languages_frameworks"),
             Page::JavaScript => tr!("javascript_typescript"),
             Page::Rust => tr!("rust"),
             Page::Build => tr!("build_execution_deployment"),
             Page::RunTools => tr!("run_tools"),
+            Page::Sync => tr!("settings_sync"),
         }
     }
 
@@ -99,8 +100,27 @@ impl Page {
                 words
             }
             Page::Keymap => SHORTCUTS.iter().map(|(_, action)| action.get()).collect(),
-            Page::EditorGeneral => vec![tr!("mouse_control"), tr!("wheel"), tr!("zoom")],
-            Page::EditorFont => vec![tr!("size"), "JetBrains Mono", tr!("zoom")],
+            Page::EditorGeneral => vec![
+                tr!("mouse_control"),
+                tr!("wheel"),
+                tr!("zoom"),
+                tr!("code_display"),
+                tr!("inlay_hints"),
+                tr!("sticky_lines"),
+                tr!("breadcrumbs"),
+                tr!("spell_checking"),
+            ],
+            Page::Fonts => vec![
+                tr!("font_2"),
+                tr!("size"),
+                tr!("zoom"),
+                "Source Sans 3",
+                "Inter",
+                "Source Code Pro",
+                "JetBrains Mono",
+                "Google Fonts",
+                "Fontsource",
+            ],
             Page::Plugins => vec![tr!("extensions"), "Git", "Markdown"],
             Page::JavaScript => vec![
                 "TypeScript",
@@ -109,6 +129,13 @@ impl Page {
             ],
             Page::Rust => vec!["rust-analyzer", "cargo", tr!("language_server")],
             Page::RunTools => vec!["cargo", "python", "java", "node", "tsx", "F5"],
+            Page::Sync => vec![
+                tr!("export_settings"),
+                tr!("import_settings"),
+                tr!("sync_folder"),
+                "OneDrive",
+                "Dropbox",
+            ],
             _ => Vec::new(),
         }
     }
@@ -129,6 +156,11 @@ pub(super) struct Draft {
     pub theme: usize,
     pub font_size: f32,
     pub wheel_zoom_off: bool,
+    pub inlay_hints_off: bool,
+    pub sticky_lines_off: bool,
+    pub breadcrumbs_off: bool,
+    pub spellcheck_off: bool,
+    pub fonts: ui::Fonts,
     /// Identifier of the language of the interface.
     pub language: String,
     pub disabled_builtins: BTreeSet<String>,
@@ -141,6 +173,11 @@ impl Draft {
             theme: settings.theme,
             font_size: settings.font_size,
             wheel_zoom_off: settings.wheel_zoom_off,
+            inlay_hints_off: settings.inlay_hints_off,
+            sticky_lines_off: settings.sticky_lines_off,
+            breadcrumbs_off: settings.breadcrumbs_off,
+            spellcheck_off: settings.spellcheck_off,
+            fonts: settings.fonts.clone(),
             language: crate::i18n::current().to_string(),
             disabled_builtins: settings.disabled_builtins.clone(),
             enabled_plugins: settings.enabled_plugins.clone(),
@@ -152,8 +189,14 @@ impl Draft {
         match page {
             Page::Appearance => self.theme != other.theme,
             Page::LanguageRegion => self.language != other.language,
-            Page::EditorGeneral => self.wheel_zoom_off != other.wheel_zoom_off,
-            Page::EditorFont => self.font_size != other.font_size,
+            Page::EditorGeneral => {
+                self.wheel_zoom_off != other.wheel_zoom_off
+                    || self.inlay_hints_off != other.inlay_hints_off
+                    || self.sticky_lines_off != other.sticky_lines_off
+                    || self.breadcrumbs_off != other.breadcrumbs_off
+                    || self.spellcheck_off != other.spellcheck_off
+            }
+            Page::Fonts => self.font_size != other.font_size || self.fonts != other.fonts,
             Page::Plugins => {
                 self.disabled_builtins != other.disabled_builtins
                     || self.enabled_plugins != other.enabled_plugins
@@ -167,8 +210,17 @@ impl Draft {
         match page {
             Page::Appearance => self.theme = other.theme,
             Page::LanguageRegion => self.language = other.language.clone(),
-            Page::EditorGeneral => self.wheel_zoom_off = other.wheel_zoom_off,
-            Page::EditorFont => self.font_size = other.font_size,
+            Page::EditorGeneral => {
+                self.wheel_zoom_off = other.wheel_zoom_off;
+                self.inlay_hints_off = other.inlay_hints_off;
+                self.sticky_lines_off = other.sticky_lines_off;
+                self.breadcrumbs_off = other.breadcrumbs_off;
+                self.spellcheck_off = other.spellcheck_off;
+            }
+            Page::Fonts => {
+                self.font_size = other.font_size;
+                self.fonts = other.fonts.clone();
+            }
             Page::Plugins => {
                 self.disabled_builtins = other.disabled_builtins.clone();
                 self.enabled_plugins = other.enabled_plugins.clone();
@@ -230,7 +282,11 @@ fn child(ui: &mut egui::Ui, rect: Rect) -> egui::Ui {
 }
 
 /// A line of a form: the label in a column, then the control.
-fn form_row<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+pub(super) fn form_row<R>(
+    ui: &mut egui::Ui,
+    label: &str,
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
     ui.horizontal(|ui| {
         ui.set_min_height(30.0);
         let (rect, _) = ui.allocate_exact_size(vec2(LABEL_WIDTH, 24.0), Sense::hover());
@@ -249,7 +305,7 @@ fn form_row<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui) -
 }
 
 /// A titled group of options, as IntelliJ separates them: a title and a line.
-fn group(ui: &mut egui::Ui, t: &Theme, title: &str) {
+pub(super) fn group(ui: &mut egui::Ui, t: &Theme, title: &str) {
     ui.add_space(6.0);
     ui.horizontal(|ui| {
         ui.label(RichText::new(title).font(ui::semibold(13.0)));
@@ -263,7 +319,7 @@ fn group(ui: &mut egui::Ui, t: &Theme, title: &str) {
     ui.add_space(2.0);
 }
 
-fn note(ui: &mut egui::Ui, t: &Theme, text: &str) {
+pub(super) fn note(ui: &mut egui::Ui, t: &Theme, text: &str) {
     ui.add(egui::Label::new(RichText::new(text).small().color(t.text_secondary)).wrap());
 }
 
@@ -283,12 +339,20 @@ impl Ide {
     pub(super) fn apply_settings(&mut self, ctx: &egui::Context) {
         let draft = self.settings_draft.clone();
         let original = self.settings_original.clone();
-        if draft.theme != original.theme || draft.font_size != original.font_size {
+        if draft.theme != original.theme
+            || draft.font_size != original.font_size
+            || draft.fonts != original.fonts
+        {
             self.settings.theme = draft.theme;
             self.settings.font_size = draft.font_size;
+            self.settings.fonts = draft.fonts.clone();
             self.apply_theme(ctx);
         }
         self.settings.wheel_zoom_off = draft.wheel_zoom_off;
+        self.settings.inlay_hints_off = draft.inlay_hints_off;
+        self.settings.sticky_lines_off = draft.sticky_lines_off;
+        self.settings.breadcrumbs_off = draft.breadcrumbs_off;
+        self.settings.spellcheck_off = draft.spellcheck_off;
         if draft.language != original.language {
             self.settings.language = Some(draft.language.clone());
             crate::i18n::set(&draft.language);
@@ -303,10 +367,71 @@ impl Ide {
         self.settings.enabled_plugins = draft.enabled_plugins.clone();
         self.settings_original = draft;
         // At once: a window opened now reads the file.
-        if let Err(e) = super::save_settings(&super::settings_path(), &self.settings) {
+        if let Err(e) = self.persist_settings() {
             self.status = trf!("error_detail", e = format!("{:#}", e));
         }
+        self.sync_out();
         ctx.request_repaint();
+    }
+
+    /// Export and import of the settings, and the sync folder.
+    fn sync_page(&mut self, ui: &mut egui::Ui, t: &Theme) {
+        let ctx = ui.ctx().clone();
+        note(ui, t, tr!("settings_sync_hint"));
+        ui.add_space(8.0);
+        group(ui, t, tr!("export_import"));
+        ui.horizontal(|ui| {
+            if ui::button(ui, tr!("export_settings")).clicked()
+                && let Some(path) = rfd::FileDialog::new()
+                    .set_file_name(super::portable::FILE)
+                    .add_filter("JSON", &["json"])
+                    .save_file()
+            {
+                self.status = match self.export_settings_to(&path) {
+                    Ok(()) => trf!("settings_exported", path = path.display()),
+                    Err(e) => trf!("error_detail", e = format!("{e:#}")),
+                };
+            }
+            if ui::button(ui, tr!("import_settings")).clicked()
+                && let Some(path) = rfd::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .pick_file()
+            {
+                self.status = match self.import_settings_from(&path, &ctx) {
+                    Ok(n) => trf!("settings_imported", count = n),
+                    Err(e) => trf!("error_detail", e = format!("{e:#}")),
+                };
+            }
+        });
+        ui.add_space(12.0);
+        group(ui, t, tr!("sync_folder"));
+        let shown = self
+            .settings
+            .sync_folder
+            .as_ref()
+            .map_or_else(|| tr!("no_sync_folder").to_string(), |p| p.display().to_string());
+        ui.label(RichText::new(shown).color(t.text_secondary));
+        ui.horizontal(|ui| {
+            if ui::button(ui, tr!("choose_folder")).clicked()
+                && let Some(folder) = rfd::FileDialog::new().pick_folder()
+            {
+                self.settings.sync_folder = Some(folder);
+                // What is in the folder wins when it is newer, else this machine writes it.
+                self.sync_in(&ctx);
+                self.sync_out();
+                let _ = self.persist_settings();
+            }
+            if self.settings.sync_folder.is_some() {
+                if ui::button(ui, tr!("sync_now")).clicked() {
+                    self.sync_in(&ctx);
+                    self.sync_out();
+                }
+                if ui::button(ui, tr!("stop_sync")).clicked() {
+                    self.settings.sync_folder = None;
+                    let _ = self.persist_settings();
+                }
+            }
+        });
     }
 
     pub(super) fn settings_dialog(&mut self, ctx: &egui::Context) {
@@ -605,40 +730,23 @@ impl Ide {
                         {
                             self.settings_draft.wheel_zoom_off = !wheel_zoom;
                         }
+                        ui.add_space(8.0);
+                        group(ui, t, tr!("code_display"));
+                        let draft = &mut self.settings_draft;
+                        for (off, label) in [
+                            (&mut draft.inlay_hints_off, tr!("show_inlay_hints")),
+                            (&mut draft.sticky_lines_off, tr!("show_sticky_lines")),
+                            (&mut draft.breadcrumbs_off, tr!("show_breadcrumbs")),
+                            (&mut draft.spellcheck_off, tr!("check_spelling")),
+                        ] {
+                            let mut on = !*off;
+                            if ui::checkbox(ui, &mut on, label).changed() {
+                                *off = !on;
+                            }
+                        }
                     }
-                    Page::EditorFont => {
-                        form_row(ui, tr!("font"), |ui| {
-                            ui.add_enabled_ui(false, |ui| {
-                                egui::ComboBox::from_id_salt("settings_font")
-                                    .width(220.0)
-                                    .selected_text("JetBrains Mono")
-                                    .show_ui(ui, |_| {});
-                            });
-                        });
-                        form_row(ui, tr!("size_label"), |ui| {
-                            ui.add(
-                                egui::DragValue::new(&mut self.settings_draft.font_size)
-                                    .range(8.0..=36.0)
-                                    .speed(0.2)
-                                    .max_decimals(0),
-                            );
-                        });
-                        ui.add_space(10.0);
-                        // The preview, in the font of the editor at the chosen size.
-                        egui::Frame::new()
-                            .fill(t.island)
-                            .stroke(egui::Stroke::new(1.0_f32, t.border))
-                            .corner_radius(6)
-                            .inner_margin(Margin::same(12))
-                            .show(ui, |ui| {
-                                ui.set_width(ui.available_width());
-                                ui.label(
-                                    RichText::new(tr!("atelier_ide_font_preview_fn"))
-                                        .font(FontId::monospace(self.settings_draft.font_size))
-                                        .color(t.text),
-                                );
-                            });
-                    }
+                    Page::Fonts => self.fonts_page(ui, t),
+                    Page::Sync => self.sync_page(ui, t),
                     Page::JavaScript => self.language_server_page(
                         ui,
                         t,

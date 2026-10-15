@@ -1,7 +1,7 @@
 //! IntelliJ's editing actions that work on the text alone, whatever its language: Extend and
 //! Shrink Selection (Ctrl+W, Ctrl+Shift+W), Join Lines (Ctrl+Shift+J), Toggle Case
-//! (Ctrl+Shift+U) and Move Line Up/Down (Alt+Shift+Up/Down, and Ctrl+Shift+Up/Down for the
-//! statement, which is the line here).
+//! (Ctrl+Shift+U), Move Line Up/Down (Alt+Shift+Up/Down) and Move Statement Up/Down
+//! (Ctrl+Shift+Up/Down, a line, or a line with the block it opens).
 
 use super::{EditorState, is_word};
 use std::ops::Range;
@@ -10,6 +10,29 @@ use std::ops::Range;
 const PAIRS: [(char, char); 3] = [('(', ')'), ('[', ']'), ('{', '}')];
 /// How far the brackets around the selection are looked for.
 const LIMIT: usize = 200_000;
+
+/// How many more brackets the line opens than it closes, the ones in quotes left out.
+fn bracket_delta(line: &str) -> isize {
+    let mut delta = 0;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    for c in line.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match (c, quote) {
+            ('\\', Some(_)) => escaped = true,
+            (q, Some(open)) if q == open => quote = None,
+            (_, Some(_)) => {}
+            ('"' | '`', None) => quote = Some(c),
+            ('(' | '[' | '{', None) => delta += 1,
+            (')' | ']' | '}', None) => delta -= 1,
+            _ => {}
+        }
+    }
+    delta
+}
 
 /// The innermost bracket pair around `range`: the offsets of its two brackets.
 fn enclosing_pair(text: &str, range: &Range<usize>) -> Option<(usize, usize)> {
@@ -253,6 +276,71 @@ impl EditorState {
             let new = format!("{}\n{}", &text[below.clone()], &text[block.clone()]);
             let shift = (below.len() + 1) as isize;
             (block.start..below.end, new, shift)
+        };
+        let (anchor, cursor) = (self.anchor, self.cursor);
+        self.replace(text, range, &new, false);
+        let moved = |at: usize| (at as isize + shift).max(0) as usize;
+        self.anchor = moved(anchor);
+        self.cursor = moved(cursor);
+        self.scroll_to_cursor = true;
+    }
+
+    /// The first and last line of the statement that holds `line`: the line alone, or the line
+    /// that opens a block with the block, or the line that closes one with the block.
+    fn statement_at(&self, text: &str, line: usize) -> (usize, usize) {
+        let delta = bracket_delta(self.line(text, line));
+        if delta > 0 {
+            let mut depth = delta;
+            for next in line + 1..self.lines.len() {
+                depth += bracket_delta(self.line(text, next));
+                if depth <= 0 {
+                    return (line, next);
+                }
+            }
+            (line, self.lines.len() - 1)
+        } else if delta < 0 {
+            let mut depth = delta;
+            for before in (0..line).rev() {
+                depth += bracket_delta(self.line(text, before));
+                if depth >= 0 {
+                    return (before, line);
+                }
+            }
+            (0, line)
+        } else {
+            (line, line)
+        }
+    }
+
+    /// Ctrl+Shift+Up/Down: the statement at the caret (or the selected lines) swapped with the
+    /// statement above or below it. A block goes whole; nothing leaves the block it is in.
+    pub(super) fn move_statement(&mut self, text: &mut String, up: bool) {
+        let (first, last) = if self.selection().is_empty() {
+            self.statement_at(text, self.line_of(self.cursor))
+        } else {
+            let block = self.selected_lines(text);
+            (self.line_of(block.start), self.line_of(block.end))
+        };
+        let here = self.lines[first]..self.line_range(text, last).end;
+        let (other, down) = if up {
+            if first == 0 || bracket_delta(self.line(text, first - 1)) > 0 {
+                return;
+            }
+            let (a, b) = self.statement_at(text, first - 1);
+            (self.lines[a]..self.line_range(text, b).end, false)
+        } else {
+            if last + 1 >= self.lines.len() || bracket_delta(self.line(text, last + 1)) < 0 {
+                return;
+            }
+            let (a, b) = self.statement_at(text, last + 1);
+            (self.lines[a]..self.line_range(text, b).end, true)
+        };
+        let (range, new, shift) = if down {
+            let new = format!("{}\n{}", &text[other.clone()], &text[here.clone()]);
+            (here.start..other.end, new, (other.len() + 1) as isize)
+        } else {
+            let new = format!("{}\n{}", &text[here.clone()], &text[other.clone()]);
+            (other.start..here.end, new, -((other.len() + 1) as isize))
         };
         let (anchor, cursor) = (self.anchor, self.cursor);
         self.replace(text, range, &new, false);

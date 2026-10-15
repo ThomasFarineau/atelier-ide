@@ -262,17 +262,17 @@ fn bar(ui: &mut egui::Ui, fraction: Option<f32>) {
     painter.rect_filled(fill, radius, START.lerp_to_gamma(END, (from + to) / 2.0));
 }
 
-/// Inter, the font of the IDE.
+/// Source Sans 3, the font of the IDE.
 fn fonts(ctx: &egui::Context) {
     let mut fonts = FontDefinitions::default();
     for (name, bytes) in [
         (
-            "inter",
-            &include_bytes!("../../../assets/fonts/Inter-Regular.ttf")[..],
+            "source-sans",
+            &include_bytes!("../../../assets/fonts/SourceSans3-Regular.ttf")[..],
         ),
         (
-            "inter-semibold",
-            &include_bytes!("../../../assets/fonts/Inter-SemiBold.ttf")[..],
+            "source-sans-semibold",
+            &include_bytes!("../../../assets/fonts/SourceSans3-Semibold.ttf")[..],
         ),
     ] {
         fonts
@@ -283,8 +283,8 @@ fn fonts(ctx: &egui::Context) {
         .families
         .entry(FontFamily::Proportional)
         .or_default()
-        .insert(0, "inter".into());
-    let mut semibold = vec!["inter-semibold".to_string()];
+        .insert(0, "source-sans".into());
+    let mut semibold = vec!["source-sans-semibold".to_string()];
     semibold.extend(fonts.families[&FontFamily::Proportional].iter().cloned());
     fonts
         .families

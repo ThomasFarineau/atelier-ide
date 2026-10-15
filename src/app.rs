@@ -27,6 +27,14 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod bookmarks;
+mod file_index;
+mod fonts_page;
+mod history;
+mod inspect;
+mod navigation;
+mod portable;
+mod split;
 mod plugins_page;
 mod projects_page;
 mod reformat;
@@ -67,7 +75,7 @@ static NOTIFICATIONS_TOOL: ToolWindow = ToolWindow {
 };
 
 /// Actions of Search Everywhere and of the main menu: (label, shortcut, icon).
-const ACTIONS: [(Text, &str, &str); 14] = [
+const ACTIONS: [(Text, &str, &str); 20] = [
     (Text("open_project_dialog"), "", "project"),
     (Text("open_file_dialog"), "Ctrl+O", "openNewTab"),
     (Text("save_all"), "Ctrl+S", "save"),
@@ -82,9 +90,15 @@ const ACTIONS: [(Text, &str, &str); 14] = [
     (Text("reformat_code"), "Ctrl+Alt+L", "edit"),
     (Text("optimize_imports"), "Ctrl+Alt+O", "edit"),
     (Text("projects.all"), "", "project"),
+    (Text("toggle_bookmark"), "F11", "add"),
+    (Text("show_bookmarks"), "Shift+F11", "project"),
+    (Text("show_history"), "", "refresh"),
+    (Text("split_right"), "", "editorPreview"),
+    (Text("close_split"), "", "editorOnly"),
+    (Text("inspect_code"), "", "problems"),
 ];
 
-const SHORTCUTS: [(Text, Text); 46] = [
+const SHORTCUTS: [(Text, Text); 62] = [
     (Text("ctrl_o"), Text("open_file")),
     (Text("ctrl_n"), Text("go_symbol")),
     (Text("alt_insert"), Text("new_file")),
@@ -140,6 +154,22 @@ const SHORTCUTS: [(Text, Text); 46] = [
     (Text("alt_8"), Text("kubernetes_window")),
     (Text("f7_shift_f7"), Text("next_previous_difference")),
     (Text("esc"), Text("give_keyboard_back_ide_terminal")),
+    (Text("ctrl_shift_a"), Text("find_action")),
+    (Text("ctrl_shift_e"), Text("recent_locations")),
+    (Text("ctrl_tab"), Text("switch_file")),
+    (Text("f11"), Text("toggle_bookmark")),
+    (Text("shift_f11"), Text("show_bookmarks")),
+    (Text("alt_j"), Text("add_next_occurrence")),
+    (Text("ctrl_alt_shift_j"), Text("select_all_occurrences")),
+    (Text("alt_shift_click"), Text("add_remove_caret")),
+    (Text("alt_shift_insert"), Text("column_selection")),
+    (Text("ctrl_shift_up_down"), Text("move_statement")),
+    (Text("ctrl_alt_t"), Text("surround_with")),
+    (Text("ctrl_p"), Text("parameter_info")),
+    (Text("ctrl_q"), Text("quick_documentation")),
+    (Text("ctrl_shift_i"), Text("quick_definition")),
+    (Text("ctrl_h_ctrl_alt"), Text("hierarchies")),
+    (Text("ctrl_alt_shift_t"), Text("refactor_this")),
 ];
 
 /// What to select once a document is open.
@@ -207,6 +237,17 @@ struct Settings {
     disabled_builtins: BTreeSet<String>,
     /// Ctrl + mouse wheel changes the editor font size unless this is set.
     wheel_zoom_off: bool,
+    /// What the editor shows besides the code; each is on unless set here.
+    inlay_hints_off: bool,
+    sticky_lines_off: bool,
+    breadcrumbs_off: bool,
+    spellcheck_off: bool,
+    /// Files that an ignore file (`.gitignore`…) names are hidden from the project tree.
+    hide_ignored: bool,
+    /// A folder that carries the settings from a machine to another (OneDrive, Dropbox…).
+    sync_folder: Option<PathBuf>,
+    /// The fonts of the interface and of the code.
+    fonts: ui::Fonts,
     /// What the user answered when offered to connect an AI to the MCP server of a project,
     /// by `project|ai`.
     mcp_choices: BTreeMap<String, bool>,
@@ -229,7 +270,26 @@ fn load_settings(path: &Path) -> Option<Settings> {
     serde_json::from_str(&text).ok()
 }
 
+/// Puts into `file` the options of `mine` that differ from `base`: the other options stay as
+/// another window wrote them. Several windows of the IDE share one file, and the last one to
+/// write used to put back the old value of what the others had just changed.
+fn merge_settings(
+    file: &mut serde_json::Value,
+    mine: &serde_json::Value,
+    base: &serde_json::Value,
+) {
+    let (Some(file), Some(mine)) = (file.as_object_mut(), mine.as_object()) else {
+        return;
+    };
+    for (key, value) in mine {
+        if base.get(key) != Some(value) {
+            file.insert(key.clone(), value.clone());
+        }
+    }
+}
+
 /// Writes the settings through a temporary file, so that a crash never leaves half a file.
+#[cfg(test)]
 fn save_settings(path: &Path, settings: &Settings) -> anyhow::Result<()> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
@@ -264,6 +324,16 @@ enum Target {
     File(PathBuf),
     /// A 0-based line of a file: a symbol.
     Place(PathBuf, usize),
+    /// A saved version of the active file, to go back to.
+    Version(PathBuf),
+}
+
+/// What a kept search depends on: the popup mode, what is typed and the list searched.
+#[derive(Clone, PartialEq, Eq)]
+struct PaletteKey {
+    mode: PaletteMode,
+    query: String,
+    version: (usize, u64),
 }
 
 /// What the Search Everywhere popup is asked.
@@ -274,8 +344,17 @@ enum PaletteMode {
     Line,
     /// Go to Symbol (Ctrl+N).
     Symbols,
+    /// Find Action (Ctrl+Shift+A): the actions and commands only.
+    Actions,
+    /// Recent Locations (Ctrl+Shift+E).
+    Locations,
+    /// The bookmarks (Shift+F11).
+    Bookmarks,
+    /// The saved versions of the active file (Local History).
+    History,
 }
 
+#[derive(Clone)]
 struct Hit {
     label: String,
     hint: String,
@@ -286,6 +365,9 @@ struct Hit {
 
 pub struct Ide {
     settings: Settings,
+    /// The settings as they were when this window read or wrote them: what changed since is
+    /// what this window has to write, the rest belongs to the other windows.
+    settings_base: serde_json::Value,
     root: PathBuf,
     documents: Vec<Document>,
     active: usize,
@@ -322,6 +404,8 @@ pub struct Ide {
     settings_draft: Draft,
     settings_original: Draft,
     settings_filter: String,
+    /// The Fonts page: its search and the fonts being installed.
+    fonts_page: fonts_page::State,
     run_tools: Vec<RunTool>,
     /// The dialog opened this frame: the key that opened it is not its own.
     settings_fresh: bool,
@@ -355,9 +439,20 @@ pub struct Ide {
     /// A find action asked for outside the bar (F3).
     find_request: Option<crate::find::Action>,
     palette_query: String,
+    /// The file chosen in the switcher (Ctrl+Tab), while Ctrl is held.
+    switcher: Option<usize>,
+    /// The second editor beside the first one (Split Right).
+    split: Option<split::SplitPane>,
+    /// What Inspect Code found in the project files.
+    inspection: Option<inspect::Inspection>,
+    /// The lines to come back to, and the document and revision they were last matched to.
+    bookmarks: Vec<bookmarks::Bookmark>,
+    bookmark_rev: (usize, u64),
     palette_index: usize,
-    /// Files of the project for Search Everywhere, listed when it opens.
-    project_files: Option<Vec<PathBuf>>,
+    /// Files of the project for Search Everywhere, listed in the background.
+    file_index: file_index::Index,
+    /// The last search of the files or symbols, kept while what it depends on is the same.
+    palette_cache: Option<(PaletteKey, Vec<Hit>)>,
     new_name: String,
     tree_dialog: Option<TreeDialog>,
     /// File or folder dragged in the tree, and the folder it is over (this frame, last frame).
@@ -462,31 +557,27 @@ fn ago(at: Instant) -> String {
     }
 }
 
-/// Project files for Search Everywhere: hidden folders of the tree are skipped.
-fn list_files(root: &Path) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    let mut stack = vec![root.to_path_buf()];
-    while let Some(dir) = stack.pop() {
-        let Ok(children) = project::searchable_children(&dir) else {
-            continue;
-        };
-        for child in children {
-            if child.is_dir() {
-                if !child.is_symlink() {
-                    stack.push(child);
-                }
-            } else {
-                files.push(child);
-            }
-            if files.len() >= 20_000 {
-                return files;
-            }
-        }
-    }
-    files
-}
-
 impl Ide {
+    /// Writes what this window changed in the settings, keeping what the other windows wrote.
+    pub(super) fn persist_settings(&mut self) -> anyhow::Result<()> {
+        let mine = serde_json::to_value(&self.settings)?;
+        let path = settings_path();
+        let mut file = fs::read_to_string(&path)
+            .ok()
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+            .filter(serde_json::Value::is_object)
+            .unwrap_or_else(|| serde_json::json!({}));
+        merge_settings(&mut file, &mine, &self.settings_base);
+        if let Some(dir) = path.parent() {
+            fs::create_dir_all(dir)?;
+        }
+        let temporary = path.with_extension("json.tmp");
+        fs::write(&temporary, serde_json::to_string_pretty(&file)?)?;
+        fs::rename(&temporary, &path)?;
+        self.settings_base = mine;
+        Ok(())
+    }
+
     fn blank(root: PathBuf, settings: Settings, reload: Option<Arc<AtomicBool>>) -> Self {
         let (plugins, plugin_errors) = plugins::load(&root);
         let draft = Draft::of(&settings);
@@ -495,9 +586,12 @@ impl Ide {
             languages: Arc::new(crate::languages::Service::new(&root, repaint.clone())),
             repaint,
             problems: (0, 0),
+            bookmarks: bookmarks::load(&crate::cli::data_dir(), &root),
+            bookmark_rev: (usize::MAX, 0),
             nav_back: Vec::new(),
             nav_forward: Vec::new(),
             pending_nav: None,
+            settings_base: serde_json::to_value(&settings).unwrap_or_default(),
             settings,
             expanded: BTreeSet::from([root.clone()]),
             root,
@@ -526,6 +620,7 @@ impl Ide {
             settings_draft: draft.clone(),
             settings_original: draft,
             settings_filter: String::new(),
+            fonts_page: Default::default(),
             run_tools: Vec::new(),
             settings_fresh: false,
             reformat_dialog: None,
@@ -549,7 +644,11 @@ impl Ide {
             find_request: None,
             palette_query: String::new(),
             palette_index: 0,
-            project_files: None,
+            file_index: file_index::Index::default(),
+            palette_cache: None,
+            switcher: None,
+            split: None,
+            inspection: None,
             new_name: String::new(),
             tree_dialog: None,
             tree_drag: None,
@@ -606,6 +705,7 @@ impl Ide {
             ide.repaint.clone(),
         ));
         egui_extras::install_image_loaders(&cc.egui_ctx);
+        ide.sync_in(&cc.egui_ctx);
         // `atelier <folder|file>`: a folder is the project, a file opens in the current one.
         let target = crate::cli::target();
         if let Some(path) = target.clone().filter(|p| p.is_dir()) {
@@ -648,6 +748,7 @@ impl Ide {
     }
 
     fn apply_theme(&self, ctx: &egui::Context) {
+        ui::set_fonts(ctx, &self.settings.fonts);
         ui::install(
             ctx,
             ui::theme_by_index(self.settings.theme),
@@ -804,9 +905,15 @@ impl Ide {
         };
         match opened {
             Ok(doc) => {
+                let read_only = doc.read_only;
                 self.documents.push(doc);
                 self.active = self.documents.len() - 1;
-                self.status = tr!("file_opened").into();
+                self.status = if read_only {
+                    tr!("file_opened_read_only")
+                } else {
+                    tr!("file_opened")
+                }
+                .into();
             }
             Err(e) => self.status = trf!("error_detail", e = format!("{:#}", e)),
         }
@@ -818,6 +925,12 @@ impl Ide {
             self.last_watch = Instant::now();
             let mut errors = Vec::new();
             for doc in &mut self.documents {
+                if !doc.dirty() && doc.changed_on_disk() {
+                    // What was there is kept before another program replaces it.
+                    if let Some(path) = &doc.path {
+                        history::record(&crate::cli::data_dir(), &self.root, path, &doc.text);
+                    }
+                }
                 if !doc.dirty()
                     && doc.changed_on_disk()
                     && let Err(e) = doc.reload()
@@ -849,7 +962,7 @@ impl Ide {
             self.tree_stamps.remove(dir);
         }
         // Quick-open lists the files of the project too.
-        self.project_files = None;
+        self.file_index.invalidate();
         // What disappeared leaves the selection.
         self.tree_multi.retain(|p| p.exists());
         if self.tree_selected.as_deref().is_some_and(|p| !p.exists()) {
@@ -945,7 +1058,7 @@ impl Ide {
         self.tree.clear();
         self.tree_selected = None;
         self.tree_multi.clear();
-        self.project_files = None;
+        self.file_index.invalidate();
         self.expanded = BTreeSet::from([self.root.clone()]);
         self.terminals.clear();
         self.terminal_error.clear();
@@ -992,6 +1105,12 @@ impl Ide {
             for plugin in &mut self.builtins {
                 plugin.file_saved(&path);
             }
+            history::record(
+                &crate::cli::data_dir(),
+                &self.root,
+                &path,
+                &self.documents[index].text,
+            );
             self.tree.clear();
             self.graph.file_changed();
             self.status = tr!("saved").into();
@@ -1434,7 +1553,7 @@ impl Ide {
         self.show_palette = true;
         self.palette_query.clear();
         self.palette_index = 0;
-        self.project_files = None;
+        self.file_index.invalidate();
     }
 
     fn perform_action(&mut self, index: usize) {
@@ -1460,7 +1579,13 @@ impl Ide {
                 imports_only: true,
                 ..Default::default()
             }),
-            _ => self.open_projects_page(),
+            13 => self.open_projects_page(),
+            14 => self.toggle_bookmark(),
+            15 => self.open_palette_as(PaletteMode::Bookmarks),
+            16 => self.open_palette_as(PaletteMode::History),
+            17 => self.split_right(),
+            18 => self.split = None,
+            _ => self.start_inspection(),
         }
     }
 
@@ -1527,8 +1652,23 @@ impl Ide {
         if pressed(Modifiers::NONE, Key::F3) {
             self.find_request = Some(crate::find::Action::Next);
         }
-        if pressed(command, Key::P) {
-            self.open_palette();
+        if pressed(Modifiers::SHIFT, Key::F11) {
+            self.open_palette_as(PaletteMode::Bookmarks);
+        }
+        if pressed(Modifiers::NONE, Key::F11) {
+            self.toggle_bookmark();
+        }
+        if pressed(command | Modifiers::SHIFT, Key::E) {
+            self.open_palette_as(PaletteMode::Locations);
+        }
+        if pressed(command | Modifiers::SHIFT, Key::A) {
+            self.open_palette_as(PaletteMode::Actions);
+        }
+        if pressed(command | Modifiers::SHIFT, Key::Tab) {
+            self.switch_key(false);
+        }
+        if pressed(command, Key::Tab) {
+            self.switch_key(true);
         }
         if pressed(command, Key::E) {
             self.open_palette_as(PaletteMode::Recent);
@@ -2766,7 +2906,7 @@ impl Ide {
             .collect();
         self.tree_anchor = self.tree_anchor.take().map(|p| remap(&p).unwrap_or(p));
         self.tree.clear();
-        self.project_files = None;
+        self.file_index.invalidate();
     }
 
     /// A file or folder was deleted: unmodified documents close, modified ones become untitled.
@@ -2800,7 +2940,7 @@ impl Ide {
             self.tree_multi.clear();
         }
         self.tree.clear();
-        self.project_files = None;
+        self.file_index.invalidate();
     }
 
     /// Selects `path` in the project view, opening its folders.
@@ -3128,6 +3268,14 @@ impl Ide {
         self.tree_dialog = keep;
     }
 
+    /// The ignore file that ignores a path, as the plugins say it: the first answer.
+    pub(super) fn ignored_by(&self, path: &Path) -> Option<String> {
+        self.builtins
+            .iter()
+            .filter(|p| self.builtin_enabled(p.id()))
+            .find_map(|p| p.ignored_by(path))
+    }
+
     fn tree_ui(&mut self, ui: &mut egui::Ui, path: &Path, depth: usize) {
         if depth > 16 {
             ui.weak(tr!("maximum_depth_reached"));
@@ -3153,7 +3301,12 @@ impl Ide {
                 }
             }
         }
-        for (entry, is_dir) in self.tree.get(path).cloned().unwrap_or_default() {
+        let mut entries = self.tree.get(path).cloned().unwrap_or_default();
+        // What an ignore file ignores can be left out, with the eye of the status bar.
+        if self.settings.hide_ignored {
+            entries.retain(|(entry, _)| self.ignored_by(entry).is_none());
+        }
+        for (entry, is_dir) in entries {
             let response = self.tree_row(ui, &entry, is_dir, depth);
             let mut plain = false;
             if response.clicked() || response.secondary_clicked() {
@@ -3259,7 +3412,11 @@ impl Ide {
                 FontId::proportional(12.5),
             );
         }
-        response
+        // Which ignore file ignores it.
+        match self.ignored_by(path) {
+            Some(by) => response.on_hover_text(trf!("ignored_by_file", file = by)),
+            None => response,
+        }
     }
 
     // ---- Bottom and right tool windows --------------------------------------------------
@@ -4028,16 +4185,29 @@ impl Ide {
         let mut file_edits: Vec<(PathBuf, Vec<crate::languages::TextEdit>)> = Vec::new();
         let mut new_layout = None;
         let t = self.theme(ctx);
+        // The space of the bottom corners stays empty so that the code, painted in a
+        // rectangle, does not hide their rounding.
         let response = egui::CentralPanel::default()
-            .frame(self.island(ctx))
+            .frame(self.island(ctx).inner_margin(Margin {
+                bottom: ISLAND_RADIUS as i8,
+                ..Margin::ZERO
+            }))
             .show(ctx, |ui| {
                 if self.documents.is_empty() {
                     self.welcome(ui);
                     return;
                 }
                 self.tabs(ui);
-                let Some(doc) = self.documents.get_mut(self.active) else {
-                    return;
+                let split_other = self.split_other();
+                let (doc, mut other_doc) = match split_other {
+                    Some(other) => match self.documents.get_disjoint_mut([self.active, other]) {
+                        Ok([doc, other]) => (doc, Some(other)),
+                        Err(_) => return,
+                    },
+                    None => match self.documents.get_mut(self.active) {
+                        Some(doc) => (doc, None),
+                        None => return,
+                    },
                 };
                 if let Some(loading) = &doc.loading {
                     ui.add(
@@ -4207,6 +4377,35 @@ impl Ide {
                     }
                 }
                 let font = FontId::monospace(self.settings.font_size);
+                // The second editor, on the right.
+                if let Some(pane) = self.split.as_mut() {
+                    let half = (ui.available_width() / 2.0).max(240.0);
+                    let mut close = false;
+                    egui::SidePanel::right(egui::Id::new("split_editor"))
+                        .resizable(true)
+                        .default_width(half)
+                        .width_range(160.0..=(ui.available_width() - 160.0).max(180.0))
+                        .frame(egui::Frame::NONE)
+                        .show_inside(ui, |ui| {
+                            let target: &mut Document = match other_doc.as_mut() {
+                                Some(other) => other,
+                                None => &mut *doc,
+                            };
+                            let separate = split_other.is_some();
+                            close = split::show(
+                                ui,
+                                pane,
+                                target,
+                                separate.then_some(&self.languages),
+                                &self.settings,
+                                t,
+                                font.clone(),
+                            );
+                        });
+                    if close {
+                        self.split = None;
+                    }
+                }
                 let annotations = gutter.annotations.as_deref();
                 let assist = self
                     .languages
@@ -4219,6 +4418,15 @@ impl Ide {
                             language: doc.language.clone(),
                         },
                     });
+                let bookmark_lines = Ide::bookmark_lines(
+                    &mut self.bookmarks,
+                    &mut self.bookmark_rev,
+                    self.active,
+                    &self.root,
+                    &doc.path,
+                    &doc.text,
+                    doc.view.revision(),
+                );
                 let options = crate::editor::Options {
                     language: &doc.language,
                     font,
@@ -4232,6 +4440,12 @@ impl Ide {
                     } else {
                         &[]
                     },
+                    read_only: doc.read_only,
+                    inlay_hints: !self.settings.inlay_hints_off,
+                    bookmarks: &bookmark_lines,
+                    sticky_lines: !self.settings.sticky_lines_off,
+                    breadcrumbs: !self.settings.breadcrumbs_off,
+                    spellcheck: !self.settings.spellcheck_off,
                 };
                 let editor_id = egui::Id::new(("source", doc.path.clone(), self.active));
                 let output = doc.view.show(ui, editor_id, &mut doc.text, &options);
@@ -4367,6 +4581,17 @@ impl Ide {
                     if ui::menu_item(ui, None, tr!("close_all"), None, false).clicked() {
                         self.documents.retain(Document::dirty);
                         self.active = 0;
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui::menu_item(ui, None, tr!("split_right"), None, false).clicked() {
+                        self.split_right();
+                        ui.close();
+                    }
+                    if self.split.is_some()
+                        && ui::menu_item(ui, None, tr!("close_split"), None, false).clicked()
+                    {
+                        self.split = None;
                         ui.close();
                     }
                 });
@@ -4802,6 +5027,23 @@ impl Ide {
                             };
                             ui::status_text(ui, tr!("graph")).on_hover_text(text);
                         }
+                        // The eye: what an ignore file ignores is shown, dimmed, or left out.
+                        let hidden = self.settings.hide_ignored;
+                        if ui::icon_toggle(
+                            ui,
+                            if hidden { "hide" } else { "show" },
+                            hidden,
+                            if hidden {
+                                tr!("show_ignored_files")
+                            } else {
+                                tr!("hide_ignored_files")
+                            },
+                        )
+                        .clicked()
+                        {
+                            self.settings.hide_ignored = !hidden;
+                            let _ = self.persist_settings();
+                        }
                         self.each_builtin(|plugin, ide| plugin.status_bar(ui, ide));
                         if let Some(doc) = self.documents.get(self.active) {
                             // Sampled: a full scan on every frame freezes big files.
@@ -4932,6 +5174,7 @@ impl Ide {
             }
         }
         self.palette(ctx);
+        self.switcher(ctx);
         self.each_builtin(|plugin, ide| plugin.windows(ctx, ide));
         if let Some((pane, agent)) = self.mcp_offer {
             let modal = egui::Modal::new(egui::Id::new("mcp_offer")).show(ctx, |ui| {
@@ -5079,12 +5322,25 @@ impl Ide {
         let repaint = self.repaint.clone();
         let listed = root.clone();
         self.symbol_index
-            .refresh(&root, move || list_files(&listed), move || repaint());
-        let query = self.palette_query.trim();
+            .refresh(&root, move || file_index::list(&listed), move || repaint());
+        let query = self.palette_query.trim().to_string();
         if query.is_empty() {
             return Vec::new();
         }
-        symbols::search(&self.symbol_index.symbols, query)
+        let key = PaletteKey {
+            mode: PaletteMode::Symbols,
+            query: query.clone(),
+            version: (
+                Arc::as_ptr(&self.symbol_index.symbols) as usize,
+                self.symbol_index.symbols.len() as u64,
+            ),
+        };
+        if let Some((kept, hits)) = &self.palette_cache
+            && *kept == key
+        {
+            return hits.clone();
+        }
+        let hits: Vec<Hit> = symbols::search(&self.symbol_index.symbols, &query)
             .into_iter()
             .map(|symbol| {
                 let relative = symbol
@@ -5101,7 +5357,9 @@ impl Ide {
                     target: Target::Place(symbol.path.clone(), symbol.line),
                 }
             })
-            .collect()
+            .collect();
+        self.palette_cache = Some((key, hits.clone()));
+        hits
     }
 
     /// Ctrl+F2: stops what runs in the active terminal, as Ctrl+C there would.
@@ -5190,16 +5448,68 @@ impl Ide {
         }
     }
 
+    /// The files whose name holds `query` (in lower case), the closest names first. The search is
+    /// kept until the query or the list of files changes.
+    fn file_hits(&mut self, query: &str) -> Vec<Hit> {
+        let key = PaletteKey {
+            mode: PaletteMode::Everywhere,
+            query: query.to_string(),
+            version: (0, self.file_index.generation),
+        };
+        if let Some((kept, hits)) = &self.palette_cache
+            && *kept == key
+        {
+            return hits.clone();
+        }
+        let mut matches: Vec<_> = self
+            .file_index
+            .entries()
+            .iter()
+            .filter(|e| e.name.contains(query))
+            .collect();
+        // Names starting with the query first, then the shortest.
+        matches.sort_by_key(|e| (!e.name.starts_with(query), e.name.len()));
+        let hits: Vec<Hit> = matches
+            .into_iter()
+            .take(60)
+            .map(|entry| {
+                let path = &entry.path;
+                let relative = path
+                    .parent()
+                    .and_then(|p| p.strip_prefix(&self.root).ok())
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default();
+                Hit {
+                    label: path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .into_owned(),
+                    hint: relative,
+                    icon: None,
+                    file: Some(path.clone()),
+                    target: Target::File(path.clone()),
+                }
+            })
+            .collect();
+        self.palette_cache = Some((key, hits.clone()));
+        hits
+    }
+
     fn palette_hits(&mut self) -> Vec<Hit> {
         let query = self.palette_query.to_lowercase();
         match self.palette_mode {
             PaletteMode::Recent => return self.recent_hits(&query),
             PaletteMode::Line => return line_hit(&query).into_iter().collect(),
             PaletteMode::Symbols => return self.symbol_hits(),
-            PaletteMode::Everywhere => {}
+            PaletteMode::Locations => return self.location_hits(),
+            PaletteMode::Bookmarks => return self.bookmark_hits(&query),
+            PaletteMode::History => return self.history_hits(),
+            PaletteMode::Everywhere | PaletteMode::Actions => {}
         }
+        let everywhere = self.palette_mode == PaletteMode::Everywhere;
         let mut hits = Vec::new();
-        for (i, doc) in self.documents.iter().enumerate() {
+        for (i, doc) in self.documents.iter().enumerate().filter(|_| everywhere) {
             if doc.title().to_lowercase().contains(&query) {
                 hits.push(Hit {
                     label: doc.title(),
@@ -5241,44 +5551,11 @@ impl Ide {
                 }
             }
         }
-        if !query.is_empty() {
-            let root = self.root.clone();
-            let files = self.project_files.get_or_insert_with(|| list_files(&root));
-            let mut matches: Vec<_> = files
-                .iter()
-                .filter(|p| {
-                    p.file_name()
-                        .is_some_and(|n| n.to_string_lossy().to_lowercase().contains(&query))
-                })
-                .take(60)
-                .cloned()
-                .collect();
-            matches.sort_by_key(|p| {
-                let name = p
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_lowercase();
-                (!name.starts_with(&query), name.len())
-            });
-            for path in matches {
-                let relative = path
-                    .parent()
-                    .and_then(|p| p.strip_prefix(&self.root).ok())
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_default();
-                hits.push(Hit {
-                    label: path
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .into_owned(),
-                    hint: relative,
-                    icon: None,
-                    file: Some(path.clone()),
-                    target: Target::File(path),
-                });
-            }
+        if everywhere && !query.is_empty() {
+            let repaint = self.repaint.clone();
+            self.file_index.poll();
+            self.file_index.refresh(&self.root, move || repaint());
+            hits.extend(self.file_hits(&query));
         }
         hits
     }
@@ -5329,6 +5606,18 @@ impl Ide {
                                         }
                                         PaletteMode::Recent => {
                                             (tr!("recent_files"), tr!("order_use"))
+                                        }
+                                        PaletteMode::Actions => {
+                                            (tr!("find_action"), tr!("actions_commands"))
+                                        }
+                                        PaletteMode::Locations => {
+                                            (tr!("recent_locations"), tr!("recent_locations_hint"))
+                                        }
+                                        PaletteMode::Bookmarks => {
+                                            (tr!("bookmarks"), tr!("bookmarks_hint"))
+                                        }
+                                        PaletteMode::History => {
+                                            (tr!("local_history"), tr!("local_history_hint"))
                                         }
                                         PaletteMode::Line => {
                                             (tr!("go_line"), tr!("line_line_column"))
@@ -5441,6 +5730,7 @@ impl Ide {
                 Target::File(path) => self.open_file(path),
                 Target::Line(line, column) => self.go_to_line(line, column),
                 Target::Place(path, line) => Host::open_at(self, path, line, 0, 0),
+                Target::Version(path) => self.restore_version(&path),
             }
         }
     }
@@ -5746,6 +6036,25 @@ impl Host for Ide {
     fn root(&self) -> &Path {
         &self.root
     }
+    fn inspect_project(&mut self) {
+        self.start_inspection();
+    }
+    fn inspection_progress(&self) -> Option<(usize, usize)> {
+        Ide::inspection_progress(self)
+    }
+    fn inspect_files(&self, files: &[PathBuf]) -> Vec<builtin::Problem> {
+        let mut found: Vec<builtin::Problem> = Vec::new();
+        for file in files {
+            // An open document has the problems of what is in the editor.
+            let open = self.documents.iter().any(|d| d.path.as_ref() == Some(file));
+            if open {
+                found.extend(self.problems().into_iter().filter(|p| &p.path == file));
+            } else {
+                found.extend(inspect::inspect_file(file));
+            }
+        }
+        found
+    }
     fn active_file(&self) -> Option<PathBuf> {
         self.documents.get(self.active).and_then(|d| d.path.clone())
     }
@@ -5829,6 +6138,12 @@ impl Host for Ide {
                 });
             }
         }
+        // The files of the project that Inspect Code looked at, unless they are open.
+        if let Some(inspection) = &self.inspection {
+            out.extend(inspection.problems.iter().filter(|p| {
+                !self.documents.iter().any(|d| d.path.as_ref() == Some(&p.path))
+            }).cloned());
+        }
         out
     }
     fn open_at(&mut self, path: PathBuf, line: usize, column: usize, length: usize) {
@@ -5872,7 +6187,7 @@ impl Host for Ide {
             self.status = trf!("error_reloading", error = error);
         }
         self.tree.clear();
-        self.project_files = None;
+        self.file_index.invalidate();
     }
     fn show_tool_window(&mut self, tool: &'static ToolWindow) {
         self.open_tool(tool);
@@ -6058,6 +6373,7 @@ impl eframe::App for Ide {
         #[cfg(debug_assertions)]
         self.debug_screenshot(ctx);
         self.apply_pending_nav();
+        self.poll_inspection();
         self.track_recent_files();
         self.update_window_title(ctx);
         self.serve_command_line(ctx);
@@ -6149,7 +6465,7 @@ impl eframe::App for Ide {
     }
     /// eframe calls it every 30 seconds and on exit; the window's own state stays with eframe.
     fn save(&mut self, _storage: &mut dyn eframe::Storage) {
-        if let Err(e) = save_settings(&settings_path(), &self.settings) {
+        if let Err(e) = self.persist_settings() {
             eprintln!("settings: {e:#}");
         }
     }

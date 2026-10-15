@@ -124,8 +124,18 @@ pub trait Host {
     fn editor_state(&self) -> Option<EditorSnapshot> {
         None
     }
-    /// The problems of the open documents.
+    /// The problems of the open documents, and of the project once it was inspected.
     fn problems(&self) -> Vec<Problem> {
+        Vec::new()
+    }
+    /// Looks for the syntax errors of every source file of the project, in the background.
+    fn inspect_project(&mut self) {}
+    /// Files read so far and files to read, while the project is being inspected.
+    fn inspection_progress(&self) -> Option<(usize, usize)> {
+        None
+    }
+    /// The syntax errors of these files, read now (the check before a commit).
+    fn inspect_files(&self, _files: &[PathBuf]) -> Vec<Problem> {
         Vec::new()
     }
     /// The selected text of the active document.
@@ -195,6 +205,13 @@ pub trait BuiltinPlugin {
     }
     fn run_command(&mut self, id: &str, host: &mut dyn Host) {}
     fn file_color(&self, path: &Path) -> Option<Color32> {
+        None
+    }
+    /// The ignore file that ignores `path` (`.gitignore`, `.dockerignore`…), when a plugin knows
+    /// one does. The project tree shows what is ignored dimmed, with the name of the file that
+    /// ignores it in a tooltip, and hides it when the user turns the eye off. Any plugin that
+    /// reads an ignore file can say so: they are all asked, the first answer is shown.
+    fn ignored_by(&self, path: &Path) -> Option<String> {
         None
     }
     /// Folder of the plugin whose `extensions` icons apply to every file of that extension

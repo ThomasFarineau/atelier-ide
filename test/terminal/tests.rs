@@ -30,13 +30,22 @@ fn available_shells_start_with_the_default_one() {
             .all(|s| !s.name.is_empty() && !s.program.is_empty())
     );
 }
+/// A shell that starts at once: the command prompt on Windows (PowerShell takes seconds to
+/// start, and these tests only need a real terminal).
+fn fast_shell() -> Shell {
+    Shell::available()
+        .into_iter()
+        .find(|s| s.program == "cmd.exe")
+        .unwrap_or_else(Shell::default_shell)
+}
+
 #[test]
 fn real_shell_executes_and_keeps_its_working_directory() {
     let root = std::env::current_dir().unwrap();
     let mut terminal =
-        Terminal::start(&root, &Shell::default_shell(), &[]).expect("A native shell is required");
+        Terminal::start(&root, &fast_shell(), &[]).expect("A native shell is required");
     let command = if cfg!(windows) {
-        "Write-Output ('ATELIER_' + 'PTY_OK'); Write-Output ((Get-Location).Path)"
+        "set A=PTY_OK&& echo ATELIER_%A%&& cd"
     } else {
         "printf 'ATELIER_%s\\n' PTY_OK; pwd"
     };
@@ -112,10 +121,10 @@ fn a_mouse_selection_starts_where_the_button_went_down() {
     use eframe::egui::{self, Event, Modifiers, PointerButton, Rect, pos2, vec2};
     let root = std::env::current_dir().unwrap();
     let mut term =
-        Terminal::start(&root, &Shell::default_shell(), &[]).expect("A native shell is required");
+        Terminal::start(&root, &fast_shell(), &[]).expect("A native shell is required");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
     let command = if cfg!(windows) {
-        "Write-Output ('ATELIER_' + 'SELECTED')"
+        "set A=SELECTED&& echo ATELIER_%A%"
     } else {
         "printf 'ATELIER_%s\n' SELECTED"
     };

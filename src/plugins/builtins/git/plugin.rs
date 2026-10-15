@@ -783,7 +783,14 @@ impl GitPlugin {
         let mut paths = add.clone();
         paths.extend(changes.iter().filter_map(|c| c.orig.clone()));
         let (amend, signoff) = (self.amend, self.signoff);
-        self.spawn("Commit", After::Committed { push }, move |git| {
+        // Errors in the code to commit are said first; the commit goes on when confirmed.
+        let files: Vec<PathBuf> = add.iter().map(|p| host.root().join(p)).collect();
+        let problems: Vec<_> = host
+            .inspect_files(&files)
+            .into_iter()
+            .filter(|p| p.severity == 1)
+            .collect();
+        let task = move |git: &Repo| -> Result<String> {
             if !add.is_empty() {
                 git.run_paths(&["add", "-A"], &add)?;
             }
@@ -804,7 +811,31 @@ impl GitPlugin {
             } else {
                 git.run_paths(&args, &paths)
             }
-        });
+        };
+        if problems.is_empty() {
+            self.spawn("Commit", After::Committed { push }, task);
+            return;
+        }
+        let mut items: Vec<String> = Vec::new();
+        for problem in &problems {
+            let name = problem
+                .path
+                .strip_prefix(host.root())
+                .unwrap_or(&problem.path)
+                .display()
+                .to_string();
+            let line = format!("{name}:{}  {}", problem.line + 1, problem.message.lines().next().unwrap_or(""));
+            if !items.contains(&line) && items.len() < 12 {
+                items.push(line);
+            }
+        }
+        let pending = self.pending("Commit", After::Committed { push }, task);
+        self.confirm(
+            tr!("git.errors_before_commit"),
+            trf!("git.errors_in_files_commit_anyway", count = problems.len()),
+            items,
+            pending,
+        );
     }
 
     fn toggle_amend(&mut self) {
@@ -1585,6 +1616,10 @@ impl BuiltinPlugin for GitPlugin {
             }
             _ => {}
         }
+    }
+
+    fn ignored_by(&self, path: &Path) -> Option<String> {
+        self.is_ignored(path).then(|| ".gitignore".to_string())
     }
 
     fn file_color(&self, path: &Path) -> Option<Color32> {

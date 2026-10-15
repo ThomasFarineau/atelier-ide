@@ -544,7 +544,13 @@ fn search_everywhere_finds_project_files() {
     let mut ide = ide();
     ide.open_palette();
     ide.palette_query = "cargo.tom".into();
-    let hits = ide.palette_hits();
+    // The files are listed in the background: the popup does not wait for them.
+    let started = std::time::Instant::now();
+    let mut hits = ide.palette_hits();
+    while hits.is_empty() && started.elapsed() < std::time::Duration::from_secs(20) {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        hits = ide.palette_hits();
+    }
     assert!(
         hits.iter()
             .any(|h| matches!(&h.target, Target::File(p) if p.ends_with("Cargo.toml")))
@@ -816,4 +822,127 @@ fn a_mouse_drag_selects_from_where_the_button_went_down() {
     let view = &ide.documents[0].view;
     assert_eq!(view.anchor, pressed_at);
     assert!(view.cursor > pressed_at, "{} {}", view.anchor, view.cursor);
+}
+
+/// Frames of the editor with the second editor, the sticky lines, the breadcrumbs, the hints and
+/// several carets all on: nothing panics, and the second editor goes away with its file.
+#[test]
+fn the_editor_draws_with_a_split_and_several_carets() {
+    let dir = std::env::temp_dir().join(format!("atelier-split-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let first = dir.join("a.rs");
+    let second = dir.join("b.rs");
+    let code: String = (0..80)
+        .map(|i| format!("fn f{i}() {{\n    let x = {i};\n    let y = x;\n}}\n"))
+        .collect();
+    fs::write(&first, &code).unwrap();
+    fs::write(&second, "fn other() {}\n").unwrap();
+    let mut ide = ide();
+    ide.open_file(first.clone());
+    ide.wait_loaded();
+    ide.open_file(second.clone());
+    ide.wait_loaded();
+    let ctx = egui::Context::default();
+    ide.apply_theme(&ctx);
+    let frame = |ide: &mut Ide| {
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, vec2(1200.0, 800.0))),
+                ..Default::default()
+            },
+            |ctx| ide.editor(ctx),
+        );
+    };
+    // The same file twice.
+    ide.active = 0;
+    ide.split_right();
+    assert!(ide.split.is_some());
+    frame(&mut ide);
+    frame(&mut ide);
+    // The second editor on another file.
+    ide.active = 1;
+    frame(&mut ide);
+    assert_eq!(ide.split_other(), Some(0));
+    ide.documents[1].view.select(0, 0);
+    frame(&mut ide);
+    // Closing the file closes the split.
+    ide.documents.remove(0);
+    ide.active = 0;
+    frame(&mut ide);
+    assert!(ide.split.is_none());
+    let _ = fs::remove_dir_all(dir);
+}
+
+/// A plugin that ignores the files named `*.tmp`, as another ignore file would.
+struct IgnoresTmp;
+
+impl BuiltinPlugin for IgnoresTmp {
+    fn id(&self) -> &'static str {
+        "ignores-tmp"
+    }
+    fn name(&self) -> &'static str {
+        "Ignores tmp"
+    }
+    fn description(&self) -> &'static str {
+        ""
+    }
+    fn ignored_by(&self, path: &Path) -> Option<String> {
+        (path.extension().is_some_and(|e| e == "tmp")).then(|| ".tmpignore".to_string())
+    }
+}
+
+/// Any plugin can say what an ignore file ignores; the tree shows it, or leaves it out when the
+/// eye is off.
+#[test]
+fn plugins_say_what_is_ignored_and_the_tree_can_leave_it_out() {
+    let dir = std::env::temp_dir().join(format!("atelier-ignored-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("keep.rs"), "").unwrap();
+    fs::write(dir.join("scratch.tmp"), "").unwrap();
+    let mut ide = Ide::blank(dir.clone(), Settings { font_size: 14.0, ..Default::default() }, None);
+    ide.builtins.push(Box::new(IgnoresTmp));
+    let ctx = egui::Context::default();
+    ide.apply_theme(&ctx);
+    let shown = |ide: &mut Ide| -> Vec<String> {
+        ide.tree.clear();
+        ide.row_rects.clear();
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, vec2(600.0, 600.0))),
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let root = ide.root.clone();
+                    ide.tree_ui(ui, &root, 0);
+                });
+            },
+        );
+        ide.row_rects
+            .iter()
+            .map(|(p, _)| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect()
+    };
+    assert_eq!(ide.ignored_by(&dir.join("scratch.tmp")).as_deref(), Some(".tmpignore"));
+    assert_eq!(ide.ignored_by(&dir.join("keep.rs")), None);
+    assert_eq!(shown(&mut ide), ["keep.rs", "scratch.tmp"]);
+    ide.settings.hide_ignored = true;
+    assert_eq!(shown(&mut ide), ["keep.rs"]);
+    let _ = fs::remove_dir_all(dir);
+}
+
+/// Several windows share the settings file: a window writes what it changed, and keeps what
+/// the others wrote (a font chosen in one window is not put back by another).
+#[test]
+fn a_window_does_not_put_back_what_another_changed() {
+    let base = serde_json::json!({"theme": 0, "fonts": {"code": "A"}, "recent": ["/a"]});
+    // Another window chose a font and wrote it.
+    let mut file = serde_json::json!({"theme": 0, "fonts": {"code": "B"}, "recent": ["/a"]});
+    // This window only opened another project.
+    let mine = serde_json::json!({"theme": 0, "fonts": {"code": "A"}, "recent": ["/b", "/a"]});
+    merge_settings(&mut file, &mine, &base);
+    assert_eq!(file["fonts"]["code"], "B", "the font of the other window stays");
+    assert_eq!(file["recent"], serde_json::json!(["/b", "/a"]), "what this window changed is written");
 }

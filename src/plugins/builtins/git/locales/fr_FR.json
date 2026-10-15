@@ -100,6 +100,8 @@
   "git.enter_commit_message": "Saisissez un message de commit",
   "git.enter_name_url_remote": "Renseignez le nom et l'URL du remote",
   "git.enter_url_destination_folder": "Renseignez l'URL et le dossier de destination",
+  "git.errors_before_commit": "Erreurs dans le code à valider",
+  "git.errors_in_files_commit_anyway": "{count} erreurs de syntaxe dans les fichiers à valider. Valider quand même ?",
   "git.expand_all": "Tout déplier",
   "git.failed": "{label} a échoué",
   "git.fetch": "Récupérer (fetch)",

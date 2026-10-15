@@ -100,6 +100,8 @@
   "git.enter_commit_message": "Enter a commit message",
   "git.enter_name_url_remote": "Enter the name and the URL of the remote",
   "git.enter_url_destination_folder": "Enter the URL and the destination folder",
+  "git.errors_before_commit": "Errors in the code to commit",
+  "git.errors_in_files_commit_anyway": "{count} syntax errors were found in the files to commit. Commit anyway?",
   "git.expand_all": "Expand All",
   "git.failed": "{label} failed",
   "git.fetch": "Fetch",
