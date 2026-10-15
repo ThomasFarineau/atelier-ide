@@ -223,8 +223,85 @@ fn install_fonts(ctx: &egui::Context) {
     );
     let mut mono = with("JetBrains Mono", &monospace);
     mono.extend(proportional);
+    // The icons of prompts and command-line tools: a Nerd Font installed on the machine, right
+    // after JetBrains Mono, and the symbols of the system last.
+    let (nerd, symbols) = system_fallbacks();
+    if let Some(bytes) = nerd {
+        fonts
+            .font_data
+            .insert("Nerd Font".into(), Arc::new(FontData::from_owned(bytes)));
+        mono.insert(1, "Nerd Font".into());
+    }
+    if let Some(bytes) = symbols {
+        fonts
+            .font_data
+            .insert("Symbols".into(), Arc::new(FontData::from_owned(bytes)));
+        mono.push("Symbols".into());
+    }
     fonts.families.insert(FontFamily::Monospace, mono);
     ctx.set_fonts(fonts);
+}
+
+/// A Nerd Font installed on the machine (the monospaced regular one first) and a font of
+/// symbols of the system (Segoe UI Symbol on Windows), when they are there.
+fn system_fallbacks() -> (Option<Vec<u8>>, Option<Vec<u8>>) {
+    let mut dirs: Vec<std::path::PathBuf> = Vec::new();
+    if let Some(windir) = std::env::var_os("WINDIR") {
+        dirs.push(std::path::Path::new(&windir).join("Fonts"));
+    }
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        dirs.push(std::path::Path::new(&local).join("Microsoft/Windows/Fonts"));
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        let home = std::path::Path::new(&home);
+        dirs.extend([
+            home.join(".local/share/fonts"),
+            home.join(".fonts"),
+            home.join("Library/Fonts"),
+        ]);
+    }
+    dirs.extend(
+        [
+            "/usr/share/fonts",
+            "/usr/local/share/fonts",
+            "/Library/Fonts",
+        ]
+        .map(Into::into),
+    );
+    let mut files = Vec::new();
+    let mut pending = dirs;
+    while let Some(dir) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                pending.push(path);
+            } else {
+                files.push(path);
+            }
+        }
+    }
+    let name = |p: &std::path::PathBuf| {
+        p.file_name()
+            .map(|n| n.to_string_lossy().to_lowercase())
+            .unwrap_or_default()
+    };
+    let nerd = [
+        "nerdfontmono-regular.ttf",
+        "nerdfont-regular.ttf",
+        "nerdfontmono-regular.otf",
+        "nerdfont-regular.otf",
+    ]
+    .iter()
+    .find_map(|end| files.iter().find(|p| name(p).ends_with(end)))
+    .and_then(|p| std::fs::read(p).ok());
+    let symbols = files
+        .iter()
+        .find(|p| name(p) == "seguisym.ttf")
+        .and_then(|p| std::fs::read(p).ok());
+    (nerd, symbols)
 }
 
 /// Applies a theme to egui. Fonts are installed on first use.

@@ -115,6 +115,21 @@ fn key_bytes(key: Key, m: Modifiers, application: bool) -> Option<Vec<u8>> {
         Key::F10 => tilde(21),
         Key::F11 => tilde(23),
         Key::F12 => tilde(24),
+        // Alt + a letter or a digit: Escape then the character, as AIs read Alt+V (paste an
+        // image) and shells Alt+B or Alt+F (a word back or forward).
+        _ if m.alt && !m.ctrl => {
+            let name = key.name();
+            let c = name.chars().next().filter(|_| name.len() == 1)?;
+            if !c.is_ascii_alphanumeric() {
+                return None;
+            }
+            let c = if m.shift {
+                c.to_ascii_uppercase()
+            } else {
+                c.to_ascii_lowercase()
+            };
+            vec![0x1b, c as u8]
+        }
         _ if m.ctrl && !m.alt => {
             let name = key.name();
             let letter = name.chars().next().filter(|_| name.len() == 1)?;
@@ -209,17 +224,111 @@ fn row_text(screen: &vt100::Screen, row: u16, cols: u16) -> String {
         .collect()
 }
 
-/// The link at a cell of the screen, with the columns it spans.
+/// A line of text that may go on over several rows, with the cell of each of its characters.
+#[derive(Default)]
+struct Line {
+    text: String,
+    cells: Vec<(u16, u16)>,
+}
+
+impl Line {
+    fn push(&mut self, row: u16, chars: impl Iterator<Item = (usize, char)>) {
+        for (col, c) in chars {
+            self.text.push(c);
+            self.cells.push((row, col as u16));
+        }
+    }
+}
+
+/// The line holding `row`. The terminal joins the rows it wrapped itself; `cut` also joins a row
+/// that ends at the right edge to the text of the next one, past its indentation, as a program
+/// that wraps its own text (an AI's answer) cuts a word too long for a row.
+fn line_at(screen: &vt100::Screen, row: u16, rows: u16, cols: u16, cut: bool) -> Line {
+    let texts: Vec<Vec<char>> = (0..rows)
+        .map(|r| row_text(screen, r, cols).chars().collect())
+        .collect();
+    let end = |r: u16| texts[r as usize].iter().rposition(|c| *c != ' ');
+    let indent = |r: u16| texts[r as usize].iter().position(|c| *c != ' ');
+    let goes_on = |r: u16| {
+        r + 1 < rows
+            && (screen.row_wrapped(r)
+                || cut && end(r).is_some_and(|e| e + 4 >= cols as usize) && indent(r + 1).is_some())
+    };
+    // Five rows each way: an address is rarely longer.
+    let mut first = row;
+    while first > 0 && row - first < 5 && goes_on(first - 1) {
+        first -= 1;
+    }
+    let mut last = row;
+    while last - row < 5 && goes_on(last) {
+        last += 1;
+    }
+    let mut line = Line::default();
+    for r in first..=last {
+        let chars = &texts[r as usize];
+        let from = if r > first && !screen.row_wrapped(r - 1) {
+            indent(r).unwrap_or(0)
+        } else {
+            0
+        };
+        let to = if r < last && !screen.row_wrapped(r) {
+            end(r).map_or(0, |e| e + 1)
+        } else {
+            chars.len()
+        };
+        line.push(
+            r,
+            chars[from..to]
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(i, c)| (from + i, c)),
+        );
+    }
+    line
+}
+
+/// The columns a link spans on each of its rows.
+type Spans = Vec<(u16, std::ops::Range<usize>)>;
+
+/// The link at a cell of the screen, with the columns it spans on each of its rows.
 fn link_at(
     screen: &vt100::Screen,
     (row, col): (u16, u16),
+    rows: u16,
     cols: u16,
     root: &Path,
-) -> Option<(std::ops::Range<usize>, Link)> {
-    let text = row_text(screen, row, cols);
-    terminal_links::find(&text, root, |p| p.is_file())
-        .into_iter()
-        .find(|(range, _)| range.contains(&(col as usize)))
+) -> Option<(Spans, Link)> {
+    let find = |line: &Line| {
+        let at = line.cells.iter().position(|cell| *cell == (row, col))?;
+        terminal_links::find(&line.text, root, |p| p.is_file())
+            .into_iter()
+            .find(|(range, _)| range.contains(&at))
+    };
+    let wrapped = line_at(screen, row, rows, cols, false);
+    let mut found = find(&wrapped).map(|link| (&wrapped, link));
+    // A program cuts only an address longer than its rows: a shorter one ending at the edge is
+    // followed by other words.
+    let cut = line_at(screen, row, rows, cols, true);
+    if let Some((range, link)) = find(&cut)
+        && matches!(link, Link::Url(_))
+        && range.len() + 6 > cols as usize
+        && found
+            .as_ref()
+            .is_none_or(|(_, (r, _))| range.len() > r.len())
+    {
+        found = Some((&cut, (range, link)));
+    }
+    let (line, (range, link)) = found?;
+    let mut spans = Spans::new();
+    for &(r, c) in &line.cells[range] {
+        let c = c as usize;
+        match spans.last_mut() {
+            Some((last, span)) if *last == r => span.end = c + 1,
+            _ => spans.push((r, c..c + 1)),
+        }
+    }
+    Some((spans, link))
 }
 
 /// Selection anchor and head, as (row, column) of the visible screen.
@@ -254,6 +363,10 @@ pub fn show(
         (rect.width() / char_w) as u16,
     );
     let (rows, cols) = term.screen_ref().size();
+    // What a program copied (an AI that has its own selection) goes to the clipboard.
+    if let Some(text) = term.take_copied() {
+        ui.ctx().copy_text(text);
+    }
 
     if response.clicked() || response.drag_started() || term.want_focus {
         term.want_focus = false;
@@ -294,11 +407,11 @@ pub fn show(
         }
     }
     // Links: the one under the pointer is underlined, a click opens it.
-    let hovered_link = response.hover_pos().and_then(|p| {
-        link_at(term.screen_ref(), cell_at(p), cols, root).map(|l| (cell_at(p).0, l))
-    });
+    let hovered_link = response
+        .hover_pos()
+        .and_then(|p| link_at(term.screen_ref(), cell_at(p), rows, cols, root));
     if response.clicked()
-        && let Some((_, (_, link))) = &hovered_link
+        && let Some((_, link)) = &hovered_link
     {
         match link {
             Link::Url(url) => ui.ctx().open_url(egui::OpenUrl::new_tab(url)),
@@ -448,8 +561,11 @@ pub fn show(
     // Drawing.
     let painter = ui.painter_at(rect);
     let screen = term.screen_ref();
+    let selected = selection.range();
     for row in 0..rows {
         let y = rect.top() + row as f32 * row_h;
+        // Backgrounds first, then the selection, then the text, which stays readable over it.
+        let mut texts = Vec::new();
         let mut col = 0;
         while col < cols {
             let Some(cell) = screen.cell(row, col) else {
@@ -482,9 +598,25 @@ pub fn show(
                 );
                 painter.rect_filled(run, 0.0, bg);
             }
-            if text.trim().is_empty() && !st.underline {
-                continue;
+            if !text.trim().is_empty() || st.underline {
+                texts.push((x, st, text));
             }
+        }
+        if let Some((from, to)) = selected
+            && (from.0..=to.0).contains(&row)
+        {
+            let start = if row == from.0 { from.1 } else { 0 };
+            let end = if row == to.0 { to.1 + 1 } else { cols };
+            painter.rect_filled(
+                Rect::from_min_max(
+                    pos2(rect.left() + start as f32 * char_w, y),
+                    pos2(rect.left() + end as f32 * char_w, y + row_h),
+                ),
+                0.0,
+                t.text_selection,
+            );
+        }
+        for (x, st, text) in texts {
             let mut job = LayoutJob::default();
             job.append(
                 &text,
@@ -506,26 +638,13 @@ pub fn show(
             painter.galley(pos2(x, y + (row_h - galley.size().y) / 2.0), galley, st.fg);
         }
     }
-    if let Some((row, (range, _))) = &hovered_link {
-        let y = rect.top() + (*row as f32 + 1.0) * row_h - 1.5;
-        painter.hline(
-            rect.left() + range.start as f32 * char_w..=rect.left() + range.end as f32 * char_w,
-            y,
-            Stroke::new(1.0_f32, t.link),
-        );
-    }
-    if let Some((from, to)) = selection.range() {
-        for row in from.0..=to.0 {
-            let start = if row == from.0 { from.1 } else { 0 };
-            let end = if row == to.0 { to.1 + 1 } else { cols };
-            let y = rect.top() + row as f32 * row_h;
-            painter.rect_filled(
-                Rect::from_min_max(
-                    pos2(rect.left() + start as f32 * char_w, y),
-                    pos2(rect.left() + end as f32 * char_w, y + row_h),
-                ),
-                0.0,
-                t.text_selection,
+    if let Some((spans, _)) = &hovered_link {
+        for (row, range) in spans {
+            let y = rect.top() + (*row as f32 + 1.0) * row_h - 1.5;
+            painter.hline(
+                rect.left() + range.start as f32 * char_w..=rect.left() + range.end as f32 * char_w,
+                y,
+                Stroke::new(1.0_f32, t.link),
             );
         }
     }
@@ -565,13 +684,59 @@ mod tests {
         );
         let screen = parser.screen();
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let (range, link) = link_at(screen, (0, 15), 80, root).expect("a link");
-        assert_eq!(range, 11..33);
+        let (spans, link) = link_at(screen, (0, 15), 4, 80, root).expect("a link");
+        assert_eq!(spans, [(0, 11..33)]);
         assert_eq!(link, Link::Url("http://localhost:8080/".into()));
-        assert!(link_at(screen, (0, 3), 80, root).is_none());
+        assert!(link_at(screen, (0, 3), 4, 80, root).is_none());
         // After a wide character, columns and characters still agree.
-        let (range, _) = link_at(screen, (1, 4), 80, root).expect("a link after a wide character");
-        assert_eq!(range.start, 3);
+        let (spans, _) =
+            link_at(screen, (1, 4), 4, 80, root).expect("a link after a wide character");
+        assert_eq!(spans[0].1.start, 3);
+    }
+
+    #[test]
+    fn an_address_on_several_rows_is_one_link() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let url = format!("https://example.com/{}", "abcdefghij".repeat(5));
+        // Wrapped by the terminal: the rows go on into each other.
+        let mut parser = vt100::Parser::new(4, 40, 0);
+        parser.process(format!("see {url} ok").as_bytes());
+        let (spans, link) = link_at(parser.screen(), (1, 10), 4, 40, root).expect("a link");
+        assert_eq!(link, Link::Url(url.clone()));
+        assert_eq!(spans, [(0, 4..40), (1, 0..(4 + url.len() - 40))]);
+        // Cut by a program that wraps its own text, as an AI does: the next rows are indented.
+        let mut parser = vt100::Parser::new(4, 40, 0);
+        let chars: Vec<char> = format!("❯ see {url} ok").chars().collect();
+        let mut rows: Vec<String> = vec![chars[..38].iter().collect()];
+        for piece in chars[38..].chunks(36) {
+            rows.push(format!("  {}", piece.iter().collect::<String>()));
+        }
+        parser.process(rows.join("\r\n").as_bytes());
+        let (spans, link) = link_at(parser.screen(), (1, 10), 4, 40, root).expect("a link");
+        assert_eq!(link, Link::Url(url.clone()));
+        assert_eq!(spans.len(), 3);
+        assert_eq!(spans[0], (0, 6..38));
+        // A short address at the end of a row is not joined to the words of the next one.
+        let mut parser = vt100::Parser::new(4, 40, 0);
+        parser.process(b"a few words then https://x.dev/abcdefgh\r\n  more words");
+        let (_, link) = link_at(parser.screen(), (0, 20), 4, 40, root).expect("a link");
+        assert_eq!(link, Link::Url("https://x.dev/abcdefgh".into()));
+    }
+
+    #[test]
+    fn alt_and_a_letter_send_escape_then_the_letter() {
+        let alt = Modifiers {
+            alt: true,
+            ..Modifiers::NONE
+        };
+        assert_eq!(key_bytes(Key::V, alt, false), Some(b"\x1bv".to_vec()));
+        let alt_shift = Modifiers { shift: true, ..alt };
+        assert_eq!(key_bytes(Key::B, alt_shift, false), Some(b"\x1bB".to_vec()));
+        // AltGr is Ctrl + Alt: the character comes as text.
+        assert_eq!(
+            key_bytes(Key::E, Modifiers { ctrl: true, ..alt }, false),
+            None
+        );
     }
 
     #[test]
@@ -579,7 +744,7 @@ mod tests {
         let mut parser = vt100::Parser::new(2, 80, 0);
         parser.process(b"error: --> src/main.rs:12:5");
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let (_, link) = link_at(parser.screen(), (0, 15), 80, root).expect("a link");
+        let (_, link) = link_at(parser.screen(), (0, 15), 2, 80, root).expect("a link");
         assert_eq!(
             link,
             Link::File {

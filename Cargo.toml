@@ -19,6 +19,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 portable-pty = "0.9"
 vt100 = "0.16"
+# The text a program of the terminal copies arrives in base64 (OSC 52).
+base64 = "0.22"
 anyhow = "1"
 similar = "2"
 syntect = { version = "5.3", default-features = false, features = ["default-fancy"] }
