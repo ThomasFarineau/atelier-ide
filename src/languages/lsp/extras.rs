@@ -6,10 +6,10 @@
 //! [`crate::languages::Provider::lsp_target`], so every language with a server shares them.
 
 use crate::languages::{
-    ItemKind, Oneshot, QuickFix,
+    FileEdit, ItemKind, Oneshot,
     lsp::{
         Client, from_position,
-        convert::{fixes_from_server, markup_text, plain, symbol_kind},
+        convert::{markup_text, plain, symbol_kind, workspace_edit},
         to_position, uri_to_path,
     },
 };
@@ -183,13 +183,54 @@ pub fn inlay_hints(
 
 // ---- Refactorings --------------------------------------------------------------------------
 
-/// The refactorings the server offers for a range (extract, inline…), with their edits.
+/// A refactoring of the server: what it changes in the files of the project, and the files it
+/// creates (move to a new file).
+#[derive(Clone, Debug)]
+pub struct Refactoring {
+    pub title: String,
+    /// The changes, those of the document the request was made in with a path None.
+    pub files: Vec<FileEdit>,
+    pub creates: Vec<PathBuf>,
+}
+
+/// The refactorings in the answer of `textDocument/codeAction`: the actions that carry their
+/// edits (the ones that only run a command are left out).
+pub fn refactorings_from_server(result: &Value, uri: &str, snapshot: &str) -> Vec<Refactoring> {
+    let Some(actions) = result.as_array() else {
+        return Vec::new();
+    };
+    actions
+        .iter()
+        .filter_map(|action| {
+            let title = action["title"].as_str()?.to_string();
+            let edit = action.get("edit").filter(|e| e.is_object())?;
+            let creates: Vec<PathBuf> = edit["documentChanges"]
+                .as_array()
+                .map(|changes| {
+                    changes
+                        .iter()
+                        .filter(|c| c["kind"] == "create")
+                        .filter_map(|c| uri_to_path(c["uri"].as_str()?))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let files = workspace_edit(edit, uri, snapshot);
+            (!files.is_empty() || !creates.is_empty()).then_some(Refactoring {
+                title,
+                files,
+                creates,
+            })
+        })
+        .collect()
+}
+
+/// The refactorings the server offers for a range (extract, inline, move…), with their edits.
 pub fn refactorings(
     client: &Arc<Client>,
     uri: &str,
     text: &str,
     range: Range<usize>,
-) -> Oneshot<Vec<QuickFix>> {
+) -> Oneshot<Vec<Refactoring>> {
     let start = to_position(text, range.start);
     let end = to_position(text, range.end);
     let params = json!({
@@ -206,7 +247,7 @@ pub fn refactorings(
     client.request("textDocument/codeAction", params, move |result| {
         slot.fulfill(
             result
-                .map(|r| fixes_from_server(&r, &uri, &snapshot))
+                .map(|r| refactorings_from_server(&r, &uri, &snapshot))
                 .unwrap_or_default(),
         )
     });

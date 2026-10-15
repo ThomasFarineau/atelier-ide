@@ -332,6 +332,11 @@ pub trait Provider: Send {
     fn lsp_target(&mut self, _doc: &DocRef) -> Option<(Arc<lsp::Client>, String)> {
         None
     }
+    /// The problems the language server found in the files of the project, open or not (a Rust
+    /// server checks the whole project, a Java one too).
+    fn workspace_diagnostics(&mut self) -> Vec<(PathBuf, Vec<lsp::ServerDiagnostic>)> {
+        Vec::new()
+    }
 }
 
 /// How the providers identify a document.
@@ -495,6 +500,18 @@ impl Service {
             .unwrap_or_else(|| Oneshot::ready(Vec::new()))
     }
 
+    /// The problems the language servers found in the files of the project.
+    pub fn workspace_diagnostics(&self) -> Vec<(PathBuf, Vec<lsp::ServerDiagnostic>)> {
+        let Ok(mut inner) = self.inner.lock() else {
+            return Vec::new();
+        };
+        inner
+            .providers
+            .iter_mut()
+            .flat_map(|p| p.workspace_diagnostics())
+            .collect()
+    }
+
     /// The language server of a document, and the document's address, when it can be asked.
     pub fn lsp_target(&self, doc: &DocRef) -> Option<(Arc<lsp::Client>, String)> {
         self.with(&doc.language, |p, _| p.lsp_target(doc)).flatten()
@@ -533,7 +550,7 @@ impl Service {
         doc: &DocRef,
         text: &str,
         range: Range<usize>,
-    ) -> Oneshot<Vec<QuickFix>> {
+    ) -> Oneshot<Vec<lsp::extras::Refactoring>> {
         match self.lsp_target(doc) {
             Some((client, uri)) => lsp::extras::refactorings(&client, &uri, text, range),
             None => Oneshot::ready(Vec::new()),

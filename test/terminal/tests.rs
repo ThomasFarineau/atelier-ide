@@ -45,7 +45,7 @@ fn real_shell_executes_and_keeps_its_working_directory() {
     let mut terminal =
         Terminal::start(&root, &fast_shell(), &[]).expect("A native shell is required");
     let command = if cfg!(windows) {
-        "set A=PTY_OK&& echo ATELIER_%A%&& cd"
+        "echo ATELIER_PTY_O^K&& cd"
     } else {
         "printf 'ATELIER_%s\\n' PTY_OK; pwd"
     };
@@ -124,7 +124,7 @@ fn a_mouse_selection_starts_where_the_button_went_down() {
         Terminal::start(&root, &fast_shell(), &[]).expect("A native shell is required");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
     let command = if cfg!(windows) {
-        "set A=SELECTED&& echo ATELIER_%A%"
+        "echo ATELIER_SELECTE^D"
     } else {
         "printf 'ATELIER_%s\n' SELECTED"
     };

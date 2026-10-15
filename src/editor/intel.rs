@@ -8,8 +8,8 @@ use super::{
 };
 use crate::{
     languages::{
-        Hover, Location, Oneshot, QuickFix,
-        lsp::extras::{Hierarchy, HierarchyItem, InlayHint, Signature},
+        Hover, Location, Oneshot,
+        lsp::extras::{Hierarchy, HierarchyItem, InlayHint, Refactoring, Signature},
     },
     ui::Theme,
 };
@@ -93,7 +93,7 @@ const HINT_DELAY: Duration = Duration::from_millis(350);
 pub(super) struct IntelState {
     pub(super) want: Option<Want>,
     prepare: Option<(Hierarchy, Oneshot<Vec<HierarchyItem>>)>,
-    refactors: Option<Oneshot<Vec<QuickFix>>>,
+    refactors: Option<Oneshot<Vec<Refactoring>>>,
     signature: Option<SignatureState>,
     quick: Option<QuickState>,
     hierarchy: Option<HierarchyState>,
@@ -339,19 +339,28 @@ impl EditorState {
         if let Some(answer) = &self.intel.refactors {
             if let Some(fixes) = answer.take() {
                 self.intel.refactors = None;
-                if fixes.is_empty() {
+                // What the IDE does by itself, then what the language server offers.
+                let mut entries: Vec<Entry> = self
+                    .native_refactorings(text, opt.language)
+                    .into_iter()
+                    .map(|which| Entry {
+                        label: which.title().to_string(),
+                        detail: which.shortcut().to_string(),
+                        kind: None,
+                        indent: 0,
+                        choice: Choice::Native(which),
+                    })
+                    .collect();
+                entries.extend(fixes.into_iter().map(|refactoring| Entry {
+                    label: refactoring.title.clone(),
+                    detail: String::new(),
+                    kind: None,
+                    indent: 0,
+                    choice: Choice::Workspace(refactoring),
+                }));
+                if entries.is_empty() {
                     self.assist.message = Some(tr!("no_refactorings").into());
                 } else {
-                    let entries = fixes
-                        .into_iter()
-                        .map(|fix| Entry {
-                            label: fix.title.clone(),
-                            detail: String::new(),
-                            kind: None,
-                            indent: 0,
-                            choice: Choice::Fix(fix),
-                        })
-                        .collect();
                     self.assist.popup = None;
                     self.assist.chooser = Some(Chooser::new(tr!("refactor_this"), entries, true));
                 }

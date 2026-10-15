@@ -9,8 +9,10 @@ mod actions;
 mod assist;
 mod context;
 mod fold;
+mod intentions;
 mod intel;
 mod multi;
+mod refactor;
 mod spell;
 mod templates;
 
@@ -1202,6 +1204,20 @@ impl EditorState {
                 return false;
             }
             _ => {}
+        }
+        // The refactorings of the IDE.
+        if m.command && m.alt && !m.shift {
+            let native = match key {
+                Key::V => Some(refactor::Native::ExtractVariable),
+                Key::C => Some(refactor::Native::ExtractConstant),
+                Key::M => Some(refactor::Native::ExtractMethod),
+                Key::N => Some(refactor::Native::InlineVariable),
+                _ => None,
+            };
+            if let Some(which) = native {
+                self.run_native(text, language, which);
+                return true;
+            }
         }
         if key == Key::T && m.command && m.alt && !m.shift {
             self.open_surround(text, language);

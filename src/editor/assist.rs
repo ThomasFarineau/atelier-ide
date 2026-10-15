@@ -93,6 +93,10 @@ pub(super) enum Choice {
     Refactor,
     /// The ways to surround the selection (Ctrl+Alt+T).
     Surround,
+    /// A refactoring that the IDE does by itself.
+    Native(super::refactor::Native),
+    /// A refactoring of the language server, that may change several files.
+    Workspace(crate::languages::lsp::extras::Refactoring),
 }
 
 pub(super) struct Entry {
@@ -414,6 +418,18 @@ impl EditorState {
                     indent: 0,
                     choice: Choice::Fix(fix),
                 }));
+                // The intentions of the IDE on the code at the caret.
+                entries.extend(
+                    self.intention_fixes(text, opt.language)
+                        .into_iter()
+                        .map(|fix| Entry {
+                            label: fix.title.clone(),
+                            detail: String::new(),
+                            kind: None,
+                            indent: 0,
+                            choice: Choice::Fix(fix),
+                        }),
+                );
                 // The actions of the IDE on the code, as IntelliJ's intentions list them.
                 for (label, shortcut, choice) in [
                     (tr!("refactor_this"), "Ctrl+Alt+Shift+T", Choice::Refactor),
@@ -803,6 +819,28 @@ impl EditorState {
             Choice::Refactor => {
                 self.intel.want = Some(super::intel::Want::Refactor);
                 false
+            }
+            Choice::Workspace(refactoring) => {
+                for path in &refactoring.creates {
+                    if !path.exists() {
+                        if let Some(dir) = path.parent() {
+                            let _ = std::fs::create_dir_all(dir);
+                        }
+                        let _ = std::fs::write(path, "");
+                    }
+                }
+                for file in refactoring.files {
+                    match file.path {
+                        None => self.apply_edits(text, file.edits),
+                        Some(path) => self.assist.file_edits.push((path, file.edits)),
+                    }
+                }
+                true
+            }
+            Choice::Native(which) => {
+                let language = self.language.clone();
+                self.run_native(text, &language, which);
+                true
             }
             Choice::Surround => {
                 let language = self.language.clone();

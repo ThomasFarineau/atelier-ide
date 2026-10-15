@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use std::{fs, path::Path, time::SystemTime};
 
 /// The options that go in a bundle.
-pub const KEYS: [&str; 12] = [
+pub const KEYS: [&str; 13] = [
     "theme",
     "font_size",
     "enabled_plugins",
@@ -25,6 +25,7 @@ pub const KEYS: [&str; 12] = [
     "breadcrumbs_off",
     "spellcheck_off",
     "hide_ignored",
+    "commit_check_off",
     "fonts",
     "language",
 ];

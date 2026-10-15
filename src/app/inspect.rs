@@ -4,13 +4,14 @@
 
 use super::{Ide, file_index};
 use crate::{
-    languages::{Diagnostic, Severity, inspect},
+    languages::{Diagnostic, Severity, inspect, lsp::ServerDiagnostic},
     plugins::builtin::Problem,
 };
 use std::{
     fs,
     path::{Path, PathBuf},
     sync::mpsc::{self, Receiver, TryRecvError},
+    time::Duration,
 };
 
 /// Problems kept at most, so that a broken project does not fill the memory.
@@ -51,19 +52,72 @@ pub fn problem_of(path: &Path, text: &str, d: &Diagnostic) -> Problem {
     }
 }
 
-/// The problems of a file read from the disk.
-pub fn inspect_file(path: &Path) -> Vec<Problem> {
-    if inspect::language_of(path).is_none() {
-        return Vec::new();
+/// A problem the language server found, as the Problems window lists it.
+pub fn problem_of_server(path: &Path, d: &ServerDiagnostic) -> Problem {
+    Problem {
+        path: path.to_path_buf(),
+        line: d.start.0,
+        column: d.start.1,
+        length: if d.end.0 == d.start.0 {
+            d.end.1.saturating_sub(d.start.1).max(1)
+        } else {
+            1
+        },
+        severity: d.severity,
+        message: d.message.clone(),
+        source: d.source.clone(),
     }
+}
+
+/// A problem of the compiler of TypeScript.
+fn problem_of_compiled(c: &inspect::Compiled) -> Problem {
+    Problem {
+        path: c.path.clone(),
+        line: c.line,
+        column: c.column,
+        length: 1,
+        severity: if c.error { 1 } else { 2 },
+        message: c.message.clone(),
+        source: "tsc".into(),
+    }
+}
+
+/// The lines of a text that a merge left in it: `<<<<<<<`, `=======` and `>>>>>>>`.
+pub fn conflict_markers(path: &Path, text: &str) -> Vec<Problem> {
+    text.lines()
+        .enumerate()
+        .filter(|(_, line)| {
+            let line = line.trim_end();
+            line == "======="
+                || line == "<<<<<<<"
+                || line == ">>>>>>>"
+                || line.starts_with("<<<<<<< ")
+                || line.starts_with(">>>>>>> ")
+        })
+        .map(|(n, line)| Problem {
+            path: path.to_path_buf(),
+            line: n,
+            column: 0,
+            length: line.chars().count().max(1),
+            severity: 1,
+            message: tr!("merge_conflict_marker").to_string(),
+            source: "git".into(),
+        })
+        .collect()
+}
+
+/// The problems of a file read from the disk: its syntax errors, and the marks of a merge.
+pub fn inspect_file(path: &Path) -> Vec<Problem> {
     let small = fs::metadata(path).is_ok_and(|m| m.len() <= inspect::MAX_SIZE);
     let Some(text) = small.then(|| fs::read_to_string(path).ok()).flatten() else {
         return Vec::new();
     };
-    inspect::syntax_errors(path, &text)
+    let mut found: Vec<Problem> = inspect::syntax_errors(path, &text)
         .iter()
         .map(|d| problem_of(path, &text, d))
-        .collect()
+        .collect();
+    found.extend(conflict_markers(path, &text));
+    found
 }
 
 impl Ide {
@@ -84,6 +138,12 @@ impl Ide {
                 }
                 repaint();
             }
+            // The type errors of a TypeScript project, from its own compiler.
+            let compiled: Vec<Problem> = inspect::run_tsc(&root, Duration::from_secs(120))
+                .iter()
+                .map(problem_of_compiled)
+                .collect();
+            let _ = tx.send(Update::File(compiled));
             let _ = tx.send(Update::Done);
             repaint();
         });
@@ -123,6 +183,59 @@ impl Ide {
             let (errors, files) = (inspection.problems.len(), inspection.files);
             self.status = trf!("inspection_done", errors = errors, files = files);
         }
+    }
+
+    /// The problems the language servers found in the files of the project that are not open.
+    pub(super) fn server_problems(&self) -> Vec<Problem> {
+        self.languages
+            .workspace_diagnostics()
+            .into_iter()
+            .filter(|(path, _)| path.starts_with(&self.root))
+            .filter(|(path, _)| !self.documents.iter().any(|d| d.path.as_ref() == Some(path)))
+            .flat_map(|(path, list)| {
+                list.iter()
+                    .filter(|d| d.severity <= 3)
+                    .map(|d| problem_of_server(&path, d))
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    /// What the check before a commit finds in these files: for an open document what the editor
+    /// shows, for the others their syntax, the marks of a merge and what the language servers say.
+    pub(super) fn check_before_commit(&self, files: &[PathBuf]) -> Vec<Problem> {
+        if self.settings.commit_check_off {
+            return Vec::new();
+        }
+        let servers = self.languages.workspace_diagnostics();
+        let known = crate::plugins::builtin::Host::problems(self);
+        let mut found: Vec<Problem> = Vec::new();
+        for file in files {
+            let canonical = file.canonicalize().unwrap_or_else(|_| file.clone());
+            let open = self
+                .documents
+                .iter()
+                .find(|d| d.path.as_ref() == Some(&canonical));
+            match open {
+                Some(doc) => {
+                    found.extend(known.iter().filter(|p| p.path == canonical).cloned());
+                    found.extend(conflict_markers(&canonical, &doc.text));
+                }
+                None => {
+                    found.extend(inspect_file(file));
+                    for (path, list) in &servers {
+                        if path == &canonical || path == file {
+                            found.extend(
+                                list.iter()
+                                    .filter(|d| d.severity == 1)
+                                    .map(|d| problem_of_server(path, d)),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        found
     }
 
     /// The files read so far and how many there are, while the inspection runs.

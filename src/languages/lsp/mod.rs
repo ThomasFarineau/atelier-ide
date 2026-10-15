@@ -318,6 +318,20 @@ impl Client {
             .unwrap_or_default()
     }
 
+    /// Every document the server published problems for: the address and the problems.
+    pub fn all_diagnostics(&self) -> Vec<(String, Vec<ServerDiagnostic>)> {
+        self.shared
+            .lock()
+            .map(|s| {
+                s.diagnostics
+                    .iter()
+                    .filter(|(_, list)| !list.is_empty())
+                    .map(|(uri, list)| (uri.clone(), list.clone()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     pub fn generation(&self) -> u64 {
         self.shared.lock().map(|s| s.generation).unwrap_or(0)
     }

@@ -244,6 +244,8 @@ struct Settings {
     spellcheck_off: bool,
     /// Files that an ignore file (`.gitignore`…) names are hidden from the project tree.
     hide_ignored: bool,
+    /// No check of the code before a commit.
+    commit_check_off: bool,
     /// A folder that carries the settings from a machine to another (OneDrive, Dropbox…).
     sync_folder: Option<PathBuf>,
     /// The fonts of the interface and of the code.
@@ -6043,17 +6045,7 @@ impl Host for Ide {
         Ide::inspection_progress(self)
     }
     fn inspect_files(&self, files: &[PathBuf]) -> Vec<builtin::Problem> {
-        let mut found: Vec<builtin::Problem> = Vec::new();
-        for file in files {
-            // An open document has the problems of what is in the editor.
-            let open = self.documents.iter().any(|d| d.path.as_ref() == Some(file));
-            if open {
-                found.extend(self.problems().into_iter().filter(|p| &p.path == file));
-            } else {
-                found.extend(inspect::inspect_file(file));
-            }
-        }
-        found
+        self.check_before_commit(files)
     }
     fn active_file(&self) -> Option<PathBuf> {
         self.documents.get(self.active).and_then(|d| d.path.clone())
@@ -6138,6 +6130,8 @@ impl Host for Ide {
                 });
             }
         }
+        // What the language servers found in the other files of the project.
+        out.extend(self.server_problems());
         // The files of the project that Inspect Code looked at, unless they are open.
         if let Some(inspection) = &self.inspection {
             out.extend(inspection.problems.iter().filter(|p| {

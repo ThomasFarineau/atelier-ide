@@ -109,6 +109,7 @@ impl Page {
                 tr!("sticky_lines"),
                 tr!("breadcrumbs"),
                 tr!("spell_checking"),
+                tr!("check_before_commit"),
             ],
             Page::Fonts => vec![
                 tr!("font_2"),
@@ -160,6 +161,7 @@ pub(super) struct Draft {
     pub sticky_lines_off: bool,
     pub breadcrumbs_off: bool,
     pub spellcheck_off: bool,
+    pub commit_check_off: bool,
     pub fonts: ui::Fonts,
     /// Identifier of the language of the interface.
     pub language: String,
@@ -177,6 +179,7 @@ impl Draft {
             sticky_lines_off: settings.sticky_lines_off,
             breadcrumbs_off: settings.breadcrumbs_off,
             spellcheck_off: settings.spellcheck_off,
+            commit_check_off: settings.commit_check_off,
             fonts: settings.fonts.clone(),
             language: crate::i18n::current().to_string(),
             disabled_builtins: settings.disabled_builtins.clone(),
@@ -195,6 +198,7 @@ impl Draft {
                     || self.sticky_lines_off != other.sticky_lines_off
                     || self.breadcrumbs_off != other.breadcrumbs_off
                     || self.spellcheck_off != other.spellcheck_off
+                    || self.commit_check_off != other.commit_check_off
             }
             Page::Fonts => self.font_size != other.font_size || self.fonts != other.fonts,
             Page::Plugins => {
@@ -216,6 +220,7 @@ impl Draft {
                 self.sticky_lines_off = other.sticky_lines_off;
                 self.breadcrumbs_off = other.breadcrumbs_off;
                 self.spellcheck_off = other.spellcheck_off;
+                self.commit_check_off = other.commit_check_off;
             }
             Page::Fonts => {
                 self.font_size = other.font_size;
@@ -353,6 +358,7 @@ impl Ide {
         self.settings.sticky_lines_off = draft.sticky_lines_off;
         self.settings.breadcrumbs_off = draft.breadcrumbs_off;
         self.settings.spellcheck_off = draft.spellcheck_off;
+        self.settings.commit_check_off = draft.commit_check_off;
         if draft.language != original.language {
             self.settings.language = Some(draft.language.clone());
             crate::i18n::set(&draft.language);
@@ -738,6 +744,7 @@ impl Ide {
                             (&mut draft.sticky_lines_off, tr!("show_sticky_lines")),
                             (&mut draft.breadcrumbs_off, tr!("show_breadcrumbs")),
                             (&mut draft.spellcheck_off, tr!("check_spelling")),
+                            (&mut draft.commit_check_off, tr!("check_before_commit")),
                         ] {
                             let mut on = !*off;
                             if ui::checkbox(ui, &mut on, label).changed() {
