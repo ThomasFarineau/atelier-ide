@@ -408,6 +408,7 @@ name = "atelier-ide"
 version = "0.1.2"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "eframe",
  "egui_commonmark",
  "egui_extras",
