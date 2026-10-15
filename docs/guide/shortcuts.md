@@ -11,7 +11,11 @@ On macOS, use Cmd for the Ctrl shortcuts of the editor.
 | Ctrl+S | Save |
 | Ctrl+Shift+S | Save as |
 | Ctrl+F4 | Close the tab |
-| Double Shift / Ctrl+P | Search Everywhere |
+| Double Shift | Search Everywhere |
+| Ctrl+Shift+A | Find Action (the actions and commands only) |
+| Ctrl+E / Ctrl+Shift+E | Recent files / recent locations |
+| Ctrl+Tab | Switch file (hold Ctrl, Tab goes on, release opens) |
+| F11 / Shift+F11 | Set or remove a bookmark / list the bookmarks |
 | Ctrl+Shift+N | Go to file |
 | Ctrl+N | Go to symbol (classes, functions and types of the project) |
 | Ctrl+Alt+S | Settings |
@@ -27,7 +31,13 @@ On macOS, use Cmd for the Ctrl shortcuts of the editor.
 | Ctrl+W / Ctrl+Shift+W | Extend / shrink the selection (word, string, inside the brackets, brackets, line, file) |
 | Ctrl+Shift+J | Join lines |
 | Ctrl+Shift+U | Toggle case |
-| Alt+Shift+Up / Down (or Ctrl+Shift) | Move the line or the selected lines |
+| Alt+Shift+Up / Down | Move the line or the selected lines |
+| Ctrl+Shift+Up / Down | Move the statement (a line, or a block with its lines) |
+| Alt+J / Alt+Shift+J | Add the next occurrence to the selection / remove the last one |
+| Ctrl+Alt+Shift+J | Select all the occurrences |
+| Alt+Shift+click | Add or remove a caret |
+| Alt+drag / Alt+Shift+Insert | Column selection (drag with Alt, or switch the mode) |
+| Ctrl+Alt+T | Surround with (braces, `if`, `try`, quotes… and your templates) |
 | Ctrl+D / Ctrl+Y | Duplicate / delete the line (Ctrl+Y redoes right after an undo) |
 | Ctrl+F / Ctrl+R | Find / replace in the file |
 | Ctrl+Shift+F | Find in the project |
@@ -39,6 +49,11 @@ On macOS, use Cmd for the Ctrl shortcuts of the editor.
 | Shortcut | Action |
 | --- | --- |
 | Ctrl+Space | Code completion |
+| Ctrl+P | Parameter info (also after `(` and `,`) |
+| Ctrl+Q | Quick documentation |
+| Ctrl+Shift+I | Quick definition |
+| Ctrl+H / Ctrl+Alt+H | Type hierarchy / call hierarchy (→ opens, ← closes, Tab turns parents into children) |
+| Ctrl+Alt+Shift+T | Refactor this (extract, inline… as the language server offers them) |
 | Alt+Enter | Quick actions (import…) |
 | Ctrl+B / Ctrl+click | Go to declaration, or list the usages of a declaration |
 | Ctrl+Shift+B / Ctrl+Alt+B | Go to the type declaration / implementations |

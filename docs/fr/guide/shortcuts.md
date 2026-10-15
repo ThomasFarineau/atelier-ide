@@ -11,7 +11,11 @@ Sur macOS, utilisez Cmd pour les raccourcis Ctrl de l'éditeur.
 | Ctrl+S | Enregistrer |
 | Ctrl+Maj+S | Enregistrer sous |
 | Ctrl+F4 | Fermer l'onglet |
-| Double Maj / Ctrl+P | Rechercher partout |
+| Double Maj | Rechercher partout |
+| Ctrl+Maj+A | Rechercher une action (les actions et commandes seulement) |
+| Ctrl+E / Ctrl+Maj+E | Fichiers récents / emplacements récents |
+| Ctrl+Tab | Changer de fichier (Ctrl tenu, Tab continue, relâcher ouvre) |
+| F11 / Maj+F11 | Poser ou retirer un signet / lister les signets |
 | Ctrl+Maj+N | Aller au fichier |
 | Ctrl+N | Aller au symbole (classes, fonctions et types du projet) |
 | Ctrl+Alt+S | Paramètres |
@@ -27,7 +31,13 @@ Sur macOS, utilisez Cmd pour les raccourcis Ctrl de l'éditeur.
 | Ctrl+W / Ctrl+Maj+W | Étendre / réduire la sélection (mot, chaîne, contenu des parenthèses, parenthèses, ligne, fichier) |
 | Ctrl+Maj+J | Joindre les lignes |
 | Ctrl+Maj+U | Basculer majuscules / minuscules |
-| Alt+Maj+Haut / Bas (ou Ctrl+Maj) | Déplacer la ligne ou les lignes sélectionnées |
+| Alt+Maj+Haut / Bas | Déplacer la ligne ou les lignes sélectionnées |
+| Ctrl+Maj+Haut / Bas | Déplacer l'instruction (une ligne, ou un bloc avec ses lignes) |
+| Alt+J / Alt+Maj+J | Ajouter l'occurrence suivante à la sélection / retirer la dernière |
+| Ctrl+Alt+Maj+J | Sélectionner toutes les occurrences |
+| Alt+Maj+clic | Ajouter ou retirer un curseur |
+| Alt+glisser / Alt+Maj+Inser | Sélection en colonne (glisser avec Alt, ou changer de mode) |
+| Ctrl+Alt+T | Entourer de (accolades, `if`, `try`, guillemets… et vos modèles) |
 | Ctrl+D / Ctrl+Y | Dupliquer / supprimer la ligne (Ctrl+Y rétablit juste après une annulation) |
 | Ctrl+F / Ctrl+R | Rechercher / remplacer dans le fichier |
 | Ctrl+Maj+F | Rechercher dans le projet |
@@ -39,6 +49,11 @@ Sur macOS, utilisez Cmd pour les raccourcis Ctrl de l'éditeur.
 | Raccourci | Action |
 | --- | --- |
 | Ctrl+Espace | Complétion du code |
+| Ctrl+P | Infos sur les paramètres (aussi après `(` et `,`) |
+| Ctrl+Q | Documentation rapide |
+| Ctrl+Maj+I | Définition rapide |
+| Ctrl+H / Ctrl+Alt+H | Hiérarchie des types / des appels (→ ouvre, ← ferme, Tab passe des parents aux enfants) |
+| Ctrl+Alt+Maj+T | Refactoriser (extraire, inline… selon le serveur de langage) |
 | Alt+Entrée | Actions rapides (importer…) |
 | Ctrl+B / Ctrl+clic | Aller à la déclaration, ou lister les utilisations d'une déclaration |
 | Ctrl+Maj+B / Ctrl+Alt+B | Déclaration du type / implémentations |

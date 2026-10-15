@@ -4,7 +4,7 @@ Atelier has a clean, modern interface: a title bar with the project, branch and 
 
 ## Look and feel
 
-- Crisp icons, the Inter and JetBrains Mono fonts, and the main menu (☰).
+- Crisp icons, the Source Sans 3 and Source Code Pro fonts (Inter, JetBrains Mono and fonts from Google Fonts or Fontsource in Settings › Fonts), and the main menu (☰).
 - The Islands Dark, Dark and Islands Light themes, each with its own syntax colors.
 - The interface is in English and French. At the first start, Atelier takes the language of the system (English when it is not available); change it in **Settings › Appearance › Language**, without restarting.
 
@@ -16,7 +16,7 @@ Atelier has a clean, modern interface: a title bar with the project, branch and 
 
 ## Search Everywhere
 
-**Double Shift** or **Ctrl+P** (**Ctrl+Shift+N** for files only) searches the files of the project, the open tabs, and the actions of the IDE and its plugins, with the keyboard. **Ctrl+N** goes to a symbol: the classes, functions and types of the project.
+**Double Shift** (**Ctrl+Shift+N** for files only, **Ctrl+Shift+A** for actions only) searches the files of the project, the open tabs, and the actions of the IDE and its plugins, with the keyboard. **Ctrl+N** goes to a symbol: the classes, functions and types of the project.
 
 ## Project tree
 

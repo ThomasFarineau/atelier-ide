@@ -4,7 +4,7 @@ Atelier a une interface moderne et épurée : barre de titre avec les widgets de
 
 ## Apparence
 
-- Des icônes nettes, les polices Inter et JetBrains Mono, et le menu principal (☰).
+- Des icônes nettes, les polices Source Sans 3 et Source Code Pro (Inter, JetBrains Mono et des polices de Google Fonts ou Fontsource dans Paramètres › Polices), et le menu principal (☰).
 - Les thèmes Islands Dark, Dark et Islands Light, chacun avec ses couleurs de coloration syntaxique.
 - L'interface existe en anglais et en français. Au premier lancement, Atelier prend la langue du système (l'anglais si elle n'est pas disponible) ; elle se change dans **Paramètres › Apparence › Langue**, sans redémarrer.
 
@@ -16,7 +16,7 @@ Atelier a une interface moderne et épurée : barre de titre avec les widgets de
 
 ## Rechercher partout
 
-**Double Maj** ou **Ctrl+P** (**Ctrl+Maj+N** pour les fichiers seulement) cherche dans les fichiers du projet, les onglets ouverts et les actions de l'IDE et de ses plugins, au clavier. **Ctrl+N** va à un symbole : les classes, fonctions et types du projet.
+**Double Maj** (**Ctrl+Maj+N** pour les fichiers seulement, **Ctrl+Maj+A** pour les actions seulement) cherche dans les fichiers du projet, les onglets ouverts et les actions de l'IDE et de ses plugins, au clavier. **Ctrl+N** va à un symbole : les classes, fonctions et types du projet.
 
 ## Arborescence du projet
 
