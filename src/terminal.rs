@@ -13,6 +13,22 @@ use std::{
 /// Lines of history kept above the screen.
 const SCROLLBACK: usize = 10_000;
 
+/// What a program asks of the terminal beyond drawing: the text it copies (OSC 52), as a
+/// full-screen AI does when its own selection is copied.
+#[derive(Default)]
+struct Requests {
+    copied: Option<String>,
+}
+
+impl vt100::Callbacks for Requests {
+    fn copy_to_clipboard(&mut self, _: &mut vt100::Screen, _ty: &[u8], data: &[u8]) {
+        use base64::Engine;
+        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(data) {
+            self.copied = Some(String::from_utf8_lossy(&bytes).into_owned());
+        }
+    }
+}
+
 /// A program the terminal can run: PowerShell, cmd, Git Bash, a WSL distribution…
 #[derive(Clone, PartialEq, Debug)]
 pub struct Shell {
@@ -144,7 +160,7 @@ pub struct Terminal {
     child: Option<Box<dyn Child + Send + Sync>>,
     writer: Box<dyn Write + Send>,
     rx: Receiver<Vec<u8>>,
-    parser: vt100::Parser,
+    parser: vt100::Parser<Requests>,
     /// The terminal has the keyboard: IDE shortcuts are off.
     pub focused: bool,
     /// Wheel distance not yet worth a line: a smooth wheel gives a few pixels per frame.
@@ -251,7 +267,7 @@ impl Terminal {
             child: Some(child),
             writer,
             rx,
-            parser: vt100::Parser::new(24, 120, SCROLLBACK),
+            parser: vt100::Parser::new_with_callbacks(24, 120, SCROLLBACK, Requests::default()),
             focused: false,
             want_focus: false,
             wheel: 0.0,
@@ -288,6 +304,10 @@ impl Terminal {
     }
     pub fn scroll_to_bottom(&mut self) {
         self.parser.screen_mut().set_scrollback(0);
+    }
+    /// The text a program copied since the last call, for the clipboard.
+    pub fn take_copied(&mut self) -> Option<String> {
+        self.parser.callbacks_mut().copied.take()
     }
     /// Reads the shell output. True when something arrived.
     pub fn poll(&mut self) -> bool {
