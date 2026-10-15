@@ -8,6 +8,7 @@ Les plugins intégrés sont compilés dans l'IDE, disponibles dans tous les proj
 | --- | --- |
 | Git | [Intégration de Git](../guide/git) |
 | Markdown, Mermaid, SVG, CSV, Images, Microsoft Office | [Visionneuses](./viewers) |
+| Lecteur multimédia | [Musique et vidéos](./media) |
 | Node.js | [Fenêtre npm](./node) |
 | Runtimes & Jupyter | [Python, JDK et Node.js dans le projet, notebooks Jupyter](./runtimes) |
 | Maven, Gradle | [Fenêtres Maven et Gradle](./maven-gradle) |
