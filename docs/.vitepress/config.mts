@@ -31,6 +31,7 @@ function sidebar(prefix: string, t: Record<string, string>): DefaultTheme.Sideba
       text: t.tools,
       items: [
         { text: 'Node.js', link: `${prefix}/tools/node` },
+        { text: 'Runtimes & Jupyter', link: `${prefix}/tools/runtimes` },
         { text: 'Maven & Gradle', link: `${prefix}/tools/maven-gradle` },
         { text: t.translations, link: `${prefix}/tools/translations` },
         { text: t.viewers, link: `${prefix}/tools/viewers` },
