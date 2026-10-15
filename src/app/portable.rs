@@ -141,6 +141,7 @@ impl Ide {
         fs::create_dir_all(&data)?;
         if let Some(templates) = &imported.templates {
             fs::write(data.join("templates.json"), templates)?;
+            crate::languages::templates::reload();
         }
         if let Some(words) = &imported.dictionary {
             // The words of the bundle join the ones of this machine.

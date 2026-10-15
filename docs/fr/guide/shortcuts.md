@@ -38,6 +38,8 @@ Sur macOS, utilisez Cmd pour les raccourcis Ctrl de l'éditeur.
 | Alt+Maj+clic | Ajouter ou retirer un curseur |
 | Alt+glisser / Alt+Maj+Inser | Sélection en colonne (glisser avec Alt, ou changer de mode) |
 | Ctrl+Alt+T | Entourer de (accolades, `if`, `try`, guillemets… et vos modèles) |
+| valeur.if, valeur.var, valeur.for… | Modèles postfixes : tapez un point et le nom après une expression (Paramètres › Éditeur › Modèles de code) |
+| Ctrl+Alt+V / C / N / M | Extraire une variable / une constante, inliner une variable, extraire une méthode (JavaScript, TypeScript) |
 | Ctrl+D / Ctrl+Y | Dupliquer / supprimer la ligne (Ctrl+Y rétablit juste après une annulation) |
 | Ctrl+F / Ctrl+R | Rechercher / remplacer dans le fichier |
 | Ctrl+Maj+F | Rechercher dans le projet |

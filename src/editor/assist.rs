@@ -709,7 +709,7 @@ impl EditorState {
             return false;
         };
         let item = popup.items[*index].clone();
-        let from = popup.from.min(text.len());
+        let from = item.start.unwrap_or(popup.from).min(text.len());
         let mut to = self.cursor.min(text.len());
         if replace_tail {
             while let Some(c) = text[to..].chars().next() {

@@ -38,6 +38,8 @@ On macOS, use Cmd for the Ctrl shortcuts of the editor.
 | Alt+Shift+click | Add or remove a caret |
 | Alt+drag / Alt+Shift+Insert | Column selection (drag with Alt, or switch the mode) |
 | Ctrl+Alt+T | Surround with (braces, `if`, `try`, quotes… and your templates) |
+| value.if, value.var, value.for… | Postfix templates: type a dot and the name after an expression (Settings › Editor › Live Templates) |
+| Ctrl+Alt+V / C / N / M | Extract variable / constant, inline variable, extract method (JavaScript, TypeScript) |
 | Ctrl+D / Ctrl+Y | Duplicate / delete the line (Ctrl+Y redoes right after an undo) |
 | Ctrl+F / Ctrl+R | Find / replace in the file |
 | Ctrl+Shift+F | Find in the project |

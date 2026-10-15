@@ -128,7 +128,7 @@ fn uses_word(text: &str, name: &str) -> bool {
 }
 
 /// A name that nothing in `text` uses: `name`, else `name2`, `name3`…
-fn free_name(text: &str, name: &str) -> String {
+pub fn free_name(text: &str, name: &str) -> String {
     if !uses_word(text, name) {
         return name.to_string();
     }

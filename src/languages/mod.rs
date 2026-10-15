@@ -72,6 +72,9 @@ pub struct CompletionItem {
     pub caret: Option<usize>,
     /// Lower comes first among equal matches.
     pub rank: u32,
+    /// Where the text that the item replaces starts, when it is before the word typed (a
+    /// postfix template takes the expression before the dot). The word start when None.
+    pub start: Option<usize>,
     /// What the provider needs to complete the item later (documentation, signature).
     pub raw: Option<Arc<String>>,
 }
@@ -87,6 +90,7 @@ impl CompletionItem {
             doc: None,
             caret: None,
             rank: 50,
+            start: None,
             raw: None,
         }
     }
@@ -100,6 +104,10 @@ impl CompletionItem {
     }
     pub fn rank(mut self, rank: u32) -> Self {
         self.rank = rank;
+        self
+    }
+    pub fn start(mut self, start: usize) -> Self {
+        self.start = Some(start);
         self
     }
     pub fn insert(mut self, insert: impl Into<String>, caret: Option<usize>) -> Self {

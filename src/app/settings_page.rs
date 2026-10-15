@@ -20,6 +20,7 @@ pub(super) enum Page {
     Keymap,
     Editor,
     EditorGeneral,
+    LiveTemplates,
     Fonts,
     Plugins,
     Languages,
@@ -32,7 +33,7 @@ pub(super) enum Page {
 
 impl Page {
     /// The tree, in the order it is shown: each page and the group it belongs to.
-    pub(super) const TREE: [(Page, Option<Page>); 14] = [
+    pub(super) const TREE: [(Page, Option<Page>); 15] = [
         (Page::AppearanceBehavior, None),
         (Page::Appearance, Some(Page::AppearanceBehavior)),
         (Page::Fonts, Some(Page::AppearanceBehavior)),
@@ -40,6 +41,7 @@ impl Page {
         (Page::Keymap, None),
         (Page::Editor, None),
         (Page::EditorGeneral, Some(Page::Editor)),
+        (Page::LiveTemplates, Some(Page::Editor)),
         (Page::Plugins, None),
         (Page::Languages, None),
         (Page::JavaScript, Some(Page::Languages)),
@@ -57,6 +59,7 @@ impl Page {
             Page::Keymap => tr!("keymap"),
             Page::Editor => tr!("editor"),
             Page::EditorGeneral => tr!("general"),
+            Page::LiveTemplates => tr!("live_templates"),
             Page::Fonts => tr!("fonts"),
             Page::Plugins => tr!("plugins"),
             Page::Languages => tr!("languages_frameworks"),
@@ -130,6 +133,12 @@ impl Page {
             ],
             Page::Rust => vec!["rust-analyzer", "cargo", tr!("language_server")],
             Page::RunTools => vec!["cargo", "python", "java", "node", "tsx", "F5"],
+            Page::LiveTemplates => vec![
+                tr!("live_templates"),
+                tr!("postfix_templates"),
+                tr!("surround_with"),
+                tr!("abbreviation"),
+            ],
             Page::Sync => vec![
                 tr!("export_settings"),
                 tr!("import_settings"),
@@ -162,6 +171,7 @@ pub(super) struct Draft {
     pub breadcrumbs_off: bool,
     pub spellcheck_off: bool,
     pub commit_check_off: bool,
+    pub templates: Vec<crate::languages::templates::Template>,
     pub fonts: ui::Fonts,
     /// Identifier of the language of the interface.
     pub language: String,
@@ -180,6 +190,7 @@ impl Draft {
             breadcrumbs_off: settings.breadcrumbs_off,
             spellcheck_off: settings.spellcheck_off,
             commit_check_off: settings.commit_check_off,
+            templates: crate::languages::templates::user().to_vec(),
             fonts: settings.fonts.clone(),
             language: crate::i18n::current().to_string(),
             disabled_builtins: settings.disabled_builtins.clone(),
@@ -200,6 +211,7 @@ impl Draft {
                     || self.spellcheck_off != other.spellcheck_off
                     || self.commit_check_off != other.commit_check_off
             }
+            Page::LiveTemplates => self.templates != other.templates,
             Page::Fonts => self.font_size != other.font_size || self.fonts != other.fonts,
             Page::Plugins => {
                 self.disabled_builtins != other.disabled_builtins
@@ -222,6 +234,7 @@ impl Draft {
                 self.spellcheck_off = other.spellcheck_off;
                 self.commit_check_off = other.commit_check_off;
             }
+            Page::LiveTemplates => self.templates = other.templates.clone(),
             Page::Fonts => {
                 self.font_size = other.font_size;
                 self.fonts = other.fonts.clone();
@@ -359,6 +372,11 @@ impl Ide {
         self.settings.breadcrumbs_off = draft.breadcrumbs_off;
         self.settings.spellcheck_off = draft.spellcheck_off;
         self.settings.commit_check_off = draft.commit_check_off;
+        if draft.templates != original.templates
+            && let Err(e) = crate::languages::templates::save(&draft.templates)
+        {
+            self.status = trf!("error_detail", e = format!("{e:#}"));
+        }
         if draft.language != original.language {
             self.settings.language = Some(draft.language.clone());
             crate::i18n::set(&draft.language);
@@ -378,6 +396,85 @@ impl Ide {
         }
         self.sync_out();
         ctx.request_repaint();
+    }
+
+    /// The live, postfix and surround templates of the user.
+    fn templates_page(&mut self, ui: &mut egui::Ui, t: &Theme) {
+        use crate::languages::templates::Template;
+        note(ui, t, tr!("templates_hint"));
+        // The postfix templates that come with the IDE.
+        ui.add_space(4.0);
+        group(ui, t, tr!("builtin_postfix"));
+        for (name, language) in [("JavaScript, TypeScript", "js"), ("Rust", "rs"), ("Java", "java"), ("Python", "py")] {
+            let keys: Vec<String> = Template::postfix_keys(language);
+            ui.label(
+                RichText::new(format!("{name}: {}", keys.join("  ")))
+                    .font(egui::FontId::monospace(12.0))
+                    .color(t.text_secondary),
+            );
+        }
+        ui.add_space(6.0);
+        group(ui, t, tr!("your_templates"));
+        if ui::button(ui, tr!("add_template")).clicked() {
+            self.settings_draft.templates.push(Template::new("", "", &[], ""));
+        }
+        ui.add_space(6.0);
+        let mut remove = None;
+        let templates = &mut self.settings_draft.templates;
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                for (i, template) in templates.iter_mut().enumerate() {
+                    egui::Frame::group(ui.style()).show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.horizontal(|ui| {
+                            ui.label(tr!("abbreviation"));
+                            ui.add(
+                                egui::TextEdit::singleline(&mut template.abbreviation)
+                                    .desired_width(110.0),
+                            );
+                            ui.label(tr!("description"));
+                            ui.add(
+                                egui::TextEdit::singleline(&mut template.description)
+                                    .desired_width(180.0),
+                            );
+                            ui.label(tr!("template_languages"));
+                            let mut languages = template.languages.join(", ");
+                            if ui
+                                .add(egui::TextEdit::singleline(&mut languages).desired_width(110.0))
+                                .changed()
+                            {
+                                template.languages = languages
+                                    .split(',')
+                                    .map(|l| l.trim().to_string())
+                                    .filter(|l| !l.is_empty())
+                                    .collect();
+                            }
+                            if ui::icon_button(ui, "closeSmall", tr!("delete")).clicked() {
+                                remove = Some(i);
+                            }
+                        });
+                        ui.add(
+                            egui::TextEdit::multiline(&mut template.text)
+                                .font(egui::TextStyle::Monospace)
+                                .desired_rows(3)
+                                .desired_width(f32::INFINITY),
+                        );
+                        let kind = if template.is_postfix() {
+                            tr!("template_kind_postfix")
+                        } else if template.surrounds() {
+                            tr!("template_kind_surround")
+                        } else {
+                            tr!("template_kind_live")
+                        };
+                        ui.label(RichText::new(kind).small().color(t.text_secondary));
+                    });
+                    ui.add_space(6.0);
+                }
+            });
+        if let Some(i) = remove {
+            self.settings_draft.templates.remove(i);
+        }
     }
 
     /// Export and import of the settings, and the sync folder.
@@ -754,6 +851,7 @@ impl Ide {
                     }
                     Page::Fonts => self.fonts_page(ui, t),
                     Page::Sync => self.sync_page(ui, t),
+                    Page::LiveTemplates => self.templates_page(ui, t),
                     Page::JavaScript => self.language_server_page(
                         ui,
                         t,
