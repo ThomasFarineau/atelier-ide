@@ -225,3 +225,17 @@ fn the_wheel_goes_to_a_program_that_took_the_screen() {
         [0x1b, b'[', b'M', 32 + 64, 33, 33]
     );
 }
+
+/// A full-screen AI copies its own selection with OSC 52: the text is kept for the clipboard.
+#[test]
+fn a_program_copies_to_the_clipboard() {
+    let mut parser = vt100::Parser::new_with_callbacks(4, 40, 0, Requests::default());
+    parser.process(b"\x1b]52;c;aMOobGxv\x07");
+    assert_eq!(
+        parser.callbacks_mut().copied.take().as_deref(),
+        Some("hèllo")
+    );
+    // Asking for the clipboard's content is not answered.
+    parser.process(b"\x1b]52;c;?\x07");
+    assert_eq!(parser.callbacks_mut().copied.take(), None);
+}
