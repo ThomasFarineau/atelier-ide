@@ -605,8 +605,8 @@ fn git_plugin_windows_render_on_this_repository() {
     let tools = ide.tool_windows();
     assert_eq!(
         tools.len(),
-        6,
-        "Commit, Git, Kubernetes, Search, Problems and AI sessions: no npm, Maven or Gradle here"
+        7,
+        "Commit, Git, Kubernetes, Search, Problems, AI sessions and Runtimes: no npm, Maven or Gradle here"
     );
     for tool in tools {
         ide.open_tool(tool);
@@ -661,4 +661,159 @@ fn settings_are_saved_in_a_file_and_read_back() {
     assert_eq!(back.recent, [PathBuf::from("/work/shop")]);
     assert!(!dir.join("settings.json.tmp").exists());
     let _ = fs::remove_dir_all(&dir);
+}
+
+/// A Ctrl + click that opens another file leaves the button down over the new editor: moving
+/// the mouse before releasing it must not select in that file.
+#[test]
+fn a_press_begun_in_another_file_does_not_select() {
+    use egui::{Event, PointerButton, pos2};
+    let ctx = egui::Context::default();
+    let mut ide = ide();
+    ide.apply_theme(&ctx);
+    ide.open_file(ide.root.join("examples/demo/hello.py"));
+    ide.open_file(ide.root.join("examples/demo/app.js"));
+    ide.wait_loaded();
+    ide.active = 0;
+    let mut time = 0.0;
+    let mut step = |ide: &mut Ide, events: Vec<Event>| {
+        time += 0.05;
+        frame_with(&ctx, ide, time, events);
+    };
+    step(&mut ide, vec![]);
+    step(&mut ide, vec![]);
+    let button = |pos, pressed| Event::PointerButton {
+        pos,
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: Default::default(),
+    };
+    let from = pos2(400.0, 100.0);
+    step(&mut ide, vec![Event::PointerMoved(from)]);
+    step(&mut ide, vec![button(from, true)]);
+    // The jump to the declaration opens the other file while the button is still down.
+    ide.active = 1;
+    step(&mut ide, vec![]);
+    let to = pos2(700.0, 300.0);
+    for i in 1..=6 {
+        let pos = from + (to - from) * (i as f32 / 6.0);
+        step(&mut ide, vec![Event::PointerMoved(pos)]);
+    }
+    step(&mut ide, vec![button(to, false)]);
+    assert!(ide.documents[1].view.selection().is_empty());
+}
+
+/// Shift+F6 opens the rename field on the name at the caret, and Enter renames it everywhere:
+/// the single-line field gives up the focus in the frame where Enter is pressed.
+#[test]
+fn shift_f6_then_enter_renames_the_name_at_the_caret() {
+    use egui::{Event, Key, Modifiers, PointerButton, pos2};
+    let ctx = egui::Context::default();
+    let mut ide = ide();
+    ide.apply_theme(&ctx);
+    ide.open_file(ide.root.join("examples/demo/app.js"));
+    ide.wait_loaded();
+    let mut time = 0.0;
+    let mut step = |ide: &mut Ide, events: Vec<Event>, modifiers: Modifiers| {
+        time += 0.05;
+        frame_mod(&ctx, ide, time, events, modifiers);
+    };
+    step(&mut ide, vec![], Modifiers::NONE);
+    step(&mut ide, vec![], Modifiers::NONE);
+    // A click gives the editor the keyboard.
+    let at = pos2(400.0, 100.0);
+    let button = |pressed| Event::PointerButton {
+        pos: at,
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+    step(
+        &mut ide,
+        vec![Event::PointerMoved(at), button(true)],
+        Modifiers::NONE,
+    );
+    step(&mut ide, vec![button(false)], Modifiers::NONE);
+    let caret = ide.documents[0].text.find("message").unwrap() + 1;
+    ide.documents[0].view.cursor = caret;
+    ide.documents[0].view.anchor = caret;
+    let key = |key, modifiers| Event::Key {
+        key,
+        physical_key: Some(key),
+        pressed: true,
+        repeat: false,
+        modifiers,
+    };
+    step(
+        &mut ide,
+        vec![key(Key::F6, Modifiers::SHIFT)],
+        Modifiers::SHIFT,
+    );
+    step(&mut ide, vec![], Modifiers::NONE);
+    assert_eq!(
+        ctx.memory(|m| m.focused()),
+        Some(egui::Id::new("rename_field"))
+    );
+    step(
+        &mut ide,
+        vec![Event::Text("greeting".into())],
+        Modifiers::NONE,
+    );
+    step(
+        &mut ide,
+        vec![key(Key::Enter, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    for _ in 0..40 {
+        step(&mut ide, vec![], Modifiers::NONE);
+        if !ide.documents[0].text.contains("message") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let text = &ide.documents[0].text;
+    assert!(!text.contains("message"), "{text}");
+    assert_eq!(text.matches("greeting").count(), 3);
+}
+
+/// Dragging the mouse selects from the character the button went down on, not from where the
+/// drag was noticed a few pixels further.
+#[test]
+fn a_mouse_drag_selects_from_where_the_button_went_down() {
+    use egui::{Event, Modifiers, PointerButton, pos2};
+    let ctx = egui::Context::default();
+    let mut ide = ide();
+    ide.apply_theme(&ctx);
+    ide.open_file(ide.root.join("examples/demo/app.js"));
+    ide.wait_loaded();
+    let mut time = 0.0;
+    let mut step = |ide: &mut Ide, events: Vec<Event>| {
+        time += 0.05;
+        frame_with(&ctx, ide, time, events);
+    };
+    step(&mut ide, vec![]);
+    step(&mut ide, vec![]);
+    let button = |pos, pressed| Event::PointerButton {
+        pos,
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+    let from = pos2(400.0, 100.0);
+    step(
+        &mut ide,
+        vec![Event::PointerMoved(from), button(from, true)],
+    );
+    let pressed_at = ide.documents[0].view.cursor;
+    let to = pos2(600.0, 100.0);
+    for i in 1..=8 {
+        step(
+            &mut ide,
+            vec![Event::PointerMoved(from + (to - from) * (i as f32 / 8.0))],
+        );
+    }
+    step(&mut ide, vec![button(to, false)]);
+    let view = &ide.documents[0].view;
+    assert_eq!(view.anchor, pressed_at);
+    assert!(view.cursor > pressed_at, "{} {}", view.anchor, view.cursor);
 }

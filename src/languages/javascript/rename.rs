@@ -2,7 +2,7 @@
 //! name, and the files of the project that import it.
 
 use super::{
-    analysis::{Analysis, DeclKind, dialect},
+    analysis::{Analysis, DeclKind, Dialect, dialect, use_dialect},
     builtins,
     navigate::{highlights, resolve_module},
 };
@@ -76,7 +76,50 @@ pub fn rename(
             return Err(trf!("javascript.already_exists_here", new_name = new_name));
         }
     }
-    let edits: Vec<TextEdit> = ranges
+    let edits = name_edits(&analysis, &ranges, old, new_name);
+    let mut plan = vec![FileEdit { path: None, edits }];
+    // A name of the module scope is imported by other files.
+    if let (Some(decl), Some(path)) = (declaration, path)
+        && analysis
+            .scopes
+            .first()
+            .is_some_and(|s| s.decls.iter().any(|d| d.name_range == decl.name_range))
+        && decl.kind != DeclKind::Import
+    {
+        plan.extend(importers(old, new_name, path, root));
+    }
+    // `import { old }`: the name is declared in another file, which changes too, and so do the
+    // other files that import it from there.
+    if let (Some(decl), Some(path)) = (declaration, path)
+        && decl.kind == DeclKind::Import
+        && let Some((source, imported)) = &decl.import
+        && imported == old
+        && let Some(target) = path.parent().and_then(|dir| resolve_module(dir, source))
+        && let Some(declared) = declaring_file(old, new_name, &target)?
+    {
+        plan.push(declared);
+        let here = path.components().collect::<PathBuf>();
+        plan.extend(
+            importers(old, new_name, &target, root)
+                .into_iter()
+                .filter(|f| {
+                    f.path
+                        .as_ref()
+                        .is_none_or(|p| p.components().collect::<PathBuf>() != here)
+                }),
+        );
+    }
+    Ok(plan)
+}
+
+/// The edits that give `ranges`, the places of the name `old`, the name `new_name`.
+fn name_edits(
+    analysis: &Analysis,
+    ranges: &[std::ops::Range<usize>],
+    old: &str,
+    new_name: &str,
+) -> Vec<TextEdit> {
+    ranges
         .iter()
         .map(|range| {
             let shorthand = analysis
@@ -98,19 +141,37 @@ pub fn rename(
                 },
             }
         })
-        .collect();
-    let mut plan = vec![FileEdit { path: None, edits }];
-    // A name of the module scope is imported by other files.
-    if let (Some(decl), Some(path)) = (declaration, path)
-        && analysis
-            .scopes
-            .first()
-            .is_some_and(|s| s.decls.iter().any(|d| d.name_range == decl.name_range))
-        && decl.kind != DeclKind::Import
-    {
-        plan.extend(importers(old, new_name, path, root));
+        .collect()
+}
+
+/// The declaration of `old` in the module scope of `file`, and its uses there; None when
+/// `file` does not declare it (a re-export).
+fn declaring_file(old: &str, new_name: &str, file: &Path) -> Result<Option<FileEdit>, String> {
+    let Ok(content) = std::fs::read_to_string(file) else {
+        return Ok(None);
+    };
+    let _dialect = use_dialect(Dialect::of(Some(file), ""));
+    let Some(analysis) = Analysis::new(&content) else {
+        return Ok(None);
+    };
+    let Some(scope) = analysis.scopes.first() else {
+        return Ok(None);
+    };
+    let Some(decl) = scope
+        .decls
+        .iter()
+        .find(|d| d.name == old && d.kind != DeclKind::Import)
+    else {
+        return Ok(None);
+    };
+    if scope.decls.iter().any(|d| d.name == new_name) {
+        return Err(trf!("javascript.already_exists_here", new_name = new_name));
     }
-    Ok(plan)
+    let ranges = highlights(&content, decl.name_range.start);
+    Ok(Some(FileEdit {
+        path: Some(file.to_path_buf()),
+        edits: name_edits(&analysis, &ranges, old, new_name),
+    }))
 }
 
 fn project_files(root: &Path) -> Vec<PathBuf> {
@@ -159,7 +220,7 @@ fn importers(old: &str, new_name: &str, file: &Path, root: &Path) -> Vec<FileEdi
         if !content.contains(old) || content.len() > 1_000_000 {
             continue;
         }
-        let _dialect = super::analysis::use_dialect(super::analysis::Dialect::of(Some(&other), ""));
+        let _dialect = use_dialect(Dialect::of(Some(&other), ""));
         let Some(analysis) = Analysis::new(&content) else {
             continue;
         };

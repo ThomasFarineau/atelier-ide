@@ -11,5 +11,6 @@ pub mod mcp;
 pub mod mermaid;
 pub mod msoffice;
 pub mod node;
+pub mod runtimes;
 pub mod svg;
 pub mod translations;

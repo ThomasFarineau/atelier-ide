@@ -1503,8 +1503,10 @@ impl EditorState {
                             ));
                             output.state.store(ui.ctx(), id);
                         }
+                        // A single-line field gives up the focus on Enter, in the same frame.
                         let enter = ui.input(|i| i.key_pressed(Key::Enter));
-                        if output.response.has_focus() && enter && !busy {
+                        let focused = output.response.has_focus() || output.response.lost_focus();
+                        if focused && enter && !busy {
                             rename.submit = true;
                         }
                         if ui.input(|i| i.key_pressed(Key::Escape)) {

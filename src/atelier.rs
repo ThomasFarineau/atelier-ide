@@ -51,8 +51,18 @@ pub fn graph_setting(root: &Path) -> Option<bool> {
 }
 
 pub fn set_graph_setting(root: &Path, enabled: bool) {
+    set_setting(root, "graph", json!({"enabled": enabled}));
+}
+
+/// A section of `.atelier/config.json` (`runtimes`), `Null` when it is not there.
+pub fn setting(root: &Path, key: &str) -> Value {
+    config(root)[key].clone()
+}
+
+/// Replaces a section of `.atelier/config.json`, keeping the others.
+pub fn set_setting(root: &Path, key: &str, value: Value) {
     let mut config = config(root);
-    config["graph"] = json!({"enabled": enabled});
+    config[key] = value;
     let _ = fs::create_dir_all(dir(root));
     if let Ok(json) = serde_json::to_vec_pretty(&config) {
         let _ = fs::write(config_path(root), json);

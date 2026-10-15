@@ -1037,7 +1037,13 @@ impl Ide {
         }
     }
     fn new_pane(&mut self, shell: &Shell) -> Option<Pane> {
-        match Terminal::start(&project::simplify(&self.root), shell) {
+        let root = project::simplify(&self.root);
+        let env = if self.settings.disabled_builtins.contains("runtimes") {
+            Vec::new()
+        } else {
+            crate::plugins::builtins::runtimes::environment(&root)
+        };
+        match Terminal::start(&root, shell, &env) {
             Ok(mut term) => {
                 term.want_focus = true;
                 self.terminal_error.clear();

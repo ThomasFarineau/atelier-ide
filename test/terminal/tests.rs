@@ -34,7 +34,7 @@ fn available_shells_start_with_the_default_one() {
 fn real_shell_executes_and_keeps_its_working_directory() {
     let root = std::env::current_dir().unwrap();
     let mut terminal =
-        Terminal::start(&root, &Shell::default_shell()).expect("A native shell is required");
+        Terminal::start(&root, &Shell::default_shell(), &[]).expect("A native shell is required");
     let command = if cfg!(windows) {
         "Write-Output ('ATELIER_' + 'PTY_OK'); Write-Output ((Get-Location).Path)"
     } else {
@@ -79,7 +79,7 @@ fn wsl_terminal_starts_in_the_project_folder() {
     }
     let verbatim = std::path::PathBuf::from(format!(r"\\?\UNC\{}", &folder.to_string_lossy()[2..]));
     for root in [folder, verbatim] {
-        let mut terminal = Terminal::start(&root, &shell).expect("wsl.exe starts");
+        let mut terminal = Terminal::start(&root, &shell, &[]).expect("wsl.exe starts");
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
         while terminal.screen().trim().is_empty() {
             terminal.poll();
@@ -103,4 +103,125 @@ fn wsl_terminal_starts_in_the_project_folder() {
             std::thread::sleep(std::time::Duration::from_millis(25));
         }
     }
+}
+
+/// A selection made with the mouse starts where the button went down, not where the drag was
+/// noticed a few pixels further, so that Ctrl+C copies the whole of it.
+#[test]
+fn a_mouse_selection_starts_where_the_button_went_down() {
+    use eframe::egui::{self, Event, Modifiers, PointerButton, Rect, pos2, vec2};
+    let root = std::env::current_dir().unwrap();
+    let mut term =
+        Terminal::start(&root, &Shell::default_shell(), &[]).expect("A native shell is required");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    let command = if cfg!(windows) {
+        "Write-Output ('ATELIER_' + 'SELECTED')"
+    } else {
+        "printf 'ATELIER_%s\n' SELECTED"
+    };
+    while term.screen().trim().is_empty() {
+        term.poll();
+        assert!(
+            std::time::Instant::now() < deadline,
+            "The shell did not start"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    term.command(command).unwrap();
+    // The output, not the command line that also holds the word.
+    let output_row = |term: &Terminal| {
+        term.screen_ref()
+            .contents()
+            .lines()
+            .position(|l| l.starts_with("ATELIER_SELECTED"))
+    };
+    while output_row(&term).is_none() {
+        term.poll();
+        assert!(std::time::Instant::now() < deadline, "No output");
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    let row = output_row(&term).unwrap();
+    let ctx = egui::Context::default();
+    let theme = crate::ui::theme_by_index(0);
+    crate::ui::install(&ctx, theme, 14.0);
+    let mut selection = crate::terminal_ui::Selection::default();
+    let mut time = 0.0;
+    let mut frame = |term: &mut Terminal, events: Vec<Event>| {
+        time += 0.05;
+        let mut rect = Rect::NOTHING;
+        let output = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0))),
+                time: Some(time),
+                events,
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE)
+                    .show(ctx, |ui| {
+                        rect =
+                            crate::terminal_ui::show(ui, term, &mut selection, &theme, &root).rect;
+                    });
+            },
+        );
+        (rect, output.platform_output.commands)
+    };
+    let (rect, _) = frame(&mut term, vec![]);
+    let font = egui::FontId::monospace(crate::terminal_ui::FONT_SIZE);
+    let (row_h, char_w) =
+        ctx.fonts_mut(|f| (f.row_height(&font).ceil(), f.glyph_width(&font, 'M')));
+    // From the middle of the first character to the middle of the last one.
+    let y = rect.top() + (row as f32 + 0.5) * row_h;
+    let from = pos2(rect.left() + char_w * 0.5, y);
+    let to = pos2(rect.left() + char_w * 15.5, y);
+    let button = |pos, pressed| Event::PointerButton {
+        pos,
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+    frame(
+        &mut term,
+        vec![Event::PointerMoved(from), button(from, true)],
+    );
+    for i in 1..=5 {
+        frame(
+            &mut term,
+            vec![Event::PointerMoved(from + (to - from) * (i as f32 / 5.0))],
+        );
+    }
+    frame(&mut term, vec![button(to, false)]);
+    let (_, commands) = frame(&mut term, vec![Event::Copy]);
+    assert!(
+        commands.contains(&egui::OutputCommand::CopyText("ATELIER_SELECTED".into())),
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn the_wheel_goes_to_a_program_that_took_the_screen() {
+    use crate::terminal_ui::wheel_bytes;
+    let mut parser = vt100::Parser::new(24, 80, 100);
+    // A pager: the alternate screen, no mouse, the arrows of the cursor mode.
+    parser.process(b"[?1049h");
+    assert_eq!(wheel_bytes(parser.screen(), true, 2, (0, 0)), b"[A[A");
+    parser.process(b"[?1h");
+    assert_eq!(wheel_bytes(parser.screen(), false, 1, (0, 0)), b"OB");
+    // A program that asked for the mouse, in SGR: wheel events where the pointer is.
+    parser.process(b"[?1000h[?1006h");
+    assert_eq!(
+        wheel_bytes(parser.screen(), true, 1, (4, 9)),
+        b"[<64;10;5M"
+    );
+    assert_eq!(
+        wheel_bytes(parser.screen(), false, 1, (0, 0)),
+        b"[<65;1;1M"
+    );
+    // The first encoding: three bytes, each 32 more than the value.
+    parser.process(b"[?1006l");
+    assert_eq!(
+        wheel_bytes(parser.screen(), true, 1, (0, 0)),
+        [0x1b, b'[', b'M', 32 + 64, 33, 33]
+    );
 }

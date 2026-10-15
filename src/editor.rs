@@ -74,6 +74,9 @@ pub struct EditorState {
     visible: Vec<usize>,
     /// The mouse press that is on a fold marker: it does not select.
     fold_press: bool,
+    /// The mouse press began in this editor. A press begun elsewhere, such as the Ctrl + click
+    /// that opened this file, does not select while the button is still down.
+    own_press: bool,
     /// The selections Extend Selection went from, and to, for Shrink Selection.
     expanded: Vec<((usize, usize), Range<usize>)>,
 }
@@ -102,6 +105,7 @@ impl Default for EditorState {
             fold_language: String::new(),
             visible: Vec::new(),
             fold_press: false,
+            own_press: false,
             expanded: Vec::new(),
         }
     }
@@ -1378,6 +1382,10 @@ impl EditorState {
                 // The fold markers of the gutter and the placeholder of a collapsed region.
                 if !ui.input(|i| i.pointer.primary_down()) {
                     self.fold_press = false;
+                    self.own_press = false;
+                }
+                if response.hovered() && ui.input(|i| i.pointer.primary_pressed()) {
+                    self.own_press = true;
                 }
                 if let Some(pos) = pointer
                     && !popup_click
@@ -1416,13 +1424,16 @@ impl EditorState {
                     && !over_popup
                     && !self.fold_press
                     && !self.assist.ctrl_press
+                    && self.own_press
                     && response.is_pointer_button_down_on()
                     && ui.input(|i| i.pointer.primary_down())
                 {
                     let in_gutter = pos.x - origin.x - viewport.min.x < gutter;
                     let at = self.hit(ui, text, origin, row, text_x, pos, opt);
-                    let extend = ui.input(|i| i.modifiers.shift)
-                        || !response.drag_started() && response.dragged();
+                    // The anchor is set where the button went down: a drag is only known once
+                    // the pointer has moved, a few pixels further.
+                    let pressed = ui.input(|i| i.pointer.primary_pressed());
+                    let extend = ui.input(|i| i.modifiers.shift) || !pressed;
                     if in_gutter {
                         let line = self.line_of(at);
                         let end = self.lines.get(line + 1).copied().unwrap_or(text.len());
@@ -1430,7 +1441,7 @@ impl EditorState {
                             self.anchor = self.lines[line];
                         }
                         self.cursor = end;
-                    } else if response.drag_started() || ui.input(|i| i.pointer.primary_pressed()) {
+                    } else if pressed {
                         self.move_to(at, ui.input(|i| i.modifiers.shift));
                     } else {
                         self.cursor = at;

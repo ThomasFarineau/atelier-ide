@@ -1,5 +1,6 @@
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use std::{
+    ffi::OsString,
     io::{Read, Write},
     path::Path,
     sync::{
@@ -167,7 +168,9 @@ pub struct Terminal {
 }
 
 impl Terminal {
-    pub fn start(root: &Path, shell: &Shell) -> anyhow::Result<Self> {
+    /// Starts `shell` in `root`; `env` is added to its environment (the runtimes of the
+    /// project), except in WSL, whose programs are not those of Windows.
+    pub fn start(root: &Path, shell: &Shell, env: &[(String, OsString)]) -> anyhow::Result<Self> {
         let pair = native_pty_system().openpty(PtySize {
             rows: 24,
             cols: 120,
@@ -212,6 +215,11 @@ impl Terminal {
         }
         for (name, value) in mcp {
             cmd.env(name, value);
+        }
+        if !is_wsl(shell) {
+            for (name, value) in env {
+                cmd.env(name, value);
+            }
         }
         let child = pair.slave.spawn_command(cmd)?;
         drop(pair.slave);

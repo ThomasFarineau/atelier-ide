@@ -364,8 +364,14 @@ impl BuiltinPlugin for NodePlugin {
     fn tool_window(&mut self, _id: &str, ui: &mut egui::Ui, host: &mut dyn Host) {
         let t = ui::theme(ui.ctx());
         if self.node.is_none() && self.node_version.is_none() {
-            self.node_version = Some(thread::spawn(|| {
-                let mut command = std::process::Command::new("node");
+            // The Node.js of the project (Runtimes plugin), else the one on the PATH.
+            let node = crate::plugins::builtins::runtimes::install::program(
+                &self.root,
+                crate::plugins::builtins::runtimes::install::Kind::Node,
+            )
+            .unwrap_or_else(|| PathBuf::from("node"));
+            self.node_version = Some(thread::spawn(move || {
+                let mut command = std::process::Command::new(node);
                 command.arg("--version");
                 #[cfg(windows)]
                 {

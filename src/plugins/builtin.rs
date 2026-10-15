@@ -265,6 +265,7 @@ pub fn all() -> Vec<Box<dyn BuiltinPlugin>> {
         Box::new(crate::plugins::builtins::image::ImagePlugin::default()),
         Box::new(crate::plugins::builtins::k8s::K8sPlugin::default()),
         Box::new(crate::plugins::builtins::node::NodePlugin::default()),
+        Box::new(crate::plugins::builtins::runtimes::RuntimesPlugin::default()),
         Box::new(crate::plugins::builtins::maven::MavenPlugin::default()),
         Box::new(crate::plugins::builtins::gradle::GradlePlugin::default()),
         Box::new(crate::plugins::builtins::translations::TranslationsPlugin::default()),
