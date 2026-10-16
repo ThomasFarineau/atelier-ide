@@ -73,9 +73,16 @@ fn a_refactoring_can_change_other_files_and_create_one() {
             {"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 3}}, "newText": "g()"}]}}},
     ]);
     let found = refactorings_from_server(&result, "file:///tmp/p/main.ts", "abc();\nrest\n");
-    assert_eq!(found.len(), 2, "the action that only runs a command is left out");
+    assert_eq!(
+        found.len(),
+        2,
+        "the action that only runs a command is left out"
+    );
     assert_eq!(found[0].title, "Move to a new file");
-    assert_eq!(found[0].creates, vec![uri_to_path("file:///tmp/p/helper.ts").unwrap()]);
+    assert_eq!(
+        found[0].creates,
+        vec![uri_to_path("file:///tmp/p/helper.ts").unwrap()]
+    );
     // The new file's edit has a path; the document's own has none.
     assert_eq!(found[0].files.len(), 2);
     assert!(found[0].files.iter().any(|f| f.path.is_none()));

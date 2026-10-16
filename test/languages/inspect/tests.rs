@@ -24,7 +24,10 @@ fn the_output_of_tsc_is_read() {
     let found = parse_tsc(output, Path::new("/p"));
     assert_eq!(found.len(), 2);
     assert_eq!(found[0].path, Path::new("/p").join("src/a.ts"));
-    assert_eq!((found[0].line, found[0].column, found[0].error), (11, 4, true));
+    assert_eq!(
+        (found[0].line, found[0].column, found[0].error),
+        (11, 4, true)
+    );
     assert!(found[0].message.starts_with("TS2322"));
     assert!(!found[1].error);
 }

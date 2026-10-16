@@ -1,15 +1,14 @@
 //! Live templates and postfix templates in the completion, and Surround With (Ctrl+Alt+T).
 
 use super::{
-    EditorState, INDENT, is_word,
+    EditorState, INDENT,
     assist::{Choice, Chooser, Entry},
+    is_word,
     refactor::{free_name, suggest_name},
 };
-use crate::{
-    languages::{
-        Completion, CompletionItem, ItemKind, QuickFix, TextEdit,
-        templates::{self, Template},
-    },
+use crate::languages::{
+    Completion, CompletionItem, ItemKind, QuickFix, TextEdit,
+    templates::{self, Template},
 };
 use std::ops::Range;
 
@@ -87,7 +86,9 @@ fn whole_lines(text: &str, range: &Range<usize>) -> Range<usize> {
     } else {
         range.end
     };
-    let end = text[end_from..].find('\n').map_or(text.len(), |i| end_from + i);
+    let end = text[end_from..]
+        .find('\n')
+        .map_or(text.len(), |i| end_from + i);
     start..end
 }
 
@@ -117,11 +118,20 @@ pub(super) fn surroundings(
         for (title, open, close) in blocks(language) {
             let inner: Vec<String> = body
                 .lines()
-                .map(|l| if l.is_empty() { String::new() } else { format!("{INDENT}{l}") })
+                .map(|l| {
+                    if l.is_empty() {
+                        String::new()
+                    } else {
+                        format!("{INDENT}{l}")
+                    }
+                })
                 .collect();
             let mut new = format!("{indent}{open}\n{}", inner.join("\n"));
             if !close.is_empty() {
-                new.push_str(&format!("\n{indent}{}", close.replace('\n', &format!("\n{indent}"))));
+                new.push_str(&format!(
+                    "\n{indent}{}",
+                    close.replace('\n', &format!("\n{indent}"))
+                ));
             }
             found.push((title.to_string(), new));
         }
@@ -196,12 +206,17 @@ impl EditorState {
     pub(super) fn open_surround(&mut self, text: &str, language: &str) {
         let range = self.selection();
         let (whole, options) = surroundings(language, text, &range, &templates::user());
-        let range = if range.is_empty() { whole.clone() } else { range };
+        let range = if range.is_empty() {
+            whole.clone()
+        } else {
+            range
+        };
         // The statements work on whole lines; the marks on the selection itself.
         let entries: Vec<Entry> = options
             .into_iter()
             .map(|(title, new_text)| {
-                let target = if new_text.starts_with(char::is_whitespace) || new_text.contains('\n') {
+                let target = if new_text.starts_with(char::is_whitespace) || new_text.contains('\n')
+                {
                     whole.clone()
                 } else {
                     range.clone()

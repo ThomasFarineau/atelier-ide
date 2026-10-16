@@ -13,7 +13,10 @@ fn is_js(language: &str) -> bool {
 
 /// Languages whose blocks are in braces and may go without them for one statement.
 fn braces_optional(language: &str) -> bool {
-    matches!(language, "js" | "ts" | "jsx" | "tsx" | "java" | "c" | "cpp" | "cs" | "php")
+    matches!(
+        language,
+        "js" | "ts" | "jsx" | "tsx" | "java" | "c" | "cpp" | "cs" | "php"
+    )
 }
 
 /// The line of `offset`: where it starts and ends, line break left out.
@@ -187,7 +190,9 @@ pub fn intentions(text: &str, cursor: usize, language: &str) -> Vec<QuickFix> {
     }
 
     // `true` and `false`.
-    if let Some((range, word)) = word_at(content, column).filter(|(_, w)| w == "true" || w == "false") {
+    if let Some((range, word)) =
+        word_at(content, column).filter(|(_, w)| w == "true" || w == "false")
+    {
         let other = if word == "true" { "false" } else { "true" };
         found.push(fix(
             format!("{} {other}", tr!("intention_replace_with")),
@@ -235,7 +240,11 @@ pub fn intentions(text: &str, cursor: usize, language: &str) -> Vec<QuickFix> {
         let at = line.start + indent.len();
         for keyword in ["let", "const"] {
             found.push(fix(
-                format!("{} 'var' {} '{keyword}'", tr!("intention_replace"), tr!("intention_with")),
+                format!(
+                    "{} 'var' {} '{keyword}'",
+                    tr!("intention_replace"),
+                    tr!("intention_with")
+                ),
                 at..at + 3,
                 keyword.to_string(),
             ));
@@ -246,9 +255,17 @@ pub fn intentions(text: &str, cursor: usize, language: &str) -> Vec<QuickFix> {
     if language == "rs" && trimmed.starts_with("let ") {
         let at = line.start + indent.len() + 4;
         if trimmed.starts_with("let mut ") {
-            found.push(fix(tr!("intention_make_immutable").to_string(), at..at + 4, String::new()));
+            found.push(fix(
+                tr!("intention_make_immutable").to_string(),
+                at..at + 4,
+                String::new(),
+            ));
         } else {
-            found.push(fix(tr!("intention_make_mutable").to_string(), at..at, "mut ".to_string()));
+            found.push(fix(
+                tr!("intention_make_mutable").to_string(),
+                at..at,
+                "mut ".to_string(),
+            ));
         }
     }
 
@@ -320,7 +337,8 @@ fn add_braces(text: &str, line: &Range<usize>, _language: &str) -> Option<QuickF
         }
         None => {
             let statement = body.strip_prefix("else ").map(|s| ("else", s));
-            let statement = statement.or_else(|| body.strip_prefix("} else ").map(|s| ("} else", s)))?;
+            let statement =
+                statement.or_else(|| body.strip_prefix("} else ").map(|s| ("} else", s)))?;
             (statement.0, statement.1.trim())
         }
     };
@@ -345,7 +363,9 @@ fn remove_braces(text: &str, line: &Range<usize>) -> Option<QuickFix> {
     let indent = &content[..content.len() - content.trim_start().len()];
     let head = content.trim();
     let opens = head.ends_with('{')
-        && ["if", "else", "for", "while", "} else"].iter().any(|k| head.starts_with(k));
+        && ["if", "else", "for", "while", "} else"]
+            .iter()
+            .any(|k| head.starts_with(k));
     if !opens {
         return None;
     }

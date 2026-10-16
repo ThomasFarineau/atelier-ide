@@ -9,7 +9,11 @@ fn a_bundle_keeps_the_options_of_the_user_not_those_of_the_machine() {
         "recent": ["/a", "/b"],
         "mcp_choices": {"x|claude": true},
     });
-    let bundle = bundle(&settings, "[{\"abbreviation\": \"x\", \"text\": \"y\"}]", "foo\n\nbar\n");
+    let bundle = bundle(
+        &settings,
+        "[{\"abbreviation\": \"x\", \"text\": \"y\"}]",
+        "foo\n\nbar\n",
+    );
     assert_eq!(bundle["settings"]["theme"], 1);
     assert_eq!(bundle["settings"]["fonts"]["code"], "Fira Code");
     assert!(bundle["settings"].get("recent").is_none());
@@ -33,7 +37,10 @@ fn applying_a_bundle_changes_only_what_differs() {
     assert_eq!(settings["theme"], 2);
     assert_eq!(settings["fonts"]["code"], "B");
     assert_eq!(settings["recent"], json!(["/mine"]));
-    assert!(imported.templates.is_none(), "an empty list does not erase the templates");
+    assert!(
+        imported.templates.is_none(),
+        "an empty list does not erase the templates"
+    );
     assert_eq!(imported.dictionary.as_deref(), Some("mot\n"));
 }
 

@@ -26,14 +26,22 @@ fn offers(code: &str, language: &str, expected: &str) -> bool {
 #[test]
 fn quotes_change_and_the_inside_follows() {
     assert!(offers("let a = \"he|llo\";\n", "js", "let a = 'hello';\n"));
-    assert!(offers("let a = 'it\\'s |here';\n", "js", "let a = \"it's here\";\n"));
+    assert!(offers(
+        "let a = 'it\\'s |here';\n",
+        "js",
+        "let a = \"it's here\";\n"
+    ));
     assert!(offers(
         "let a = \"say \\\"|x\\\"\";\n",
         "js",
         "let a = 'say \"x\"';\n"
     ));
     // Rust has no single-quoted strings.
-    assert!(!offers("let a = \"x|\";\nlet b = 1;\n", "rs", "let a = 'x';\nlet b = 1;\n"));
+    assert!(!offers(
+        "let a = \"x|\";\nlet b = 1;\n",
+        "rs",
+        "let a = 'x';\nlet b = 1;\n"
+    ));
 }
 
 #[test]
@@ -56,7 +64,11 @@ fn comparisons_and_booleans_are_swapped() {
     assert!(results("let x = -|1;\n", "js").is_empty());
     assert!(results("i+|+;\n", "js").is_empty());
     // A string's content is no operator.
-    assert!(!offers("let s = \"a =|= b\";\n", "js", "let s = \"a != b\";\n"));
+    assert!(!offers(
+        "let s = \"a =|= b\";\n",
+        "js",
+        "let s = \"a != b\";\n"
+    ));
 }
 
 #[test]
@@ -88,5 +100,11 @@ fn braces_are_added_and_removed() {
         "    if (a) go();\n    next();\n"
     ));
     // Two statements: the braces stay.
-    assert!(results("    if (a|) {\n        go();\n        stop();\n    }\n", "js").is_empty());
+    assert!(
+        results(
+            "    if (a|) {\n        go();\n        stop();\n    }\n",
+            "js"
+        )
+        .is_empty()
+    );
 }

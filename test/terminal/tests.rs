@@ -120,8 +120,7 @@ fn wsl_terminal_starts_in_the_project_folder() {
 fn a_mouse_selection_starts_where_the_button_went_down() {
     use eframe::egui::{self, Event, Modifiers, PointerButton, Rect, pos2, vec2};
     let root = std::env::current_dir().unwrap();
-    let mut term =
-        Terminal::start(&root, &fast_shell(), &[]).expect("A native shell is required");
+    let mut term = Terminal::start(&root, &fast_shell(), &[]).expect("A native shell is required");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
     let command = if cfg!(windows) {
         "echo ATELIER_SELECTE^D"

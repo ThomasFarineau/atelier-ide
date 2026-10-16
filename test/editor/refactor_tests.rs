@@ -81,8 +81,12 @@ fn a_constant_goes_above_the_function_or_into_the_class() {
     let call = "fn f() {\n    g(h());\n}\n";
     assert!(extract_constant(call, &range_of(call, "h()"), "rs", &[0], &starts(call)).is_none());
     let java = "class A {\n    int f() {\n        return 7;\n    }\n}\n";
-    let change = extract_constant(java, &range_of(java, "7"), "java", &[0, 1], &starts(java)).unwrap();
-    assert!(applied(java, &change).starts_with("class A {\n    private static final int CONSTANT = 7;\n\n    int f()"));
+    let change =
+        extract_constant(java, &range_of(java, "7"), "java", &[0, 1], &starts(java)).unwrap();
+    assert!(
+        applied(java, &change)
+            .starts_with("class A {\n    private static final int CONSTANT = 7;\n\n    int f()")
+    );
 }
 
 #[test]
@@ -104,7 +108,10 @@ fn a_variable_is_inlined_everywhere_it_is_used() {
 fn a_variable_that_changes_is_not_inlined() {
     let text = "let mut n = 1;\nn += 1;\nuse_it(n);\n";
     assert!(inline_variable(text, 5, "rs", None).is_err());
-    assert!(inline_variable("let a = 1;\n", 5, "rs", None).is_err(), "never used");
+    assert!(
+        inline_variable("let a = 1;\n", 5, "rs", None).is_err(),
+        "never used"
+    );
 }
 
 #[test]

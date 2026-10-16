@@ -574,7 +574,9 @@ impl Service {
         kind: lsp::extras::Hierarchy,
     ) -> Oneshot<Vec<lsp::extras::HierarchyItem>> {
         match self.lsp_target(doc) {
-            Some((client, uri)) => lsp::extras::prepare_hierarchy(&client, &uri, text, offset, kind),
+            Some((client, uri)) => {
+                lsp::extras::prepare_hierarchy(&client, &uri, text, offset, kind)
+            }
             None => Oneshot::ready(Vec::new()),
         }
     }

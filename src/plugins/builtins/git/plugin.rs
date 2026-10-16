@@ -824,7 +824,11 @@ impl GitPlugin {
                 .unwrap_or(&problem.path)
                 .display()
                 .to_string();
-            let line = format!("{name}:{}  {}", problem.line + 1, problem.message.lines().next().unwrap_or(""));
+            let line = format!(
+                "{name}:{}  {}",
+                problem.line + 1,
+                problem.message.lines().next().unwrap_or("")
+            );
             if !items.contains(&line) && items.len() < 12 {
                 items.push(line);
             }

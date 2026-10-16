@@ -623,7 +623,9 @@ impl EditorState {
                     None
                 };
             }
-            if matches!(key, Key::ArrowRight | Key::ArrowLeft | Key::Tab) && self.intel_chooser_key(key) {
+            if matches!(key, Key::ArrowRight | Key::ArrowLeft | Key::Tab)
+                && self.intel_chooser_key(key)
+            {
                 return Some(false);
             }
             let Some(chooser) = &mut self.assist.chooser else {
@@ -1167,18 +1169,24 @@ impl EditorState {
             let text_line = &text[line.clone()];
             let from = column_of(text_line, at - line.start);
             let to = column_of(text_line, at - line.start + 1);
-            let x0 = text_left + galley
-                .pos_from_cursor(CCursor::new(self.visual_column(
-                    text,
-                    self.line_of(line.start),
-                    from,
-                ))).min.x;
-            let x1 = text_left + galley
-                .pos_from_cursor(CCursor::new(self.visual_column(
-                    text,
-                    self.line_of(line.start),
-                    to,
-                ))).min.x;
+            let x0 = text_left
+                + galley
+                    .pos_from_cursor(CCursor::new(self.visual_column(
+                        text,
+                        self.line_of(line.start),
+                        from,
+                    )))
+                    .min
+                    .x;
+            let x1 = text_left
+                + galley
+                    .pos_from_cursor(CCursor::new(self.visual_column(
+                        text,
+                        self.line_of(line.start),
+                        to,
+                    )))
+                    .min
+                    .x;
             painter.rect_filled(
                 Rect::from_min_max(pos2(x0, y + 1.0), pos2(x1, y + row - 1.0)),
                 2.0,
@@ -1209,18 +1217,24 @@ impl EditorState {
             let text_line = &text[line.clone()];
             let from = column_of(text_line, range.start.max(line.start) - line.start);
             let to = column_of(text_line, range.end.min(line.end) - line.start);
-            let x0 = text_left + galley
-                .pos_from_cursor(CCursor::new(self.visual_column(
-                    text,
-                    self.line_of(line.start),
-                    from,
-                ))).min.x;
-            let x1 = text_left + galley
-                .pos_from_cursor(CCursor::new(self.visual_column(
-                    text,
-                    self.line_of(line.start),
-                    to,
-                ))).min.x;
+            let x0 = text_left
+                + galley
+                    .pos_from_cursor(CCursor::new(self.visual_column(
+                        text,
+                        self.line_of(line.start),
+                        from,
+                    )))
+                    .min
+                    .x;
+            let x1 = text_left
+                + galley
+                    .pos_from_cursor(CCursor::new(self.visual_column(
+                        text,
+                        self.line_of(line.start),
+                        to,
+                    )))
+                    .min
+                    .x;
             painter.rect_filled(
                 Rect::from_min_max(pos2(x0 - 1.0, y + 1.0), pos2(x1 + 1.0, y + row - 1.0)),
                 2.0,
@@ -1249,18 +1263,24 @@ impl EditorState {
             let text_line = &text[line.clone()];
             let from = column_of(text_line, range.start.max(line.start) - line.start);
             let to = column_of(text_line, range.end.min(line.end) - line.start);
-            let x0 = text_left + galley
-                .pos_from_cursor(CCursor::new(self.visual_column(
-                    text,
-                    self.line_of(line.start),
-                    from,
-                ))).min.x;
-            let x1 = text_left + galley
-                .pos_from_cursor(CCursor::new(self.visual_column(
-                    text,
-                    self.line_of(line.start),
-                    to,
-                ))).min.x;
+            let x0 = text_left
+                + galley
+                    .pos_from_cursor(CCursor::new(self.visual_column(
+                        text,
+                        self.line_of(line.start),
+                        from,
+                    )))
+                    .min
+                    .x;
+            let x1 = text_left
+                + galley
+                    .pos_from_cursor(CCursor::new(self.visual_column(
+                        text,
+                        self.line_of(line.start),
+                        to,
+                    )))
+                    .min
+                    .x;
             painter.rect_filled(
                 Rect::from_min_max(pos2(x0 - 1.0, y + 1.0), pos2(x1 + 1.0, y + row - 1.0)),
                 2.0,
@@ -1292,18 +1312,24 @@ impl EditorState {
         let text_line = &text[line.clone()];
         let from = column_of(text_line, word.start - line.start);
         let to = column_of(text_line, word.end - line.start);
-        let x0 = text_left + galley
+        let x0 = text_left
+            + galley
                 .pos_from_cursor(CCursor::new(self.visual_column(
                     text,
                     self.line_of(line.start),
                     from,
-                ))).min.x;
-        let x1 = text_left + galley
+                )))
+                .min
+                .x;
+        let x1 = text_left
+            + galley
                 .pos_from_cursor(CCursor::new(self.visual_column(
                     text,
                     self.line_of(line.start),
                     to,
-                ))).min.x;
+                )))
+                .min
+                .x;
         painter.line_segment(
             [pos2(x0, y + row - 3.0), pos2(x1, y + row - 3.0)],
             Stroke::new(1.2_f32, color),
@@ -1333,18 +1359,24 @@ impl EditorState {
             let text_line = &text[line.clone()];
             let from = column_of(text_line, start - line.start);
             let to = column_of(text_line, end - line.start);
-            let x0 = text_left + galley
-                .pos_from_cursor(CCursor::new(self.visual_column(
-                    text,
-                    self.line_of(line.start),
-                    from,
-                ))).min.x;
-            let mut x1 = text_left + galley
-                .pos_from_cursor(CCursor::new(self.visual_column(
-                    text,
-                    self.line_of(line.start),
-                    to,
-                ))).min.x;
+            let x0 = text_left
+                + galley
+                    .pos_from_cursor(CCursor::new(self.visual_column(
+                        text,
+                        self.line_of(line.start),
+                        from,
+                    )))
+                    .min
+                    .x;
+            let mut x1 = text_left
+                + galley
+                    .pos_from_cursor(CCursor::new(self.visual_column(
+                        text,
+                        self.line_of(line.start),
+                        to,
+                    )))
+                    .min
+                    .x;
             if x1 - x0 < char_width * 0.5 {
                 x1 = x0 + char_width;
             }
@@ -1387,7 +1419,13 @@ impl EditorState {
                     )))
                     .min
                     .x;
-            wave(painter, x0, x1, y + row - 3.0, Color32::from_rgb(0x62, 0xB5, 0x43));
+            wave(
+                painter,
+                x0,
+                x1,
+                y + row - 3.0,
+                Color32::from_rgb(0x62, 0xB5, 0x43),
+            );
         }
     }
 
@@ -1747,9 +1785,13 @@ impl EditorState {
                 offset.saturating_sub(range.start).min(range.len()),
             );
             let g = s.galley(ui, text, s.line_of(offset), opt);
-            g.pos_from_cursor(CCursor::new(s.visual_column(text, s.line_of(offset), column)))
-                .min
-                .x
+            g.pos_from_cursor(CCursor::new(s.visual_column(
+                text,
+                s.line_of(offset),
+                column,
+            )))
+            .min
+            .x
         };
         if self.assist.rename.is_some() {
             let x = text_left + galley(self, self.cursor);

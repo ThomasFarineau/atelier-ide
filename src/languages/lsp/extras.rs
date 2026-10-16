@@ -8,9 +8,9 @@
 use crate::languages::{
     FileEdit, ItemKind, Oneshot,
     lsp::{
-        Client, from_position,
+        Client,
         convert::{markup_text, plain, symbol_kind, workspace_edit},
-        to_position, uri_to_path,
+        from_position, to_position, uri_to_path,
     },
 };
 use serde_json::{Value, json};
@@ -52,7 +52,8 @@ fn parameter_range(label: &str, parameter: &Value) -> Option<Range<usize>> {
                     Some(at)
                 })
                 .collect();
-            let char_of = |unit: usize| units.iter().position(|&u| u >= unit).unwrap_or(units.len());
+            let char_of =
+                |unit: usize| units.iter().position(|&u| u >= unit).unwrap_or(units.len());
             Some(char_of(from)..char_of(to))
         }
         _ => None,
@@ -358,7 +359,6 @@ pub fn expand_hierarchy(
     });
     answer
 }
-
 
 #[cfg(test)]
 #[path = "../../../test/languages/lsp/extras/tests.rs"]

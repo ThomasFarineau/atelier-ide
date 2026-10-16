@@ -67,7 +67,11 @@ impl Document {
     pub fn open(path: PathBuf) -> Result<Self> {
         let text = read_text(&path)?;
         let large = text.len() as u64 > MAX_FILE_SIZE;
-        let language = if large { "txt".into() } else { language(&path).into() };
+        let language = if large {
+            "txt".into()
+        } else {
+            language(&path).into()
+        };
         let mtime = modified(&path);
         Ok(Self {
             loading: None,
@@ -111,7 +115,11 @@ impl Document {
             read_only: large,
             mtime,
             // No highlighting nor language service on a file that big.
-            language: if large { "txt".into() } else { language(&path).into() },
+            language: if large {
+                "txt".into()
+            } else {
+                language(&path).into()
+            },
             path: Some(path),
             text: String::new(),
             saved: String::new(),
@@ -130,7 +138,11 @@ impl Document {
         self.loading = None;
         Some(result.map(|text| {
             // A read-only file is never compared with a saved copy.
-            self.saved = if self.read_only { String::new() } else { text.clone() };
+            self.saved = if self.read_only {
+                String::new()
+            } else {
+                text.clone()
+            };
             self.text = text;
             self.view.invalidate();
         }))
@@ -164,7 +176,11 @@ impl Document {
         if text == self.saved {
             return Ok(false);
         }
-        self.saved = if self.read_only { String::new() } else { text.clone() };
+        self.saved = if self.read_only {
+            String::new()
+        } else {
+            text.clone()
+        };
         self.text = text;
         self.view.invalidate();
         Ok(true)

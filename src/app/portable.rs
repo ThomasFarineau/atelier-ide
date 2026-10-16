@@ -145,15 +145,18 @@ impl Ide {
         }
         if let Some(words) = &imported.dictionary {
             // The words of the bundle join the ones of this machine.
-            let mut all: std::collections::BTreeSet<String> = fs::read_to_string(data.join("dictionary.txt"))
-                .unwrap_or_default()
-                .lines()
-                .map(str::to_string)
-                .collect();
+            let mut all: std::collections::BTreeSet<String> =
+                fs::read_to_string(data.join("dictionary.txt"))
+                    .unwrap_or_default()
+                    .lines()
+                    .map(str::to_string)
+                    .collect();
             all.extend(words.lines().map(str::to_string));
             fs::write(
                 data.join("dictionary.txt"),
-                all.into_iter().map(|w| format!("{w}\n")).collect::<String>(),
+                all.into_iter()
+                    .map(|w| format!("{w}\n"))
+                    .collect::<String>(),
             )?;
         }
         // What the dialog shows, and what the window does with it.

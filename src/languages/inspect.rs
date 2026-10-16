@@ -29,9 +29,10 @@ pub fn syntax_errors(path: &Path, text: &str) -> Vec<Diagnostic> {
         Some("rs") => rust::analysis::syntax_errors(text),
         Some("java") => super::java::analysis::syntax_errors(text),
         Some(language) => {
-            let _dialect = javascript::analysis::use_dialect(
-                javascript::analysis::Dialect::of(Some(path), language),
-            );
+            let _dialect = javascript::analysis::use_dialect(javascript::analysis::Dialect::of(
+                Some(path),
+                language,
+            ));
             javascript::analysis::syntax_errors(text)
         }
         None => Vec::new(),

@@ -141,8 +141,9 @@ impl EditorState {
             checker.add(word);
         }
         let lower = word.to_lowercase();
-        self.spell
-            .typos
-            .retain(|r| text.get(r.clone()).is_none_or(|w| w.to_lowercase() != lower));
+        self.spell.typos.retain(|r| {
+            text.get(r.clone())
+                .is_none_or(|w| w.to_lowercase() != lower)
+        });
     }
 }

@@ -50,7 +50,13 @@ fn a_click_in_a_hint_goes_to_the_column_it_is_before() {
 #[test]
 fn hints_follow_the_edits_of_the_text() {
     let mut text = "let x = 1;\nlet y = 2;".to_string();
-    let mut s = state(&text, vec![hint(5, ": i32", HintKind::Type), hint(16, ": i32", HintKind::Type)]);
+    let mut s = state(
+        &text,
+        vec![
+            hint(5, ": i32", HintKind::Type),
+            hint(16, ": i32", HintKind::Type),
+        ],
+    );
     s.select(0, 0);
     s.insert(&mut text, "// c\n", false);
     assert_eq!(s.hints[0].offset, 10);

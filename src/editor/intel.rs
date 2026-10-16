@@ -3,8 +3,9 @@
 //! the hierarchies of types (Ctrl+H) and of calls (Ctrl+Alt+H).
 
 use super::{
-    EditorState, Options, column_of,
+    EditorState, Options,
     assist::{Choice, Chooser, Entry, draw_hover},
+    column_of,
 };
 use crate::{
     languages::{
@@ -45,10 +46,7 @@ struct SignatureState {
 /// A popup next to the caret that goes away when the caret moves or the text changes.
 enum Quick {
     Documentation(Hover),
-    Code {
-        title: String,
-        lines: Vec<String>,
-    },
+    Code { title: String, lines: Vec<String> },
 }
 
 struct QuickState {
@@ -133,7 +131,9 @@ fn entry_of(item: &HierarchyItem, indent: usize) -> Entry {
 /// A few lines of the file of `place`, around the line.
 fn code_around(place: &Location, text: &str) -> Vec<String> {
     let source = match &place.path {
-        Some(path) => fs::read_to_string(path).ok().filter(|t| t.len() <= 4_000_000),
+        Some(path) => fs::read_to_string(path)
+            .ok()
+            .filter(|t| t.len() <= 4_000_000),
         None => Some(text.to_string()),
     };
     let Some(source) = source else {
@@ -150,7 +150,14 @@ fn code_around(place: &Location, text: &str) -> Vec<String> {
 impl EditorState {
     /// Keeps the hints of the visible lines up to date: asks the language server once the typing
     /// has paused, takes its answer.
-    pub(super) fn hints_frame(&mut self, ui: &Ui, text: &str, opt: &Options, first: usize, last: usize) {
+    pub(super) fn hints_frame(
+        &mut self,
+        ui: &Ui,
+        text: &str,
+        opt: &Options,
+        first: usize,
+        last: usize,
+    ) {
         let Some(assist) = opt.assist.as_ref().filter(|_| opt.inlay_hints) else {
             self.hints.clear();
             self.hints_state = HintsState::default();
@@ -171,16 +178,21 @@ impl EditorState {
             }
             return;
         }
-        let covered = self.hints_state.for_text.is_some_and(|(rev, a, b)| {
-            rev == self.rev && a <= first && last <= b
-        });
+        let covered = self
+            .hints_state
+            .for_text
+            .is_some_and(|(rev, a, b)| rev == self.rev && a <= first && last <= b);
         if covered {
             return;
         }
-        let wait = self.hints_state.asked.map_or(Duration::ZERO, |t| HINT_DELAY.saturating_sub(t.elapsed()));
+        let wait = self
+            .hints_state
+            .asked
+            .map_or(Duration::ZERO, |t| HINT_DELAY.saturating_sub(t.elapsed()));
         let typing = self.activity.elapsed() < HINT_DELAY;
         if !wait.is_zero() || (typing && !self.hints.is_empty()) {
-            ui.ctx().request_repaint_after(wait.max(Duration::from_millis(60)));
+            ui.ctx()
+                .request_repaint_after(wait.max(Duration::from_millis(60)));
             return;
         }
         let from = first.saturating_sub(HINT_MARGIN);
@@ -235,7 +247,12 @@ impl EditorState {
             Key::ArrowLeft => {
                 // Closes the children, or goes up to the parent.
                 let indent = chooser.entries[at].indent;
-                if state.items[at].1 && chooser.entries.get(at + 1).is_some_and(|e| e.indent > indent) {
+                if state.items[at].1
+                    && chooser
+                        .entries
+                        .get(at + 1)
+                        .is_some_and(|e| e.indent > indent)
+                {
                     let mut end = at + 1;
                     while chooser.entries.get(end).is_some_and(|e| e.indent > indent) {
                         end += 1;
@@ -244,7 +261,9 @@ impl EditorState {
                     state.items.drain(at + 1..end);
                     state.items[at].1 = false;
                     chooser.shown = (0..chooser.entries.len()).collect();
-                } else if let Some(parent) = (0..at).rev().find(|&i| chooser.entries[i].indent < indent) {
+                } else if let Some(parent) =
+                    (0..at).rev().find(|&i| chooser.entries[i].indent < indent)
+                {
                     chooser.selected = parent;
                     chooser.scroll = chooser.scroll.min(parent);
                 }
@@ -282,7 +301,10 @@ impl EditorState {
             return;
         };
         let (service, doc) = (assist.service, &assist.doc);
-        let wait = || ui.ctx().request_repaint_after(std::time::Duration::from_millis(30));
+        let wait = || {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(30))
+        };
         let here = (self.cursor, self.rev);
 
         // ---- What was asked.
@@ -298,7 +320,11 @@ impl EditorState {
             Some(Want::Documentation) => {
                 self.intel.signature = None;
                 let word = self.word_at(text, self.cursor);
-                let at = if word.is_empty() { self.cursor } else { word.start };
+                let at = if word.is_empty() {
+                    self.cursor
+                } else {
+                    word.start
+                };
                 self.intel.quick = Some(QuickState {
                     answer: Some(QuickAnswer::Documentation(service.hover(doc, text, at))),
                     shown: None,
@@ -308,7 +334,11 @@ impl EditorState {
             Some(Want::Definition) => {
                 self.intel.signature = None;
                 self.intel.quick = Some(QuickState {
-                    answer: Some(QuickAnswer::Definition(service.definition(doc, text, self.cursor))),
+                    answer: Some(QuickAnswer::Definition(service.definition(
+                        doc,
+                        text,
+                        self.cursor,
+                    ))),
                     shown: None,
                     at: here,
                 });
@@ -330,7 +360,10 @@ impl EditorState {
                 self.intel.refactors = Some(service.refactorings(doc, text, range));
             }
             Some(Want::Hierarchy(kind)) => {
-                self.intel.prepare = Some((kind, service.prepare_hierarchy(doc, text, self.cursor, kind)));
+                self.intel.prepare = Some((
+                    kind,
+                    service.prepare_hierarchy(doc, text, self.cursor, kind),
+                ));
             }
             None => {}
         }
@@ -403,9 +436,9 @@ impl EditorState {
                 self.intel.quick = None;
             } else if let Some(answer) = &state.answer {
                 let ready = match answer {
-                    QuickAnswer::Documentation(a) => a.take().map(|hover| {
-                        hover.map(Quick::Documentation)
-                    }),
+                    QuickAnswer::Documentation(a) => {
+                        a.take().map(|hover| hover.map(Quick::Documentation))
+                    }
                     QuickAnswer::Definition(a) => a.take().map(|places| {
                         places.first().map(|place| Quick::Code {
                             title: match &place.path {
@@ -473,13 +506,16 @@ impl EditorState {
         {
             let at = *at;
             if slot.is_none() {
-                *slot = Some(service.expand_hierarchy(doc, &state.items[at].0, state.kind, state.up));
+                *slot =
+                    Some(service.expand_hierarchy(doc, &state.items[at].0, state.kind, state.up));
             }
             if let Some(children) = slot.as_ref().and_then(|a| a.take()) {
                 state.expanding = None;
                 let indent = chooser.entries[at].indent;
                 for (n, child) in children.iter().enumerate() {
-                    chooser.entries.insert(at + 1 + n, entry_of(child, indent + 1));
+                    chooser
+                        .entries
+                        .insert(at + 1 + n, entry_of(child, indent + 1));
                     state.items.insert(at + 1 + n, (child.clone(), false));
                 }
                 chooser.shown = (0..chooser.entries.len()).collect();
@@ -499,7 +535,11 @@ impl EditorState {
         text_left: f32,
         row: f32,
     ) {
-        if self.intel.signature.as_ref().is_none_or(|s| s.shown.is_none())
+        if self
+            .intel
+            .signature
+            .as_ref()
+            .is_none_or(|s| s.shown.is_none())
             && self.intel.quick.as_ref().is_none_or(|q| q.shown.is_none())
         {
             return;
@@ -521,7 +561,14 @@ impl EditorState {
         let caret_x = text_left + galley.pos_from_cursor(CCursor::new(column)).min.x;
         let top = origin.y + self.row_of(line) as f32 * row;
         if let Some(signature) = self.intel.signature.as_ref().and_then(|s| s.shown.as_ref()) {
-            draw_signature(&painter, &t, &opt.font, signature, pos2(caret_x, top), screen);
+            draw_signature(
+                &painter,
+                &t,
+                &opt.font,
+                signature,
+                pos2(caret_x, top),
+                screen,
+            );
         }
         if let Some(quick) = self.intel.quick.as_ref().and_then(|q| q.shown.as_ref()) {
             let below = pos2(caret_x, top + row);
@@ -552,7 +599,11 @@ fn draw_signature(
     let active: Option<Range<usize>> = signature
         .active
         .and_then(|i| signature.parameters.get(i).cloned());
-    let part = |from: usize, to: usize| chars[from.min(chars.len())..to.min(chars.len())].iter().collect::<String>();
+    let part = |from: usize, to: usize| {
+        chars[from.min(chars.len())..to.min(chars.len())]
+            .iter()
+            .collect::<String>()
+    };
     let plain = TextFormat::simple(size.clone(), t.text);
     match active {
         Some(range) => {
@@ -579,18 +630,35 @@ fn draw_signature(
             screen.width() - 60.0,
         )
     });
-    let counter = (signature.count > 1)
-        .then(|| format!("{}/{}", signature.index + 1, signature.count));
-    let width = galley.size().x.max(doc.as_ref().map_or(0.0, |d| d.size().x)) + 20.0;
+    let counter =
+        (signature.count > 1).then(|| format!("{}/{}", signature.index + 1, signature.count));
+    let width = galley
+        .size()
+        .x
+        .max(doc.as_ref().map_or(0.0, |d| d.size().x))
+        + 20.0;
     let height = galley.size().y + doc.as_ref().map_or(0.0, |d| d.size().y + 4.0) + 12.0;
-    let mut x = caret_top.x.min(screen.right() - width - 8.0).max(screen.left() + 8.0);
+    let mut x = caret_top
+        .x
+        .min(screen.right() - width - 8.0)
+        .max(screen.left() + 8.0);
     if x + width > screen.right() {
         x = screen.left() + 8.0;
     }
     let y = (caret_top.y - height - 4.0).max(screen.top() + 4.0);
     let rect = Rect::from_min_size(pos2(x, y), vec2(width, height));
-    painter.rect(rect, 5.0, t.popup, Stroke::new(1.0_f32, t.border), StrokeKind::Inside);
-    painter.galley(pos2(rect.left() + 10.0, rect.top() + 6.0), galley.clone(), t.text);
+    painter.rect(
+        rect,
+        5.0,
+        t.popup,
+        Stroke::new(1.0_f32, t.border),
+        StrokeKind::Inside,
+    );
+    painter.galley(
+        pos2(rect.left() + 10.0, rect.top() + 6.0),
+        galley.clone(),
+        t.text,
+    );
     if let Some(doc) = doc {
         painter.galley(
             pos2(rect.left() + 10.0, rect.top() + 6.0 + galley.size().y + 4.0),
@@ -620,24 +688,45 @@ fn draw_code(
     screen: Rect,
 ) {
     let size = FontId::monospace((font.size - 1.0).max(11.0));
-    let header = painter.layout_no_wrap(title.to_string(), FontId::proportional(12.0), t.text_secondary);
+    let header = painter.layout_no_wrap(
+        title.to_string(),
+        FontId::proportional(12.0),
+        t.text_secondary,
+    );
     let body = painter.layout(
         lines.join("\n"),
         size,
         t.text,
         (screen.width() - 60.0).max(200.0),
     );
-    let width = body.size().x.max(header.size().x).clamp(200.0, screen.width() - 40.0) + 20.0;
+    let width = body
+        .size()
+        .x
+        .max(header.size().x)
+        .clamp(200.0, screen.width() - 40.0)
+        + 20.0;
     let height = header.size().y + body.size().y + 20.0;
-    let x = at.x.min(screen.right() - width - 8.0).max(screen.left() + 8.0);
+    let x =
+        at.x.min(screen.right() - width - 8.0)
+            .max(screen.left() + 8.0);
     let y = if at.y + height + 8.0 > screen.bottom() {
         (at.y - height - 24.0).max(screen.top())
     } else {
         at.y + 4.0
     };
     let rect = Rect::from_min_size(pos2(x, y), vec2(width, height));
-    painter.rect(rect, 5.0, t.popup, Stroke::new(1.0_f32, t.border), StrokeKind::Inside);
-    painter.galley(pos2(rect.left() + 10.0, rect.top() + 6.0), header.clone(), t.text_secondary);
+    painter.rect(
+        rect,
+        5.0,
+        t.popup,
+        Stroke::new(1.0_f32, t.border),
+        StrokeKind::Inside,
+    );
+    painter.galley(
+        pos2(rect.left() + 10.0, rect.top() + 6.0),
+        header.clone(),
+        t.text_secondary,
+    );
     painter.galley(
         pos2(rect.left() + 10.0, rect.top() + 12.0 + header.size().y),
         body,

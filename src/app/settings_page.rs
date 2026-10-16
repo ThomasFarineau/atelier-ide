@@ -405,7 +405,12 @@ impl Ide {
         // The postfix templates that come with the IDE.
         ui.add_space(4.0);
         group(ui, t, tr!("builtin_postfix"));
-        for (name, language) in [("JavaScript, TypeScript", "js"), ("Rust", "rs"), ("Java", "java"), ("Python", "py")] {
+        for (name, language) in [
+            ("JavaScript, TypeScript", "js"),
+            ("Rust", "rs"),
+            ("Java", "java"),
+            ("Python", "py"),
+        ] {
             let keys: Vec<String> = Template::postfix_keys(language);
             ui.label(
                 RichText::new(format!("{name}: {}", keys.join("  ")))
@@ -416,7 +421,9 @@ impl Ide {
         ui.add_space(6.0);
         group(ui, t, tr!("your_templates"));
         if ui::button(ui, tr!("add_template")).clicked() {
-            self.settings_draft.templates.push(Template::new("", "", &[], ""));
+            self.settings_draft
+                .templates
+                .push(Template::new("", "", &[], ""));
         }
         ui.add_space(6.0);
         let mut remove = None;
@@ -441,7 +448,9 @@ impl Ide {
                             ui.label(tr!("template_languages"));
                             let mut languages = template.languages.join(", ");
                             if ui
-                                .add(egui::TextEdit::singleline(&mut languages).desired_width(110.0))
+                                .add(
+                                    egui::TextEdit::singleline(&mut languages).desired_width(110.0),
+                                )
                                 .changed()
                             {
                                 template.languages = languages
@@ -508,11 +517,10 @@ impl Ide {
         });
         ui.add_space(12.0);
         group(ui, t, tr!("sync_folder"));
-        let shown = self
-            .settings
-            .sync_folder
-            .as_ref()
-            .map_or_else(|| tr!("no_sync_folder").to_string(), |p| p.display().to_string());
+        let shown = self.settings.sync_folder.as_ref().map_or_else(
+            || tr!("no_sync_folder").to_string(),
+            |p| p.display().to_string(),
+        );
         ui.label(RichText::new(shown).color(t.text_secondary));
         ui.horizontal(|ui| {
             if ui::button(ui, tr!("choose_folder")).clicked()

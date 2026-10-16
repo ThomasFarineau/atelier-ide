@@ -43,5 +43,9 @@ fn a_signature_over_several_lines_is_kept_whole_from_its_first_line() {
 fn parentheses_that_span_lines_are_not_blocks() {
     let code = "fn f() {\n    call(\n        one,\n        two,\n    );\n}\n";
     let s = state(code);
-    assert_eq!(s.block_headers(code, 2), vec![0], "only the function, not `call(`");
+    assert_eq!(
+        s.block_headers(code, 2),
+        vec![0],
+        "only the function, not `call(`"
+    );
 }

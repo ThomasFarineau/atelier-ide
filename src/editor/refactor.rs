@@ -198,11 +198,50 @@ fn mask(code: &str) -> String {
 /// the properties after a dot, not the keywords.
 fn identifiers(code: &str) -> Vec<(Range<usize>, String)> {
     const KEYWORDS: [&str; 44] = [
-        "const", "let", "var", "function", "return", "if", "else", "for", "while", "do", "switch",
-        "case", "break", "continue", "new", "delete", "typeof", "instanceof", "in", "of", "this",
-        "null", "undefined", "true", "false", "async", "await", "try", "catch", "finally", "throw",
-        "class", "extends", "super", "import", "export", "from", "default", "yield", "void", "static",
-        "get", "set", "as",
+        "const",
+        "let",
+        "var",
+        "function",
+        "return",
+        "if",
+        "else",
+        "for",
+        "while",
+        "do",
+        "switch",
+        "case",
+        "break",
+        "continue",
+        "new",
+        "delete",
+        "typeof",
+        "instanceof",
+        "in",
+        "of",
+        "this",
+        "null",
+        "undefined",
+        "true",
+        "false",
+        "async",
+        "await",
+        "try",
+        "catch",
+        "finally",
+        "throw",
+        "class",
+        "extends",
+        "super",
+        "import",
+        "export",
+        "from",
+        "default",
+        "yield",
+        "void",
+        "static",
+        "get",
+        "set",
+        "as",
     ];
     let masked = mask(code);
     words(&masked)
@@ -226,7 +265,11 @@ fn declared(code: &str) -> Vec<String> {
     let ids = identifiers(code);
     let mut out = Vec::new();
     for (range, name) in &ids {
-        let before: Vec<&str> = code[..range.start].split_whitespace().rev().take(1).collect();
+        let before: Vec<&str> = code[..range.start]
+            .split_whitespace()
+            .rev()
+            .take(1)
+            .collect();
         if matches!(before.first(), Some(&"const" | &"let" | &"var")) {
             out.push(name.clone());
         }
@@ -250,9 +293,15 @@ fn is_assigned(code: &str, ids: &[(Range<usize>, String)], name: &str) -> bool {
 
 fn function_header(line: &str) -> bool {
     let l = line.trim();
-    if l.starts_with("if ") || l.starts_with("if(") || l.starts_with("for") || l.starts_with("while")
-        || l.starts_with("switch") || l.starts_with("catch") || l.starts_with("} else")
-        || l.starts_with("else") || l.starts_with("try")
+    if l.starts_with("if ")
+        || l.starts_with("if(")
+        || l.starts_with("for")
+        || l.starts_with("while")
+        || l.starts_with("switch")
+        || l.starts_with("catch")
+        || l.starts_with("} else")
+        || l.starts_with("else")
+        || l.starts_with("try")
     {
         return false;
     }
@@ -433,9 +482,17 @@ fn declaration_at(text: &str, line: &Range<usize>, language: &str) -> Option<(St
     let rest = if language == "py" {
         l
     } else {
-        ["let mut ", "let ", "const ", "var ", "val ", "final var ", "final "]
-            .iter()
-            .find_map(|k| l.strip_prefix(k))?
+        [
+            "let mut ",
+            "let ",
+            "const ",
+            "var ",
+            "val ",
+            "final var ",
+            "final ",
+        ]
+        .iter()
+        .find_map(|k| l.strip_prefix(k))?
     };
     let (name, value) = rest.split_once('=')?;
     if value.starts_with('=') || name.contains(['(', ',', '{', '[']) {
@@ -496,14 +553,22 @@ pub fn inline_variable(
     for r in &uses {
         let next = text[r.end..].trim_start();
         let assigned = (next.starts_with('=') && !next.starts_with("=="))
-            || ["+=", "-=", "*=", "/=", "++", "--"].iter().any(|op| next.starts_with(op));
+            || ["+=", "-=", "*=", "/=", "++", "--"]
+                .iter()
+                .any(|op| next.starts_with(op));
         if assigned {
             return Err(tr!("inline_reassigned").to_string());
         }
     }
-    let simple = value.chars().all(|c| is_word(c) || c == '$' || c == '.' || c == '"' || c == '\'')
+    let simple = value
+        .chars()
+        .all(|c| is_word(c) || c == '$' || c == '.' || c == '"' || c == '\'')
         || (value.starts_with('(') && value.ends_with(')') && open_parens(&value) == 0);
-    let replacement = if simple { value.clone() } else { format!("({value})") };
+    let replacement = if simple {
+        value.clone()
+    } else {
+        format!("({value})")
+    };
     let mut edits = vec![TextEdit {
         range: declaration_line.start..(declaration_line.end + 1).min(text.len()),
         new_text: String::new(),
@@ -614,7 +679,10 @@ pub fn extract_method(
             function.push('\n');
         } else {
             function.push_str(&inner);
-            function.push_str(line.strip_prefix(selection_indent.as_str()).unwrap_or(line.trim_start()));
+            function.push_str(
+                line.strip_prefix(selection_indent.as_str())
+                    .unwrap_or(line.trim_start()),
+            );
             function.push('\n');
         }
     }
@@ -622,12 +690,12 @@ pub fn extract_method(
         function.push_str(&format!("{inner}return {value};\n"));
     }
     function.push_str(&format!("{outer}}}\n\n"));
-    let call = format!(
-        "{}({})",
-        name,
-        params.join(", ")
-    );
-    let call = if is_await { format!("await {call}") } else { call };
+    let call = format!("{}({})", name, params.join(", "));
+    let call = if is_await {
+        format!("await {call}")
+    } else {
+        call
+    };
     let statement = match returned.first() {
         Some(value) if assigned.contains(value) => format!("{selection_indent}{value} = {call};"),
         Some(value) => format!("{selection_indent}const {value} = {call};"),
@@ -637,7 +705,10 @@ pub fn extract_method(
         Some(l) => line_starts[l],
         None => first,
     };
-    let name_at = first + function.len() + selection_indent.len() + statement[selection_indent.len()..].find(&name).unwrap_or(0);
+    let name_at = first
+        + function.len()
+        + selection_indent.len()
+        + statement[selection_indent.len()..].find(&name).unwrap_or(0);
     Ok(Change {
         edits: vec![
             TextEdit {
@@ -734,7 +805,8 @@ impl EditorState {
             Native::ExtractMethod => {
                 let headers = self.headers_at(text, selection.start);
                 let starts = self.line_starts();
-                let ends: Vec<(usize, usize)> = self.regions.iter().map(|r| (r.first, r.last)).collect();
+                let ends: Vec<(usize, usize)> =
+                    self.regions.iter().map(|r| (r.first, r.last)).collect();
                 let block_end_of = |line: usize| {
                     let last = ends
                         .iter()

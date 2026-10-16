@@ -143,9 +143,29 @@ pub fn checker() -> Option<Arc<Checker>> {
 pub fn supports(language: &str) -> bool {
     matches!(
         language,
-        "rs" | "js" | "ts" | "jsx" | "tsx" | "java" | "c" | "cpp" | "h" | "cs" | "go" | "kt"
-            | "swift" | "php" | "py" | "sh" | "rb" | "yaml" | "yml" | "toml" | "md" | "txt"
-            | "rst" | "adoc"
+        "rs" | "js"
+            | "ts"
+            | "jsx"
+            | "tsx"
+            | "java"
+            | "c"
+            | "cpp"
+            | "h"
+            | "cs"
+            | "go"
+            | "kt"
+            | "swift"
+            | "php"
+            | "py"
+            | "sh"
+            | "rb"
+            | "yaml"
+            | "yml"
+            | "toml"
+            | "md"
+            | "txt"
+            | "rst"
+            | "adoc"
     )
 }
 
@@ -277,10 +297,7 @@ fn push_word(
     }
     let word: String = chars[first..end].iter().map(|(_, c)| *c).collect();
     // Names of the code, acronyms and words of other alphabets are not for the dictionary.
-    let inner_capital = word
-        .chars()
-        .skip(1)
-        .any(char::is_uppercase);
+    let inner_capital = word.chars().skip(1).any(char::is_uppercase);
     if inner_capital {
         return;
     }
@@ -291,10 +308,8 @@ fn push_word(
         return;
     }
     // A file name or an address: `name.ext`, `.ext`.
-    let dotted_after = after == Some('.')
-        && chars
-            .get(end + 1)
-            .is_some_and(|(_, c)| c.is_alphanumeric());
+    let dotted_after =
+        after == Some('.') && chars.get(end + 1).is_some_and(|(_, c)| c.is_alphanumeric());
     if dotted_after || (before == Some('.') && first >= 2 && chars[first - 2].1.is_alphanumeric()) {
         return;
     }

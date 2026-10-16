@@ -146,10 +146,8 @@ impl EditorState {
     /// Draws the breadcrumbs and takes a click on one of them: the caret goes there.
     pub(super) fn show_crumbs(&mut self, ui: &mut Ui, text: &str, opt: &Options) {
         let t = opt.theme;
-        let (rect, _) = ui.allocate_exact_size(
-            vec2(ui.available_width(), CRUMB_HEIGHT),
-            Sense::hover(),
-        );
+        let (rect, _) =
+            ui.allocate_exact_size(vec2(ui.available_width(), CRUMB_HEIGHT), Sense::hover());
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 0.0, t.island);
         painter.line_segment(
@@ -178,7 +176,8 @@ impl EditorState {
             }
             let color = if i == last { t.text } else { t.text_secondary };
             let galley = painter.layout_no_wrap(name, font.clone(), color);
-            let bounds = Rect::from_min_size(pos2(x, rect.top()), vec2(galley.size().x, CRUMB_HEIGHT));
+            let bounds =
+                Rect::from_min_size(pos2(x, rect.top()), vec2(galley.size().x, CRUMB_HEIGHT));
             if let Some(at) = at {
                 let response = ui.interact(bounds, egui::Id::new(("crumb", i)), Sense::click());
                 if response.hovered() {

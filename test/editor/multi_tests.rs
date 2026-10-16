@@ -21,7 +21,10 @@ fn next_occurrence_adds_a_caret_and_typing_edits_both() {
     s.each_caret(&mut text, |s, t, _| s.type_text(t, "x"));
     assert_eq!(text, "x bar x");
     assert!(s.undo(&mut text));
-    assert_eq!(text, "foo bar foo", "one undo takes back the edit of every caret");
+    assert_eq!(
+        text, "foo bar foo",
+        "one undo takes back the edit of every caret"
+    );
     assert!(!s.has_extras());
     assert!(s.redo(&mut text));
     assert_eq!(text, "x bar x");

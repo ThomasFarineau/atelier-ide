@@ -149,12 +149,12 @@ impl EditorState {
         let found = text[selection.end..]
             .match_indices(needle)
             .map(|(i, _)| selection.end + i)
-            .chain(text[..selection.start].match_indices(needle).map(|(i, _)| i))
-            .find(|&at| {
-                !taken
-                    .iter()
-                    .any(|c| overlap(*c, (at + needle.len(), at)))
-            });
+            .chain(
+                text[..selection.start]
+                    .match_indices(needle)
+                    .map(|(i, _)| i),
+            )
+            .find(|&at| !taken.iter().any(|c| overlap(*c, (at + needle.len(), at))));
         let Some(at) = found else { return };
         let length = needle.len();
         self.extras.push((self.cursor, self.anchor));
@@ -241,7 +241,11 @@ impl EditorState {
                 } else {
                     offset_of(content, right)
                 };
-            carets.push(if backwards { (start, end) } else { (end, start) });
+            carets.push(if backwards {
+                (start, end)
+            } else {
+                (end, start)
+            });
         }
         if carets.is_empty() {
             return;
