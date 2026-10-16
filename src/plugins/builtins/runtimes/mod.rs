@@ -1,17 +1,14 @@
 //! Runtimes built-in plugin: a Python, JDKs and Node.js installed in the project itself
-//! (`install`), put first on the PATH of its terminals, and Jupyter notebooks run with the
-//! Python of the project (`notebook`, `kernel`).
+//! (`install`), put first on the PATH of its terminals. The Jupyter and Node.js plugins run with
+//! them.
 
 pub mod install;
-pub mod kernel;
-pub mod notebook;
 
 use crate::i18n::Text;
-use crate::plugins::builtin::{BuiltinPlugin, Command, Dock, EditorLayout, Host, ToolWindow};
+use crate::plugins::builtin::{BuiltinPlugin, Command, Dock, Host, ToolWindow};
 use crate::ui;
 use eframe::egui::{self, RichText};
 use install::{Kind, Offer, Step};
-use notebook::Request;
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
@@ -32,8 +29,6 @@ pub static TOOL_WINDOWS: [ToolWindow; 1] = [ToolWindow {
 
 /// How often the installed runtimes and the pin files are looked at again.
 const CHECK_EVERY: Duration = Duration::from_secs(3);
-/// The packages a notebook needs in the Python of the project.
-const JUPYTER: [&str; 2] = ["ipykernel", "jupyter_client"];
 
 enum Catalog {
     Loading(JoinHandle<Result<Vec<Offer>, String>>),
@@ -96,9 +91,6 @@ pub struct RuntimesPlugin {
     job: Option<Job>,
     /// The pin files already pointed out.
     offered: HashSet<Kind>,
-    layouts: HashMap<PathBuf, EditorLayout>,
-    views: HashMap<PathBuf, notebook::View>,
-    requests: Vec<Request>,
 }
 
 impl RuntimesPlugin {
@@ -161,14 +153,6 @@ impl RuntimesPlugin {
         });
     }
 
-    /// The Python commands run with: the one of the project, else the one of the system.
-    fn python(&self) -> String {
-        install::python(&self.root).map_or_else(
-            || if cfg!(windows) { "python" } else { "python3" }.to_string(),
-            |p| p.to_string_lossy().into_owned(),
-        )
-    }
-
     fn run(&self, host: &mut dyn Host, name: String, program: &str, args: &[&str]) {
         let args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
         let command = crate::plugins::command_in(&self.root, &self.root, program, &args);
@@ -186,38 +170,6 @@ impl RuntimesPlugin {
             &python,
             &["-m", "venv", ".venv"],
         );
-    }
-
-    fn install_jupyter(&self, host: &mut dyn Host) {
-        let mut args = vec!["-m", "pip", "install"];
-        args.extend(JUPYTER);
-        self.run(host, "pip install ipykernel".into(), &self.python(), &args);
-    }
-
-    fn open_jupyterlab(&self, host: &mut dyn Host, path: Option<&Path>) {
-        let mut args = vec!["-m".to_string(), "jupyter".into(), "lab".into()];
-        if let Some(path) = path {
-            args.push(path.to_string_lossy().into_owned());
-        }
-        let args: Vec<&str> = args.iter().map(String::as_str).collect();
-        self.run(host, "jupyter lab".into(), &self.python(), &args);
-    }
-
-    fn new_notebook(&self, host: &mut dyn Host) {
-        let path = (0..)
-            .map(|n| match n {
-                0 => self.root.join("Untitled.ipynb"),
-                n => self.root.join(format!("Untitled{n}.ipynb")),
-            })
-            .find(|p| !p.exists())
-            .expect("a free name");
-        match std::fs::write(&path, notebook::to_text(&notebook::empty())) {
-            Ok(()) => {
-                host.reload_files();
-                host.open_file(path);
-            }
-            Err(e) => host.notify(format!("{}{e}", tr!("error_prefix"))),
-        }
     }
 
     fn section(&mut self, ui: &mut egui::Ui, kind: Kind, host: &mut dyn Host) {
@@ -373,35 +325,21 @@ impl RuntimesPlugin {
                 }
             }
         }
-        ui.horizontal_wrapped(|ui| {
-            if ui::button(ui, tr!("runtimes.install_jupyter")).clicked() {
-                self.install_jupyter(host);
-            }
-            if ui::button(ui, tr!("runtimes.new_notebook")).clicked() {
-                self.new_notebook(host);
-            }
-        });
     }
 }
 
 impl BuiltinPlugin for RuntimesPlugin {
-    fn file_closed(&mut self, _ctx: &egui::Context, path: &Path) {
-        self.views.remove(path);
-    }
     fn id(&self) -> &'static str {
         "runtimes"
     }
     fn name(&self) -> &'static str {
-        "Runtimes & Jupyter"
+        "Runtimes"
     }
     fn description(&self) -> &'static str {
         tr!("runtimes.description")
     }
     fn icon(&self) -> &'static str {
         "runtimes/icon"
-    }
-    fn extensions_dir(&self) -> Option<&'static str> {
-        Some("runtimes")
     }
     fn tool_windows(&self) -> &'static [ToolWindow] {
         &TOOL_WINDOWS
@@ -434,13 +372,6 @@ impl BuiltinPlugin for RuntimesPlugin {
                     );
                 }
             }
-            // The kernels of the notebooks that were closed.
-            let open: HashSet<PathBuf> = host
-                .open_documents()
-                .into_iter()
-                .filter_map(|d| d.path)
-                .collect();
-            self.views.retain(|path, _| open.contains(path));
         }
         for kind in Kind::ALL {
             if let Some(Catalog::Loading(handle)) = self.catalogs.get(&kind)
@@ -478,27 +409,11 @@ impl BuiltinPlugin for RuntimesPlugin {
             self.refresh();
             ctx.request_repaint();
         }
-        for request in std::mem::take(&mut self.requests) {
-            match request {
-                Request::InstallJupyter => self.install_jupyter(host),
-                Request::OpenJupyterLab(path) => self.open_jupyterlab(host, Some(&path)),
-                Request::ShowRuntimes => host.show_tool_window(&TOOL_WINDOWS[0]),
-            }
-        }
     }
 
     fn commands(&self) -> Vec<Command> {
         [
             ("runtimes.window", tr!("runtimes.command_window")),
-            (
-                "runtimes.new_notebook",
-                tr!("runtimes.command_new_notebook"),
-            ),
-            (
-                "runtimes.install_jupyter",
-                tr!("runtimes.command_install_jupyter"),
-            ),
-            ("runtimes.jupyterlab", tr!("runtimes.command_jupyterlab")),
             ("runtimes.venv", tr!("runtimes.command_venv")),
         ]
         .into_iter()
@@ -512,12 +427,6 @@ impl BuiltinPlugin for RuntimesPlugin {
     fn run_command(&mut self, id: &str, host: &mut dyn Host) {
         match id {
             "runtimes.window" => host.show_tool_window(&TOOL_WINDOWS[0]),
-            "runtimes.new_notebook" => self.new_notebook(host),
-            "runtimes.install_jupyter" => self.install_jupyter(host),
-            "runtimes.jupyterlab" => {
-                let active = host.active_file().filter(|p| notebook::is_notebook(p));
-                self.open_jupyterlab(host, active.as_deref());
-            }
             "runtimes.venv" => self.create_venv(host),
             _ => {}
         }
@@ -550,30 +459,6 @@ impl BuiltinPlugin for RuntimesPlugin {
                     ui.separator();
                 }
             });
-    }
-
-    fn editor_layout(&self, path: &Path) -> Option<EditorLayout> {
-        notebook::is_notebook(path).then(|| {
-            self.layouts
-                .get(path)
-                .copied()
-                .unwrap_or(EditorLayout::Preview)
-        })
-    }
-
-    fn set_editor_layout(&mut self, path: &Path, layout: EditorLayout) {
-        self.layouts.insert(path.to_path_buf(), layout);
-    }
-
-    fn preview(&mut self, ui: &mut egui::Ui, path: &Path, text: &mut String, _scroll: Option<f32>) {
-        let root = self.root.clone();
-        self.views.entry(path.to_path_buf()).or_default().show(
-            ui,
-            &root,
-            path,
-            text,
-            &mut self.requests,
-        );
     }
 }
 
