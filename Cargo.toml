@@ -7,12 +7,12 @@ repository = "https://github.com/ThomasFarineau/atelier-ide"
 default-run = "atelier-ide"
 
 [dependencies]
-eframe = { version = "0.33", features = ["persistence"] }
-egui_extras = { version = "0.33", features = ["syntect", "svg", "svg_text", "image", "file"] }
+eframe = { version = "0.36", features = ["persistence"] }
+egui_extras = { version = "0.36", features = ["syntect", "svg", "svg_text", "image", "file"] }
 # Same version as the one the diagram renderer uses: the picture of a diagram is drawn off the interface.
 resvg = { version = "0.47", default-features = false, features = ["text"] }
 mermaid-rs-renderer = { version = "0.3", default-features = false, features = ["png"] }
-egui_commonmark = { version = "0.22", features = ["better_syntax_highlighting", "svg"] }
+egui_commonmark = { version = "0.25", features = ["better_syntax_highlighting", "svg"] }
 # The parser of egui_commonmark: where the HTML of a Markdown document is.
 pulldown-cmark = { version = "0.13", default-features = false }
 # The name of an installed font and whether it is monospaced.
