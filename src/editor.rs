@@ -9,8 +9,8 @@ mod actions;
 mod assist;
 mod context;
 mod fold;
-mod intentions;
 mod intel;
+mod intentions;
 mod multi;
 mod refactor;
 mod spell;
@@ -247,8 +247,8 @@ pub struct Options<'a> {
     pub sticky_lines: bool,
     /// The path of the code at the caret above the editor.
     pub breadcrumbs: bool,
-    /// The lines (0-based) that have a bookmark.
-    pub bookmarks: &'a [usize],
+    /// The lines (0-based) that have a bookmark, and its number when it has one.
+    pub bookmarks: &'a [(usize, Option<u8>)],
     /// The misspelled words of the comments and strings are underlined.
     pub spellcheck: bool,
 }
@@ -292,7 +292,9 @@ fn allowed_when_read_only(event: &egui::Event) -> bool {
             | Key::PageDown
             | Key::Home
             | Key::End
-            | Key::Escape => !(modifiers.shift && (modifiers.alt || modifiers.command)) || *key == Key::Escape,
+            | Key::Escape => {
+                !(modifiers.shift && (modifiers.alt || modifiers.command)) || *key == Key::Escape
+            }
             Key::A | Key::W | Key::M | Key::Period | Key::Minus | Key::Equals | Key::Plus => {
                 modifiers.command
             }
@@ -1845,9 +1847,8 @@ impl EditorState {
                         // Alt+drag: a block of columns, a caret on each of its lines.
                         let line =
                             self.line_at(((pos.y - origin.y) / row).floor().max(0.0) as usize);
-                        let column = ((pos.x - origin.x - text_x) / char_width)
-                            .round()
-                            .max(0.0) as usize;
+                        let column =
+                            ((pos.x - origin.x - text_x) / char_width).round().max(0.0) as usize;
                         let from = *self.column_anchor.get_or_insert((line, column));
                         self.select_columns(text, from, (line, column));
                     } else if pressed {
@@ -1982,7 +1983,9 @@ impl EditorState {
                                     - range.start.min(selection.end.min(range.end)),
                             );
                             let x0 = galley
-                                .pos_from_cursor(CCursor::new(self.visual_column(text, index, from)))
+                                .pos_from_cursor(CCursor::new(
+                                    self.visual_column(text, index, from),
+                                ))
                                 .min
                                 .x;
                             let x1 = galley
@@ -2064,7 +2067,9 @@ impl EditorState {
                                 column_of(self.line(text, index), self.cursor - range.start);
                             let x = text_left
                                 + galley
-                                    .pos_from_cursor(CCursor::new(self.visual_column(text, index, column)))
+                                    .pos_from_cursor(CCursor::new(
+                                        self.visual_column(text, index, column),
+                                    ))
                                     .min
                                     .x;
                             painter.line_segment(
@@ -2090,7 +2095,9 @@ impl EditorState {
                             let column = column_of(self.line(text, index), cursor - range.start);
                             let x = text_left
                                 + galley
-                                    .pos_from_cursor(CCursor::new(self.visual_column(text, index, column)))
+                                    .pos_from_cursor(CCursor::new(
+                                        self.visual_column(text, index, column),
+                                    ))
                                     .min
                                     .x;
                             painter.line_segment(
@@ -2150,19 +2157,30 @@ impl EditorState {
                         opt.font.clone(),
                         color,
                     );
-                    if opt.bookmarks.contains(&index) {
+                    if let Some((_, number)) = opt.bookmarks.iter().find(|(l, _)| *l == index) {
                         let x = left + 3.0;
+                        // A numbered one is wider, to hold its digit.
+                        let w = if number.is_some() { 11.0 } else { 7.0 };
                         painter.add(egui::Shape::convex_polygon(
                             vec![
-                                pos2(x, y + 3.0),
-                                pos2(x + 7.0, y + 3.0),
-                                pos2(x + 7.0, y + row - 3.0),
-                                pos2(x + 3.5, y + row - 6.0),
-                                pos2(x, y + row - 3.0),
+                                pos2(x, y + 2.0),
+                                pos2(x + w, y + 2.0),
+                                pos2(x + w, y + row - 2.0),
+                                pos2(x + w / 2.0, y + row - 5.0),
+                                pos2(x, y + row - 2.0),
                             ],
                             t.accent,
                             Stroke::NONE,
                         ));
+                        if let Some(n) = number {
+                            painter.text(
+                                pos2(x + w / 2.0, y + (row - 4.0) / 2.0 + 2.0),
+                                egui::Align2::CENTER_CENTER,
+                                n.to_string(),
+                                FontId::proportional(9.0),
+                                Color32::WHITE,
+                            );
+                        }
                     }
                     for mark in marks_at(index) {
                         let x = left + marks_x + 2.0;

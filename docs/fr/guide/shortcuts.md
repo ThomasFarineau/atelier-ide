@@ -16,6 +16,7 @@ Sur macOS, utilisez Cmd pour les raccourcis Ctrl de l'éditeur.
 | Ctrl+E / Ctrl+Maj+E | Fichiers récents / emplacements récents |
 | Ctrl+Tab | Changer de fichier (Ctrl tenu, Tab continue, relâcher ouvre) |
 | F11 / Maj+F11 | Poser ou retirer un signet / lister les signets |
+| Ctrl+Maj+1…9 / Ctrl+1…9 | Donner un numéro au signet de la ligne / aller au signet qui a ce numéro |
 | Ctrl+Maj+N | Aller au fichier |
 | Ctrl+N | Aller au symbole (classes, fonctions et types du projet) |
 | Ctrl+Alt+S | Paramètres |

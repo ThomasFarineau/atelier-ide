@@ -1,4 +1,4 @@
-//! Split Right: a second editor beside the first. It shows the file that was active when it was
+//! Split Right and Split Down: a second editor beside or under the first. It shows the file that was active when it was
 //! opened, with a view of its own (caret, scroll, folds): the text is the document's, so what is
 //! typed in one editor shows in the other. Another file can be put there by making it active and
 //! splitting again.
@@ -17,14 +17,16 @@ pub struct SplitPane {
     /// The file shown; the pane goes away when it is closed.
     pub path: PathBuf,
     pub view: EditorState,
+    /// Under the first editor rather than beside it.
+    pub down: bool,
     /// The revision of the document's own view the last time this one was drawn: a change means
     /// the text moved under it.
     seen: u64,
 }
 
 impl Ide {
-    /// Split Right: the active file in a second editor.
-    pub(super) fn split_right(&mut self) {
+    /// Split Right (or Down): the active file in a second editor.
+    pub(super) fn split_to(&mut self, down: bool) {
         let Some(doc) = self.documents.get(self.active) else {
             return;
         };
@@ -37,6 +39,7 @@ impl Ide {
         self.split = Some(SplitPane {
             path,
             view,
+            down,
             seen: u64::MAX,
         });
     }

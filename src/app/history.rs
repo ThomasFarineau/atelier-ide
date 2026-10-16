@@ -102,6 +102,58 @@ pub fn changes(old: &str, new: &str) -> (usize, usize) {
     (added, removed)
 }
 
+/// A saved version set against the text now, in the window that offers to restore it.
+pub struct Comparison {
+    pub version: PathBuf,
+    pub when: String,
+    pub rows: Vec<Row>,
+}
+
+/// A line of the comparison of two texts.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Row {
+    Same(usize, String),
+    Added(usize, String),
+    Removed(usize, String),
+    /// Lines left out between two groups of changes.
+    Skipped(usize),
+}
+
+/// How many unchanged lines are kept around a change.
+const CONTEXT: usize = 3;
+
+/// The changes that go from `old` to `new`, with a few lines around each. The numbers are
+/// 1-based: the line of `old` for a removed one, of `new` for the others.
+pub fn compare(old: &str, new: &str) -> Vec<Row> {
+    let diff = similar::TextDiff::from_lines(old, new);
+    let mut rows = Vec::new();
+    let mut last_end = 0;
+    for group in diff.grouped_ops(CONTEXT) {
+        let start = group.first().map_or(0, |op| op.new_range().start);
+        if start > last_end && !rows.is_empty() {
+            rows.push(Row::Skipped(start - last_end));
+        }
+        for op in &group {
+            for change in diff.iter_changes(op) {
+                let text = change.value().trim_end_matches(['\n', '\r']).to_string();
+                rows.push(match change.tag() {
+                    similar::ChangeTag::Equal => {
+                        Row::Same(change.new_index().unwrap_or(0) + 1, text)
+                    }
+                    similar::ChangeTag::Insert => {
+                        Row::Added(change.new_index().unwrap_or(0) + 1, text)
+                    }
+                    similar::ChangeTag::Delete => {
+                        Row::Removed(change.old_index().unwrap_or(0) + 1, text)
+                    }
+                });
+            }
+        }
+        last_end = group.last().map_or(0, |op| op.new_range().end);
+    }
+    rows
+}
+
 #[cfg(test)]
 #[path = "../../test/app/history/tests.rs"]
 mod tests;

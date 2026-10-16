@@ -2,8 +2,22 @@
 
 use super::{Hit, Ide, NavPoint, PaletteKey, PaletteMode, Target, bookmarks, history};
 use crate::ui;
-use eframe::egui::{self, Align2, FontId, Key, Margin, RichText, pos2, vec2};
+use eframe::egui::{self, Align2, FontId, Key, Margin, RichText, Sense, pos2, vec2};
 use std::{fs, path::Path};
+
+/// How long ago a time was, as said in the list of versions.
+fn since(now: std::time::SystemTime, at: u64) -> String {
+    let now = now
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64);
+    let seconds = now.saturating_sub(at) / 1000;
+    match seconds {
+        0..60 => tr!("just_now").into(),
+        60..3600 => trf!("min_ago", s = seconds / 60),
+        3600..86_400 => trf!("h_ago", s = seconds / 3600),
+        _ => trf!("days_ago", s = seconds / 86_400),
+    }
+}
 
 /// Places shown by Recent Locations at most.
 const LOCATIONS: usize = 60;
@@ -13,7 +27,10 @@ const PREVIEW_LIMIT: u64 = 1024 * 1024;
 /// The 0-based line holding `offset` in `text`, and that line trimmed.
 fn line_at(text: &str, offset: usize) -> (usize, String) {
     let offset = offset.min(text.len());
-    let line = text.as_bytes()[..offset].iter().filter(|&&b| b == b'\n').count();
+    let line = text.as_bytes()[..offset]
+        .iter()
+        .filter(|&&b| b == b'\n')
+        .count();
     let preview = text.lines().nth(line).unwrap_or("").trim().to_string();
     (line, preview)
 }
@@ -248,6 +265,38 @@ impl Ide {
         };
     }
 
+    /// Ctrl+Shift+number: the number on the bookmark of the caret line.
+    pub(super) fn number_bookmark(&mut self, number: u8) {
+        let Some(doc) = self.documents.get(self.active) else {
+            return;
+        };
+        let Some(path) = doc.path.clone() else {
+            return;
+        };
+        let line = doc.view.position(&doc.text).0 - 1;
+        let text = doc.text.lines().nth(line).unwrap_or("").to_string();
+        let set = bookmarks::number(&mut self.bookmarks, &path, line, &text, number);
+        bookmarks::save(&crate::cli::data_dir(), &self.root, &self.bookmarks);
+        self.status = if set {
+            trf!("bookmark_numbered", n = number)
+        } else {
+            tr!("bookmark_removed").into()
+        };
+    }
+
+    /// Ctrl+number: goes to the bookmark that has it.
+    pub(super) fn go_to_bookmark(&mut self, number: u8) {
+        let found = self
+            .bookmarks
+            .iter()
+            .find(|b| b.number == Some(number))
+            .map(|b| (b.path.clone(), b.line));
+        match found {
+            Some((path, line)) => crate::plugins::builtin::Host::open_at(self, path, line, 0, 0),
+            None => self.status = trf!("bookmark_missing", n = number),
+        }
+    }
+
     /// The lines of a document that have a bookmark; the bookmarks follow their line first when
     /// the text changed. Takes the fields it needs, so that the document can stay borrowed.
     pub(super) fn bookmark_lines(
@@ -258,7 +307,7 @@ impl Ide {
         path: &Option<std::path::PathBuf>,
         text: &str,
         revision: u64,
-    ) -> Vec<usize> {
+    ) -> Vec<(usize, Option<u8>)> {
         let Some(path) = path else {
             return Vec::new();
         };
@@ -274,7 +323,7 @@ impl Ide {
         }
         list.iter()
             .filter(|b| &b.path == path)
-            .map(|b| b.line)
+            .map(|b| (b.line, b.number))
             .collect()
     }
 
@@ -296,9 +345,17 @@ impl Ide {
                     .unwrap_or_default()
                     .to_string_lossy()
                     .into_owned();
+                let place = format!("{name}:{}", b.line + 1);
                 Hit {
-                    label: if b.text.is_empty() { name.clone() } else { b.text.clone() },
-                    hint: format!("{name}:{}", b.line + 1),
+                    label: if b.text.is_empty() {
+                        name.clone()
+                    } else {
+                        b.text.clone()
+                    },
+                    hint: match b.number {
+                        Some(n) => format!("{n}  {place}"),
+                        None => place,
+                    },
                     icon: None,
                     file: Some(b.path.clone()),
                     target: Target::Place(b.path.clone(), b.line),
@@ -329,22 +386,14 @@ impl Ide {
             return hits.clone();
         }
         let current = doc.text.clone();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_millis() as u64);
+        let now = std::time::SystemTime::now();
         let hits: Vec<Hit> = history::list(&crate::cli::data_dir(), &self.root, &path)
             .into_iter()
             .map(|version| {
                 let (added, removed) = std::fs::read_to_string(&version.path)
                     .map(|old| history::changes(&current, &old))
                     .unwrap_or((0, 0));
-                let seconds = now.saturating_sub(version.at) / 1000;
-                let when = match seconds {
-                    0..60 => tr!("just_now").into(),
-                    60..3600 => trf!("min_ago", s = seconds / 60),
-                    3600..86_400 => trf!("h_ago", s = seconds / 3600),
-                    _ => trf!("days_ago", s = seconds / 86_400),
-                };
+                let when = since(now, version.at);
                 Hit {
                     label: when,
                     hint: format!("+{added} −{removed}  {} B", version.size),
@@ -356,6 +405,107 @@ impl Ide {
             .collect();
         self.palette_cache = Some((key, hits.clone()));
         hits
+    }
+
+    /// Opens the window that sets a saved version against the active document.
+    pub(super) fn compare_version(&mut self, version: &Path) {
+        let Ok(old) = std::fs::read_to_string(version) else {
+            self.status = tr!("version_unreadable").into();
+            return;
+        };
+        let Some(doc) = self.documents.get(self.active) else {
+            return;
+        };
+        let at = version
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(0);
+        self.comparison = Some(history::Comparison {
+            version: version.to_path_buf(),
+            when: since(std::time::SystemTime::now(), at),
+            rows: history::compare(&doc.text, &old),
+        });
+    }
+
+    /// The comparison of a saved version with the text now: what restoring it would change,
+    /// with buttons to restore it or to close the window.
+    pub(super) fn comparison_window(&mut self, ctx: &egui::Context) {
+        let Some(comparison) = &self.comparison else {
+            return;
+        };
+        let t = self.theme(ctx);
+        let mut restore = false;
+        let modal = egui::Modal::new(egui::Id::new("history_comparison")).show(ctx, |ui| {
+            ui.set_width((ctx.content_rect().width() * 0.7).clamp(420.0, 1000.0));
+            ui::dialog_title(ui, &trf!("version_of", when = comparison.when));
+            ui.label(
+                RichText::new(tr!("version_compare_hint"))
+                    .small()
+                    .color(t.text_secondary),
+            );
+            ui.add_space(6.0);
+            let font = FontId::monospace(self.settings.font_size);
+            let row_height = ui.fonts_mut(|f| f.row_height(&font)) + 2.0;
+            if comparison.rows.is_empty() {
+                ui.label(tr!("version_same"));
+            }
+            egui::ScrollArea::both()
+                .max_height((ctx.content_rect().height() * 0.6).max(200.0))
+                .auto_shrink([false, true])
+                .show_rows(ui, row_height, comparison.rows.len(), |ui, range| {
+                    for row in &comparison.rows[range] {
+                        let (number, line, fill) = match row {
+                            history::Row::Same(n, text) => {
+                                (n.to_string(), format!("  {text}"), None)
+                            }
+                            history::Row::Added(n, text) => {
+                                (n.to_string(), format!("+ {text}"), Some(t.diff_inserted))
+                            }
+                            history::Row::Removed(n, text) => {
+                                (n.to_string(), format!("- {text}"), Some(t.diff_deleted))
+                            }
+                            history::Row::Skipped(n) => {
+                                (String::new(), trf!("lines_skipped", n = n), None)
+                            }
+                        };
+                        let (rect, _) = ui.allocate_exact_size(
+                            vec2(ui.available_width().max(600.0), row_height),
+                            Sense::hover(),
+                        );
+                        let painter = ui.painter_at(rect);
+                        if let Some(fill) = fill {
+                            painter.rect_filled(rect, 0.0, fill);
+                        }
+                        painter.text(
+                            pos2(rect.left() + 40.0, rect.center().y),
+                            Align2::RIGHT_CENTER,
+                            number,
+                            font.clone(),
+                            t.line_number,
+                        );
+                        painter.text(
+                            pos2(rect.left() + 50.0, rect.center().y),
+                            Align2::LEFT_CENTER,
+                            line,
+                            font.clone(),
+                            t.text,
+                        );
+                    }
+                });
+            ui::dialog_buttons(ui, tr!("restore"))
+        });
+        let (ok, cancel) = modal.inner;
+        if ok {
+            restore = true;
+        }
+        if restore {
+            if let Some(comparison) = self.comparison.take() {
+                self.restore_version(&comparison.version);
+            }
+        } else if cancel || modal.should_close() {
+            self.comparison = None;
+        }
     }
 
     /// Puts a saved version in the active document, as an edit that can be undone.

@@ -33,13 +33,13 @@ mod fonts_page;
 mod history;
 mod inspect;
 mod navigation;
-mod portable;
-mod split;
 mod plugins_page;
+mod portable;
 mod projects_page;
 mod reformat;
 mod run_configs;
 mod settings_page;
+mod split;
 mod symbols;
 use crate::editor::FormatRequest;
 use settings_page::{Draft, Page, RunTool};
@@ -75,7 +75,7 @@ static NOTIFICATIONS_TOOL: ToolWindow = ToolWindow {
 };
 
 /// Actions of Search Everywhere and of the main menu: (label, shortcut, icon).
-const ACTIONS: [(Text, &str, &str); 20] = [
+const ACTIONS: [(Text, &str, &str); 21] = [
     (Text("open_project_dialog"), "", "project"),
     (Text("open_file_dialog"), "Ctrl+O", "openNewTab"),
     (Text("save_all"), "Ctrl+S", "save"),
@@ -93,12 +93,13 @@ const ACTIONS: [(Text, &str, &str); 20] = [
     (Text("toggle_bookmark"), "F11", "add"),
     (Text("show_bookmarks"), "Shift+F11", "project"),
     (Text("show_history"), "", "refresh"),
-    (Text("split_right"), "", "editorPreview"),
+    (Text("split_right"), "", "sideBySide"),
+    (Text("split_down"), "", "unified"),
     (Text("close_split"), "", "editorOnly"),
     (Text("inspect_code"), "", "problems"),
 ];
 
-const SHORTCUTS: [(Text, Text); 62] = [
+const SHORTCUTS: [(Text, Text); 64] = [
     (Text("ctrl_o"), Text("open_file")),
     (Text("ctrl_n"), Text("go_symbol")),
     (Text("alt_insert"), Text("new_file")),
@@ -159,6 +160,8 @@ const SHORTCUTS: [(Text, Text); 62] = [
     (Text("ctrl_tab"), Text("switch_file")),
     (Text("f11"), Text("toggle_bookmark")),
     (Text("shift_f11"), Text("show_bookmarks")),
+    (Text("ctrl_shift_1_9"), Text("numbered_bookmark")),
+    (Text("ctrl_1_9"), Text("go_numbered_bookmark")),
     (Text("alt_j"), Text("add_next_occurrence")),
     (Text("ctrl_alt_shift_j"), Text("select_all_occurrences")),
     (Text("alt_shift_click"), Text("add_remove_caret")),
@@ -445,6 +448,8 @@ pub struct Ide {
     switcher: Option<usize>,
     /// The second editor beside the first one (Split Right).
     split: Option<split::SplitPane>,
+    /// A saved version of the active file, set against the text now (Local History).
+    comparison: Option<history::Comparison>,
     /// What Inspect Code found in the project files.
     inspection: Option<inspect::Inspection>,
     /// The lines to come back to, and the document and revision they were last matched to.
@@ -650,6 +655,7 @@ impl Ide {
             palette_cache: None,
             switcher: None,
             split: None,
+            comparison: None,
             inspection: None,
             new_name: String::new(),
             tree_dialog: None,
@@ -1585,8 +1591,9 @@ impl Ide {
             14 => self.toggle_bookmark(),
             15 => self.open_palette_as(PaletteMode::Bookmarks),
             16 => self.open_palette_as(PaletteMode::History),
-            17 => self.split_right(),
-            18 => self.split = None,
+            17 => self.split_to(false),
+            18 => self.split_to(true),
+            19 => self.split = None,
             _ => self.start_inspection(),
         }
     }
@@ -1659,6 +1666,27 @@ impl Ide {
         }
         if pressed(Modifiers::NONE, Key::F11) {
             self.toggle_bookmark();
+        }
+        for (i, key) in [
+            Key::Num1,
+            Key::Num2,
+            Key::Num3,
+            Key::Num4,
+            Key::Num5,
+            Key::Num6,
+            Key::Num7,
+            Key::Num8,
+            Key::Num9,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let number = i as u8 + 1;
+            if pressed(command | Modifiers::SHIFT, key) {
+                self.number_bookmark(number);
+            } else if pressed(command, key) {
+                self.go_to_bookmark(number);
+            }
         }
         if pressed(command | Modifiers::SHIFT, Key::E) {
             self.open_palette_as(PaletteMode::Locations);
@@ -4381,29 +4409,41 @@ impl Ide {
                 let font = FontId::monospace(self.settings.font_size);
                 // The second editor, on the right.
                 if let Some(pane) = self.split.as_mut() {
-                    let half = (ui.available_width() / 2.0).max(240.0);
+                    let down = pane.down;
                     let mut close = false;
-                    egui::SidePanel::right(egui::Id::new("split_editor"))
-                        .resizable(true)
-                        .default_width(half)
-                        .width_range(160.0..=(ui.available_width() - 160.0).max(180.0))
-                        .frame(egui::Frame::NONE)
-                        .show_inside(ui, |ui| {
-                            let target: &mut Document = match other_doc.as_mut() {
-                                Some(other) => other,
-                                None => &mut *doc,
-                            };
-                            let separate = split_other.is_some();
-                            close = split::show(
-                                ui,
-                                pane,
-                                target,
-                                separate.then_some(&self.languages),
-                                &self.settings,
-                                t,
-                                font.clone(),
-                            );
-                        });
+                    let mut content = |ui: &mut egui::Ui| {
+                        let target: &mut Document = match other_doc.as_mut() {
+                            Some(other) => other,
+                            None => &mut *doc,
+                        };
+                        let separate = split_other.is_some();
+                        split::show(
+                            ui,
+                            pane,
+                            target,
+                            separate.then_some(&self.languages),
+                            &self.settings,
+                            t,
+                            font.clone(),
+                        )
+                    };
+                    if down {
+                        let half = (ui.available_height() / 2.0).max(120.0);
+                        egui::TopBottomPanel::bottom(egui::Id::new("split_editor"))
+                            .resizable(true)
+                            .default_height(half)
+                            .height_range(80.0..=(ui.available_height() - 80.0).max(100.0))
+                            .frame(egui::Frame::NONE)
+                            .show_inside(ui, |ui| close = content(ui));
+                    } else {
+                        let half = (ui.available_width() / 2.0).max(240.0);
+                        egui::SidePanel::right(egui::Id::new("split_editor"))
+                            .resizable(true)
+                            .default_width(half)
+                            .width_range(160.0..=(ui.available_width() - 160.0).max(180.0))
+                            .frame(egui::Frame::NONE)
+                            .show_inside(ui, |ui| close = content(ui));
+                    }
                     if close {
                         self.split = None;
                     }
@@ -4587,7 +4627,11 @@ impl Ide {
                     }
                     ui.separator();
                     if ui::menu_item(ui, None, tr!("split_right"), None, false).clicked() {
-                        self.split_right();
+                        self.split_to(false);
+                        ui.close();
+                    }
+                    if ui::menu_item(ui, None, tr!("split_down"), None, false).clicked() {
+                        self.split_to(true);
                         ui.close();
                     }
                     if self.split.is_some()
@@ -5176,6 +5220,7 @@ impl Ide {
             }
         }
         self.palette(ctx);
+        self.comparison_window(ctx);
         self.switcher(ctx);
         self.each_builtin(|plugin, ide| plugin.windows(ctx, ide));
         if let Some((pane, agent)) = self.mcp_offer {
@@ -5732,7 +5777,7 @@ impl Ide {
                 Target::File(path) => self.open_file(path),
                 Target::Line(line, column) => self.go_to_line(line, column),
                 Target::Place(path, line) => Host::open_at(self, path, line, 0, 0),
-                Target::Version(path) => self.restore_version(&path),
+                Target::Version(path) => self.compare_version(&path),
             }
         }
     }
@@ -6134,9 +6179,18 @@ impl Host for Ide {
         out.extend(self.server_problems());
         // The files of the project that Inspect Code looked at, unless they are open.
         if let Some(inspection) = &self.inspection {
-            out.extend(inspection.problems.iter().filter(|p| {
-                !self.documents.iter().any(|d| d.path.as_ref() == Some(&p.path))
-            }).cloned());
+            out.extend(
+                inspection
+                    .problems
+                    .iter()
+                    .filter(|p| {
+                        !self
+                            .documents
+                            .iter()
+                            .any(|d| d.path.as_ref() == Some(&p.path))
+                    })
+                    .cloned(),
+            );
         }
         out
     }

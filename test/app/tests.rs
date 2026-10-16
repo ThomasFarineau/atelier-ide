@@ -856,8 +856,13 @@ fn the_editor_draws_with_a_split_and_several_carets() {
     };
     // The same file twice.
     ide.active = 0;
-    ide.split_right();
+    ide.split_to(false);
     assert!(ide.split.is_some());
+    frame(&mut ide);
+    frame(&mut ide);
+    // Under the first one.
+    ide.split_to(true);
+    assert!(ide.split.as_ref().is_some_and(|p| p.down));
     frame(&mut ide);
     frame(&mut ide);
     // The second editor on another file.
@@ -901,7 +906,14 @@ fn plugins_say_what_is_ignored_and_the_tree_can_leave_it_out() {
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join("keep.rs"), "").unwrap();
     fs::write(dir.join("scratch.tmp"), "").unwrap();
-    let mut ide = Ide::blank(dir.clone(), Settings { font_size: 14.0, ..Default::default() }, None);
+    let mut ide = Ide::blank(
+        dir.clone(),
+        Settings {
+            font_size: 14.0,
+            ..Default::default()
+        },
+        None,
+    );
     ide.builtins.push(Box::new(IgnoresTmp));
     let ctx = egui::Context::default();
     ide.apply_theme(&ctx);
@@ -925,7 +937,10 @@ fn plugins_say_what_is_ignored_and_the_tree_can_leave_it_out() {
             .map(|(p, _)| p.file_name().unwrap().to_string_lossy().into_owned())
             .collect()
     };
-    assert_eq!(ide.ignored_by(&dir.join("scratch.tmp")).as_deref(), Some(".tmpignore"));
+    assert_eq!(
+        ide.ignored_by(&dir.join("scratch.tmp")).as_deref(),
+        Some(".tmpignore")
+    );
     assert_eq!(ide.ignored_by(&dir.join("keep.rs")), None);
     assert_eq!(shown(&mut ide), ["keep.rs", "scratch.tmp"]);
     ide.settings.hide_ignored = true;
@@ -943,6 +958,13 @@ fn a_window_does_not_put_back_what_another_changed() {
     // This window only opened another project.
     let mine = serde_json::json!({"theme": 0, "fonts": {"code": "A"}, "recent": ["/b", "/a"]});
     merge_settings(&mut file, &mine, &base);
-    assert_eq!(file["fonts"]["code"], "B", "the font of the other window stays");
-    assert_eq!(file["recent"], serde_json::json!(["/b", "/a"]), "what this window changed is written");
+    assert_eq!(
+        file["fonts"]["code"], "B",
+        "the font of the other window stays"
+    );
+    assert_eq!(
+        file["recent"],
+        serde_json::json!(["/b", "/a"]),
+        "what this window changed is written"
+    );
 }

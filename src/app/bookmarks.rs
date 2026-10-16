@@ -1,4 +1,5 @@
-//! Bookmarks (F11 to set or remove one, Shift+F11 to list them): lines to come back to, kept for
+//! Bookmarks (F11 to set or remove one, Shift+F11 to list them, Ctrl+Shift+1…9 to set one with a
+//! number and Ctrl+1…9 to go to it): lines to come back to, kept for
 //! the project in the data folder of Atelier. A bookmark remembers the text of its line, so that
 //! it follows the line when code is added above it.
 
@@ -18,6 +19,9 @@ pub struct Bookmark {
     pub line: usize,
     /// The line, trimmed.
     pub text: String,
+    /// 1 to 9 for a numbered bookmark: Ctrl+number goes to it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub number: Option<u8>,
 }
 
 fn file_of(base: &Path, root: &Path) -> PathBuf {
@@ -59,7 +63,42 @@ pub fn toggle(bookmarks: &mut Vec<Bookmark>, path: &Path, line: usize, text: &st
         path: path.to_path_buf(),
         line,
         text: text.trim().to_string(),
+        number: None,
     });
+    true
+}
+
+/// Gives the bookmark of `line` the number `number` (it is set if there is none), taking the
+/// number from the bookmark that had it. On a bookmark that already has this number, it takes
+/// the number off. Whether the line has the number now.
+pub fn number(
+    bookmarks: &mut Vec<Bookmark>,
+    path: &Path,
+    line: usize,
+    text: &str,
+    number: u8,
+) -> bool {
+    let here = bookmarks
+        .iter()
+        .position(|b| b.path == path && b.line == line);
+    if let Some(at) = here
+        && bookmarks[at].number == Some(number)
+    {
+        bookmarks[at].number = None;
+        return false;
+    }
+    for other in bookmarks.iter_mut().filter(|b| b.number == Some(number)) {
+        other.number = None;
+    }
+    match here {
+        Some(at) => bookmarks[at].number = Some(number),
+        None => bookmarks.push(Bookmark {
+            path: path.to_path_buf(),
+            line,
+            text: text.trim().to_string(),
+            number: Some(number),
+        }),
+    }
     true
 }
 

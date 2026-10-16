@@ -16,6 +16,7 @@ On macOS, use Cmd for the Ctrl shortcuts of the editor.
 | Ctrl+E / Ctrl+Shift+E | Recent files / recent locations |
 | Ctrl+Tab | Switch file (hold Ctrl, Tab goes on, release opens) |
 | F11 / Shift+F11 | Set or remove a bookmark / list the bookmarks |
+| Ctrl+Shift+1…9 / Ctrl+1…9 | Give the bookmark of the line a number / go to the bookmark with that number |
 | Ctrl+Shift+N | Go to file |
 | Ctrl+N | Go to symbol (classes, functions and types of the project) |
 | Ctrl+Alt+S | Settings |
