@@ -9,7 +9,9 @@ Les plugins intégrés sont compilés dans l'IDE, disponibles dans tous les proj
 | Git | [Intégration de Git](../guide/git) |
 | Markdown, Mermaid, SVG, CSV, Images, Microsoft Office | [Visionneuses](./viewers) |
 | Node.js | [Fenêtre npm](./node) |
-| Runtimes & Jupyter | [Python, JDK et Node.js dans le projet, notebooks Jupyter](./runtimes) |
+| Cargo | [Fenêtre Cargo](./cargo) |
+| Runtimes | [Python, JDK et Node.js dans le projet](./runtimes) |
+| Jupyter | [Notebooks Jupyter](./jupyter) |
 | Maven, Gradle | [Fenêtres Maven et Gradle](./maven-gradle) |
 | Traductions | [Fenêtre Traductions](./translations) |
 | Kubernetes | Parcourt les ressources d'un cluster, affiche leur description, leur YAML et leurs logs, les redémarre et les supprime, avec le `kubectl` installé et son kubeconfig |
