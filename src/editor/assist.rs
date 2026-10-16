@@ -8,6 +8,7 @@ use crate::{
         Completion, CompletionItem, Diagnostic, DocRef, FileEdit, Hover, ItemKind, Location,
         Oneshot, QuickFix, Service, Severity, Symbol, TextEdit, fuzzy_match,
     },
+    plugins::builtin::{LineMark, MarkKind},
     ui::Theme,
 };
 use eframe::egui::{
@@ -26,12 +27,12 @@ pub struct Assist<'a> {
     pub doc: DocRef,
 }
 
-const ROWS: usize = 12;
+pub(super) const ROWS: usize = 12;
 const ROW_HEIGHT: f32 = 22.0;
 const POPUP_WIDTH: f32 = 480.0;
 const HOVER_DELAY: Duration = Duration::from_millis(450);
 
-struct Popup {
+pub(super) struct Popup {
     /// Where the word being completed starts.
     from: usize,
     items: Vec<CompletionItem>,
@@ -83,45 +84,55 @@ struct Job {
 }
 
 /// What choosing an entry does.
-enum Choice {
+pub(super) enum Choice {
     Go(Location),
     Fix(QuickFix),
+    /// A word to add to the dictionary of the user.
+    Dictionary(String),
+    /// The refactorings of the selection (Ctrl+Alt+Shift+T).
+    Refactor,
+    /// The ways to surround the selection (Ctrl+Alt+T).
+    Surround,
+    /// A refactoring that the IDE does by itself.
+    Native(super::refactor::Native),
+    /// A refactoring of the language server, that may change several files.
+    Workspace(crate::languages::lsp::extras::Refactoring),
 }
 
-struct Entry {
+pub(super) struct Entry {
     /// The line of code, or the title of the action.
-    label: String,
+    pub(super) label: String,
     /// Where it is, shown at the right.
-    detail: String,
+    pub(super) detail: String,
     /// The kind of symbol, drawn as a badge.
-    kind: Option<ItemKind>,
+    pub(super) kind: Option<ItemKind>,
     /// Nesting, for the structure of a file.
-    indent: usize,
-    choice: Choice,
+    pub(super) indent: usize,
+    pub(super) choice: Choice,
 }
 
 /// A list to choose from: the places of a name with several declarations or usages, or the
 /// actions offered at the caret.
-struct Chooser {
-    title: &'static str,
-    entries: Vec<Entry>,
+pub(super) struct Chooser {
+    pub(super) title: &'static str,
+    pub(super) entries: Vec<Entry>,
     /// Indexes of the entries that match the filter, in the order shown.
-    shown: Vec<usize>,
+    pub(super) shown: Vec<usize>,
     /// What was typed, when the list can be filtered.
-    filter: Option<String>,
+    pub(super) filter: Option<String>,
     /// Index in `shown`.
-    selected: usize,
-    scroll: usize,
-    anchor: Pos2,
+    pub(super) selected: usize,
+    pub(super) scroll: usize,
+    pub(super) anchor: Pos2,
     /// Opened at the caret (actions) rather than at the pointer (places).
-    at_caret: bool,
+    pub(super) at_caret: bool,
     /// Opened at the top of the editor (structure).
-    centered: bool,
-    rect: Option<Rect>,
+    pub(super) centered: bool,
+    pub(super) rect: Option<Rect>,
 }
 
 impl Chooser {
-    fn new(title: &'static str, entries: Vec<Entry>, at_caret: bool) -> Self {
+    pub(super) fn new(title: &'static str, entries: Vec<Entry>, at_caret: bool) -> Self {
         Self {
             title,
             shown: (0..entries.len()).collect(),
@@ -245,15 +256,15 @@ pub struct FormatRequest {
 
 #[derive(Default)]
 pub struct AssistState {
-    popup: Option<Popup>,
+    pub(super) popup: Option<Popup>,
     pending: Option<Pending>,
     goto_hover: GotoHover,
     job: Option<Job>,
-    chooser: Option<Chooser>,
+    pub(super) chooser: Option<Chooser>,
     /// Ctrl+B was pressed: go to the declaration of the word at the caret.
     goto_here: bool,
     /// Alt+Enter was pressed: ask for the actions at the caret.
-    want_fixes: bool,
+    pub(super) want_fixes: bool,
     fixes: Option<Oneshot<Vec<QuickFix>>>,
     /// The mouse button is down for a Ctrl+click: the caret must not follow.
     pub ctrl_press: bool,
@@ -298,7 +309,7 @@ impl AssistState {
     }
 }
 
-fn severity_color(severity: Severity) -> Color32 {
+pub(super) fn severity_color(severity: Severity) -> Color32 {
     match severity {
         Severity::Error => Color32::from_rgb(0xF0, 0x56, 0x56),
         Severity::Warning => Color32::from_rgb(0xE6, 0xB5, 0x4A),
@@ -398,8 +409,18 @@ impl EditorState {
         if let Some(answer) = &self.assist.fixes {
             if let Some(fixes) = answer.take() {
                 self.assist.fixes = None;
-                if !fixes.is_empty() {
-                    let entries = fixes
+                // A typo under the caret comes first.
+                let mut entries = self.spelling_entries(text);
+                entries.extend(fixes.into_iter().map(|fix| Entry {
+                    label: fix.title.clone(),
+                    detail: String::new(),
+                    kind: None,
+                    indent: 0,
+                    choice: Choice::Fix(fix),
+                }));
+                // The intentions of the IDE on the code at the caret.
+                entries.extend(
+                    self.intention_fixes(text, opt.language)
                         .into_iter()
                         .map(|fix| Entry {
                             label: fix.title.clone(),
@@ -407,8 +428,22 @@ impl EditorState {
                             kind: None,
                             indent: 0,
                             choice: Choice::Fix(fix),
-                        })
-                        .collect();
+                        }),
+                );
+                // The actions of the IDE on the code, as IntelliJ's intentions list them.
+                for (label, shortcut, choice) in [
+                    (tr!("refactor_this"), "Ctrl+Alt+Shift+T", Choice::Refactor),
+                    (tr!("surround_with"), "Ctrl+Alt+T", Choice::Surround),
+                ] {
+                    entries.push(Entry {
+                        label: label.to_string(),
+                        detail: shortcut.to_string(),
+                        kind: None,
+                        indent: 0,
+                        choice,
+                    });
+                }
+                if !entries.is_empty() {
                     self.assist.chooser = Some(Chooser::new(tr!("quick_fixes"), entries, true));
                 }
             } else {
@@ -426,6 +461,7 @@ impl EditorState {
             if let Some(result) = pending.answer.take() {
                 let explicit = pending.explicit;
                 self.assist.pending = None;
+                let result = self.with_templates(text, result, opt.language, explicit);
                 self.open_popup(text, result, explicit);
             } else {
                 // The server has not answered yet.
@@ -501,6 +537,10 @@ impl EditorState {
     pub(super) fn assist_after_edit(&mut self, text: &str, typed: Option<char>, erased: bool) {
         self.assist.hover = HoverState::default();
         self.assist.usages = UsageState::default();
+        // The signature of a call opens by itself after its parenthesis and its commas.
+        if matches!(typed, Some('(' | ',')) {
+            self.intel.want = Some(super::intel::Want::Signature);
+        }
         if let Some(popup) = &mut self.assist.popup {
             let ok = self.cursor >= popup.from
                 && self.cursor <= text.len()
@@ -583,6 +623,14 @@ impl EditorState {
                     None
                 };
             }
+            if matches!(key, Key::ArrowRight | Key::ArrowLeft | Key::Tab)
+                && self.intel_chooser_key(key)
+            {
+                return Some(false);
+            }
+            let Some(chooser) = &mut self.assist.chooser else {
+                return Some(false);
+            };
             match key {
                 Key::Backspace if chooser.filter.is_some() => {
                     if let Some(filter) = &mut chooser.filter {
@@ -663,7 +711,7 @@ impl EditorState {
             return false;
         };
         let item = popup.items[*index].clone();
-        let from = popup.from.min(text.len());
+        let from = item.start.unwrap_or(popup.from).min(text.len());
         let mut to = self.cursor.min(text.len());
         if replace_tail {
             while let Some(c) = text[to..].chars().next() {
@@ -765,6 +813,41 @@ impl EditorState {
             Choice::Fix(fix) => {
                 self.apply_fix(text, &fix);
                 true
+            }
+            Choice::Dictionary(word) => {
+                self.word_added(text, &word);
+                false
+            }
+            Choice::Refactor => {
+                self.intel.want = Some(super::intel::Want::Refactor);
+                false
+            }
+            Choice::Workspace(refactoring) => {
+                for path in &refactoring.creates {
+                    if !path.exists() {
+                        if let Some(dir) = path.parent() {
+                            let _ = std::fs::create_dir_all(dir);
+                        }
+                        let _ = std::fs::write(path, "");
+                    }
+                }
+                for file in refactoring.files {
+                    match file.path {
+                        None => self.apply_edits(text, file.edits),
+                        Some(path) => self.assist.file_edits.push((path, file.edits)),
+                    }
+                }
+                true
+            }
+            Choice::Native(which) => {
+                let language = self.language.clone();
+                self.run_native(text, &language, which);
+                true
+            }
+            Choice::Surround => {
+                let language = self.language.clone();
+                self.open_surround(text, &language);
+                false
             }
         }
     }
@@ -1086,8 +1169,24 @@ impl EditorState {
             let text_line = &text[line.clone()];
             let from = column_of(text_line, at - line.start);
             let to = column_of(text_line, at - line.start + 1);
-            let x0 = text_left + galley.pos_from_cursor(CCursor::new(from)).min.x;
-            let x1 = text_left + galley.pos_from_cursor(CCursor::new(to)).min.x;
+            let x0 = text_left
+                + galley
+                    .pos_from_cursor(CCursor::new(self.visual_column(
+                        text,
+                        self.line_of(line.start),
+                        from,
+                    )))
+                    .min
+                    .x;
+            let x1 = text_left
+                + galley
+                    .pos_from_cursor(CCursor::new(self.visual_column(
+                        text,
+                        self.line_of(line.start),
+                        to,
+                    )))
+                    .min
+                    .x;
             painter.rect_filled(
                 Rect::from_min_max(pos2(x0, y + 1.0), pos2(x1, y + row - 1.0)),
                 2.0,
@@ -1118,8 +1217,24 @@ impl EditorState {
             let text_line = &text[line.clone()];
             let from = column_of(text_line, range.start.max(line.start) - line.start);
             let to = column_of(text_line, range.end.min(line.end) - line.start);
-            let x0 = text_left + galley.pos_from_cursor(CCursor::new(from)).min.x;
-            let x1 = text_left + galley.pos_from_cursor(CCursor::new(to)).min.x;
+            let x0 = text_left
+                + galley
+                    .pos_from_cursor(CCursor::new(self.visual_column(
+                        text,
+                        self.line_of(line.start),
+                        from,
+                    )))
+                    .min
+                    .x;
+            let x1 = text_left
+                + galley
+                    .pos_from_cursor(CCursor::new(self.visual_column(
+                        text,
+                        self.line_of(line.start),
+                        to,
+                    )))
+                    .min
+                    .x;
             painter.rect_filled(
                 Rect::from_min_max(pos2(x0 - 1.0, y + 1.0), pos2(x1 + 1.0, y + row - 1.0)),
                 2.0,
@@ -1148,8 +1263,24 @@ impl EditorState {
             let text_line = &text[line.clone()];
             let from = column_of(text_line, range.start.max(line.start) - line.start);
             let to = column_of(text_line, range.end.min(line.end) - line.start);
-            let x0 = text_left + galley.pos_from_cursor(CCursor::new(from)).min.x;
-            let x1 = text_left + galley.pos_from_cursor(CCursor::new(to)).min.x;
+            let x0 = text_left
+                + galley
+                    .pos_from_cursor(CCursor::new(self.visual_column(
+                        text,
+                        self.line_of(line.start),
+                        from,
+                    )))
+                    .min
+                    .x;
+            let x1 = text_left
+                + galley
+                    .pos_from_cursor(CCursor::new(self.visual_column(
+                        text,
+                        self.line_of(line.start),
+                        to,
+                    )))
+                    .min
+                    .x;
             painter.rect_filled(
                 Rect::from_min_max(pos2(x0 - 1.0, y + 1.0), pos2(x1 + 1.0, y + row - 1.0)),
                 2.0,
@@ -1181,8 +1312,24 @@ impl EditorState {
         let text_line = &text[line.clone()];
         let from = column_of(text_line, word.start - line.start);
         let to = column_of(text_line, word.end - line.start);
-        let x0 = text_left + galley.pos_from_cursor(CCursor::new(from)).min.x;
-        let x1 = text_left + galley.pos_from_cursor(CCursor::new(to)).min.x;
+        let x0 = text_left
+            + galley
+                .pos_from_cursor(CCursor::new(self.visual_column(
+                    text,
+                    self.line_of(line.start),
+                    from,
+                )))
+                .min
+                .x;
+        let x1 = text_left
+            + galley
+                .pos_from_cursor(CCursor::new(self.visual_column(
+                    text,
+                    self.line_of(line.start),
+                    to,
+                )))
+                .min
+                .x;
         painter.line_segment(
             [pos2(x0, y + row - 3.0), pos2(x1, y + row - 3.0)],
             Stroke::new(1.2_f32, color),
@@ -1212,8 +1359,24 @@ impl EditorState {
             let text_line = &text[line.clone()];
             let from = column_of(text_line, start - line.start);
             let to = column_of(text_line, end - line.start);
-            let x0 = text_left + galley.pos_from_cursor(CCursor::new(from)).min.x;
-            let mut x1 = text_left + galley.pos_from_cursor(CCursor::new(to)).min.x;
+            let x0 = text_left
+                + galley
+                    .pos_from_cursor(CCursor::new(self.visual_column(
+                        text,
+                        self.line_of(line.start),
+                        from,
+                    )))
+                    .min
+                    .x;
+            let mut x1 = text_left
+                + galley
+                    .pos_from_cursor(CCursor::new(self.visual_column(
+                        text,
+                        self.line_of(line.start),
+                        to,
+                    )))
+                    .min
+                    .x;
             if x1 - x0 < char_width * 0.5 {
                 x1 = x0 + char_width;
             }
@@ -1227,6 +1390,42 @@ impl EditorState {
                     severity_color(diagnostic.severity),
                 );
             }
+        }
+        // The misspelled words, in green.
+        let first = self.spell.typos.partition_point(|r| r.end < line.start);
+        for typo in self.spell.typos[first..]
+            .iter()
+            .take_while(|r| r.start <= line.end)
+            .filter(|r| line.start <= r.start && r.end <= line.end)
+        {
+            let text_line = &text[line.clone()];
+            let from = column_of(text_line, typo.start - line.start);
+            let to = column_of(text_line, typo.end - line.start);
+            let x0 = text_left
+                + galley
+                    .pos_from_cursor(CCursor::new(self.visual_column(
+                        text,
+                        self.line_of(line.start),
+                        from,
+                    )))
+                    .min
+                    .x;
+            let x1 = text_left
+                + galley
+                    .pos_from_cursor(CCursor::new(self.visual_column(
+                        text,
+                        self.line_of(line.start),
+                        to,
+                    )))
+                    .min
+                    .x;
+            wave(
+                painter,
+                x0,
+                x1,
+                y + row - 3.0,
+                Color32::from_rgb(0x62, 0xB5, 0x43),
+            );
         }
     }
 
@@ -1360,14 +1559,15 @@ impl EditorState {
         }
     }
 
-    /// Marks of the problems of the document along the right edge of `rect`. Returns the line
-    /// that was clicked.
+    /// Marks of the problems and of the Git changes of the document along the right edge of
+    /// `rect`. Returns the line that was clicked.
     pub(super) fn problem_stripe(
         &self,
         ui: &mut Ui,
         rect: Rect,
         id: egui::Id,
         row: f32,
+        changes: &[LineMark],
     ) -> Option<usize> {
         // A file shorter than the window keeps its marks at the place of their lines.
         let lines = self
@@ -1376,29 +1576,51 @@ impl EditorState {
             .max((rect.height() / row.max(1.0)) as usize)
             .max(1);
         let strip = Rect::from_min_max(pos2(rect.right() - 9.0, rect.top()), rect.right_bottom());
-        if self
-            .assist
-            .diagnostics
-            .iter()
-            .all(|d| d.severity == Severity::Hint)
-        {
+        let problems = || {
+            self.assist
+                .diagnostics
+                .iter()
+                .filter(|d| d.severity != Severity::Hint)
+        };
+        if changes.is_empty() && problems().next().is_none() {
             return None;
         }
+        let y_of = |line: f32| strip.top() + line / lines as f32 * strip.height();
+        let painter = ui.painter();
+        // Git changes on the left of the stripe, a bar per block of consecutive changed lines,
+        // under the problems.
+        let mut blocks: Vec<(usize, usize, MarkKind)> = Vec::new();
+        for mark in changes {
+            match blocks.last_mut() {
+                Some((_, end, kind)) if *end == mark.line && *kind == mark.kind => *end += 1,
+                _ => blocks.push((mark.line, mark.line + 1, mark.kind)),
+            }
+        }
+        for (start, end, kind) in blocks {
+            let (top, bottom) = if kind == MarkKind::Deleted {
+                (y_of(start as f32) - 1.0, y_of(start as f32) + 1.0)
+            } else {
+                let (top, bottom) = (y_of(start as f32), y_of(end as f32));
+                // At least 3 points high to stay visible in a long file.
+                let grow = ((3.0 - (bottom - top)) / 2.0).max(0.0);
+                (top - grow, bottom + grow)
+            };
+            painter.rect_filled(
+                Rect::from_x_y_ranges(strip.left()..=strip.left() + 3.0, top..=bottom),
+                0.0,
+                kind.color(),
+            );
+        }
         // Errors are drawn last, on top of warnings.
-        let mut marks: Vec<(usize, Severity)> = self
-            .assist
-            .diagnostics
-            .iter()
-            .filter(|d| d.severity != Severity::Hint)
+        let mut marks: Vec<(usize, Severity)> = problems()
             .map(|d| (self.line_of(d.range.start), d.severity))
             .collect();
         marks.sort_by_key(|(_, s)| std::cmp::Reverse(*s));
-        let painter = ui.painter();
         for (line, severity) in marks {
-            let y = strip.top() + (line as f32 + 0.5) / lines as f32 * strip.height();
+            let y = y_of(line as f32 + 0.5);
             let color = severity_color(severity);
             painter.rect_filled(
-                Rect::from_center_size(pos2(strip.center().x, y), vec2(7.0, 3.0)),
+                Rect::from_center_size(pos2(strip.center().x + 1.0, y), vec2(6.0, 3.0)),
                 1.0,
                 color,
             );
@@ -1410,15 +1632,18 @@ impl EditorState {
         if response.clicked()
             && let Some(pos) = response.interact_pointer_pos()
         {
-            // The mark nearest to the click, or the line at that height.
+            // The mark nearest to the click (a problem, else a change) within a few points, or
+            // the line at that height.
             let height = (pos.y - strip.top()) / strip.height().max(1.0);
-            let nearest = self
-                .assist
-                .diagnostics
-                .iter()
-                .filter(|d| d.severity != Severity::Hint)
-                .map(|d| self.line_of(d.range.start))
-                .min_by_key(|l| ((*l as f32 / lines as f32 - height).abs() * 10_000.0) as i64);
+            let distance = |l: &usize| (y_of(*l as f32 + 0.5) - pos.y).abs();
+            let nearest = |lines: Vec<usize>| {
+                lines
+                    .into_iter()
+                    .filter(|l| distance(l) < 6.0)
+                    .min_by(|a, b| distance(a).total_cmp(&distance(b)))
+            };
+            let nearest = nearest(problems().map(|d| self.line_of(d.range.start)).collect())
+                .or_else(|| nearest(changes.iter().map(|m| m.line).collect()));
             return nearest.or(Some((height * lines as f32) as usize));
         }
         None
@@ -1560,7 +1785,13 @@ impl EditorState {
                 offset.saturating_sub(range.start).min(range.len()),
             );
             let g = s.galley(ui, text, s.line_of(offset), opt);
-            g.pos_from_cursor(CCursor::new(column)).min.x
+            g.pos_from_cursor(CCursor::new(s.visual_column(
+                text,
+                s.line_of(offset),
+                column,
+            )))
+            .min
+            .x
         };
         if self.assist.rename.is_some() {
             let x = text_left + galley(self, self.cursor);
@@ -1629,11 +1860,17 @@ impl EditorState {
             return;
         }
         let offset = hover.word.as_ref().map_or(0, |w| w.start);
-        let problems: Vec<(Severity, String)> = self
+        let mut problems: Vec<(Severity, String)> = self
             .diagnostics_at(offset)
             .into_iter()
             .map(|d| (d.severity, d.message.clone()))
             .collect();
+        if let Some(typo) = self.typo_at(offset) {
+            problems.push((
+                Severity::Hint,
+                trf!("spelling_typo", word = text.get(typo).unwrap_or_default()),
+            ));
+        }
         if problems.is_empty() && hover.shown.is_none() {
             return;
         }
@@ -1994,7 +2231,7 @@ fn draw_chooser(
     rect
 }
 
-fn draw_hover(
+pub(super) fn draw_hover(
     painter: &Painter,
     t: &Theme,
     font: &FontId,

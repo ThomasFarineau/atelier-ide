@@ -6,11 +6,13 @@
 //! a [`Oneshot`] the editor polls.
 
 pub mod format;
+pub mod inspect;
 pub mod java;
 pub mod javascript;
 pub mod lsp;
 pub mod rust;
 pub mod syntax;
+pub mod templates;
 pub mod typescript;
 
 use std::{
@@ -70,6 +72,9 @@ pub struct CompletionItem {
     pub caret: Option<usize>,
     /// Lower comes first among equal matches.
     pub rank: u32,
+    /// Where the text that the item replaces starts, when it is before the word typed (a
+    /// postfix template takes the expression before the dot). The word start when None.
+    pub start: Option<usize>,
     /// What the provider needs to complete the item later (documentation, signature).
     pub raw: Option<Arc<String>>,
 }
@@ -85,6 +90,7 @@ impl CompletionItem {
             doc: None,
             caret: None,
             rank: 50,
+            start: None,
             raw: None,
         }
     }
@@ -98,6 +104,10 @@ impl CompletionItem {
     }
     pub fn rank(mut self, rank: u32) -> Self {
         self.rank = rank;
+        self
+    }
+    pub fn start(mut self, start: usize) -> Self {
+        self.start = Some(start);
         self
     }
     pub fn insert(mut self, insert: impl Into<String>, caret: Option<usize>) -> Self {
@@ -325,6 +335,16 @@ pub trait Provider: Send {
     fn status(&self) -> String {
         String::new()
     }
+    /// The language server and the address of the document when it is running and knows the
+    /// document: signature help, inlay hints, refactorings and hierarchies go through it.
+    fn lsp_target(&mut self, _doc: &DocRef) -> Option<(Arc<lsp::Client>, String)> {
+        None
+    }
+    /// The problems the language server found in the files of the project, open or not (a Rust
+    /// server checks the whole project, a Java one too).
+    fn workspace_diagnostics(&mut self) -> Vec<(PathBuf, Vec<lsp::ServerDiagnostic>)> {
+        Vec::new()
+    }
 }
 
 /// How the providers identify a document.
@@ -486,6 +506,93 @@ impl Service {
     pub fn quick_fixes(&self, doc: &DocRef, text: &str, offset: usize) -> Oneshot<Vec<QuickFix>> {
         self.with(&doc.language, |p, _| p.quick_fixes(doc, text, offset))
             .unwrap_or_else(|| Oneshot::ready(Vec::new()))
+    }
+
+    /// The problems the language servers found in the files of the project.
+    pub fn workspace_diagnostics(&self) -> Vec<(PathBuf, Vec<lsp::ServerDiagnostic>)> {
+        let Ok(mut inner) = self.inner.lock() else {
+            return Vec::new();
+        };
+        inner
+            .providers
+            .iter_mut()
+            .flat_map(|p| p.workspace_diagnostics())
+            .collect()
+    }
+
+    /// The language server of a document, and the document's address, when it can be asked.
+    pub fn lsp_target(&self, doc: &DocRef) -> Option<(Arc<lsp::Client>, String)> {
+        self.with(&doc.language, |p, _| p.lsp_target(doc)).flatten()
+    }
+
+    /// The signature of the call at `offset`, with the parameter being typed (Ctrl+P).
+    pub fn signature_help(
+        &self,
+        doc: &DocRef,
+        text: &str,
+        offset: usize,
+    ) -> Oneshot<Option<lsp::extras::Signature>> {
+        match self.lsp_target(doc) {
+            Some((client, uri)) => lsp::extras::signature_help(&client, &uri, text, offset),
+            None => Oneshot::ready(None),
+        }
+    }
+
+    /// The hints (types, argument names) of the lines `first..=last`.
+    pub fn inlay_hints(
+        &self,
+        doc: &DocRef,
+        text: &str,
+        first: usize,
+        last: usize,
+    ) -> Oneshot<Vec<lsp::extras::InlayHint>> {
+        match self.lsp_target(doc) {
+            Some((client, uri)) => lsp::extras::inlay_hints(&client, &uri, text, first, last),
+            None => Oneshot::ready(Vec::new()),
+        }
+    }
+
+    /// The refactorings the server offers for a range of the document.
+    pub fn refactorings(
+        &self,
+        doc: &DocRef,
+        text: &str,
+        range: Range<usize>,
+    ) -> Oneshot<Vec<lsp::extras::Refactoring>> {
+        match self.lsp_target(doc) {
+            Some((client, uri)) => lsp::extras::refactorings(&client, &uri, text, range),
+            None => Oneshot::ready(Vec::new()),
+        }
+    }
+
+    /// The type or the function at `offset`, to start a hierarchy from.
+    pub fn prepare_hierarchy(
+        &self,
+        doc: &DocRef,
+        text: &str,
+        offset: usize,
+        kind: lsp::extras::Hierarchy,
+    ) -> Oneshot<Vec<lsp::extras::HierarchyItem>> {
+        match self.lsp_target(doc) {
+            Some((client, uri)) => {
+                lsp::extras::prepare_hierarchy(&client, &uri, text, offset, kind)
+            }
+            None => Oneshot::ready(Vec::new()),
+        }
+    }
+
+    /// The parents or the children of an item of a hierarchy.
+    pub fn expand_hierarchy(
+        &self,
+        doc: &DocRef,
+        item: &lsp::extras::HierarchyItem,
+        kind: lsp::extras::Hierarchy,
+        up: bool,
+    ) -> Oneshot<Vec<lsp::extras::HierarchyItem>> {
+        match self.lsp_target(doc) {
+            Some((client, _)) => lsp::extras::expand_hierarchy(&client, item, kind, up),
+            None => Oneshot::ready(Vec::new()),
+        }
     }
 
     pub fn definition(&self, doc: &DocRef, text: &str, offset: usize) -> Oneshot<Vec<Location>> {

@@ -775,6 +775,21 @@ impl<L: Language> Provider for LspProvider<L> {
         answer
     }
 
+    fn lsp_target(&mut self, doc: &DocRef) -> Option<(Arc<Client>, String)> {
+        self.target(doc.key)
+    }
+
+    fn workspace_diagnostics(&mut self) -> Vec<(PathBuf, Vec<lsp::ServerDiagnostic>)> {
+        let Some(client) = self.client() else {
+            return Vec::new();
+        };
+        client
+            .all_diagnostics()
+            .into_iter()
+            .filter_map(|(uri, list)| Some((lsp::uri_to_path(&uri)?, list)))
+            .collect()
+    }
+
     fn status(&self) -> String {
         if with_control(self.lang.control(), |c| c.installing) {
             return self.lang.installing().into();

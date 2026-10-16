@@ -6,6 +6,7 @@
 //! ready are kept and sent once it is.
 
 pub mod convert;
+pub mod extras;
 pub mod provider;
 
 use anyhow::{Context as _, Result, anyhow, bail};
@@ -177,6 +178,10 @@ impl Client {
                     "codeAction": {
                         "codeActionLiteralSupport": {"codeActionKind": {"valueSet": ["quickfix", "refactor", "source"]}}
                     },
+                    "signatureHelp": {"signatureInformation": {"documentationFormat": ["markdown", "plaintext"], "parameterInformation": {"labelOffsetSupport": true}, "activeParameterSupport": true}},
+                    "inlayHint": {},
+                    "callHierarchy": {},
+                    "typeHierarchy": {},
                     "publishDiagnostics": {"relatedInformation": false}
                 },
                 "workspace": {"workspaceFolders": true, "configuration": false}
@@ -309,6 +314,20 @@ impl Client {
                     s.diagnostics.get(uri).cloned().unwrap_or_default(),
                     s.generation,
                 )
+            })
+            .unwrap_or_default()
+    }
+
+    /// Every document the server published problems for: the address and the problems.
+    pub fn all_diagnostics(&self) -> Vec<(String, Vec<ServerDiagnostic>)> {
+        self.shared
+            .lock()
+            .map(|s| {
+                s.diagnostics
+                    .iter()
+                    .filter(|(_, list)| !list.is_empty())
+                    .map(|(uri, list)| (uri.clone(), list.clone()))
+                    .collect()
             })
             .unwrap_or_default()
     }

@@ -65,4 +65,4 @@ cd docs && bun install && bun run dev
 
 ## License
 
-Atelier IDE is released under the [MIT License](LICENSE). The bundled Inter and JetBrains Mono fonts are under the SIL Open Font License (`assets/fonts/`).
+Atelier IDE is released under the [MIT License](LICENSE). The bundled Source Sans 3, Inter, Source Code Pro and JetBrains Mono fonts are under the SIL Open Font License (`assets/fonts/`).
