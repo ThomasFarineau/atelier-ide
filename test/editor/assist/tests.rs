@@ -130,6 +130,12 @@ fn frame(state: &mut EditorState, service: &Service, doc: &DocRef, text: &str) {
             doc: doc.clone(),
         }),
         search: &[],
+        read_only: false,
+        inlay_hints: false,
+        sticky_lines: false,
+        breadcrumbs: false,
+        bookmarks: &[],
+        spellcheck: false,
     };
     let _ = ctx.run(Default::default(), |ctx| {
         egui::CentralPanel::default().show(ctx, |ui| state.assist_frame(ui, text, &options));
@@ -344,7 +350,8 @@ fn alt_enter_offers_actions_and_applies_the_chosen_one() {
         .as_ref()
         .expect("the actions are listed");
     assert_eq!(chooser.title, tr!("quick_fixes"));
-    assert_eq!(chooser.entries.len(), 2);
+    // The two fixes, then the actions of the IDE (refactor, surround).
+    assert_eq!(chooser.entries.len(), 4);
     assert_eq!(
         state.assist_key(&mut text, Key::Enter, Modifiers::NONE),
         Some(true)

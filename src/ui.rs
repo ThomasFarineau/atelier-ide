@@ -1,5 +1,5 @@
 //! IntelliJ "Islands" look and feel, shared by the IDE and its built-in plugins: theme colors,
-//! fonts (Inter, JetBrains Mono), the IntelliJ icon set and the widgets egui draws differently.
+//! fonts (Source Sans 3 or Inter, Source Code Pro or JetBrains Mono), the IntelliJ icon set and the widgets egui draws differently.
 //!
 //! Plugins read the current theme with [`theme`] and draw with the helpers below, so every part
 //! of the interface follows the same metrics: 13 px text, 16 px icons, 24 px rows, 4 to 8 px radii.
@@ -181,14 +181,98 @@ pub fn theme(ctx: &egui::Context) -> Theme {
     ctx.data(|d| d.get_temp(theme_id())).unwrap_or(ISLANDS_DARK)
 }
 
-/// Family of Inter SemiBold, for titles.
+/// Family of the semibold interface font, for titles.
 pub fn semibold(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name("semibold".into()))
 }
 
-fn install_fonts(ctx: &egui::Context) {
+/// The interface fonts that come with Atelier; the first is the default one.
+pub const INTERFACE_FONTS: [&str; 2] = ["Source Sans 3", "Inter"];
+/// The monospaced fonts that come with Atelier; the first is the default one.
+pub const CODE_FONTS: [&str; 2] = ["Source Code Pro", "JetBrains Mono"];
+
+/// The fonts the user chose: one that comes with Atelier or one installed from the Fonts page.
+#[derive(Clone, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct Fonts {
+    pub interface: String,
+    pub code: String,
+}
+
+impl Default for Fonts {
+    fn default() -> Self {
+        Self {
+            interface: INTERFACE_FONTS[0].into(),
+            code: CODE_FONTS[0].into(),
+        }
+    }
+}
+
+fn fonts_id() -> egui::Id {
+    egui::Id::new("atelier_fonts")
+}
+
+/// Uses these fonts from now on (nothing to do when they already are).
+pub fn set_fonts(ctx: &egui::Context, fonts: &Fonts) {
+    if ctx.data(|d| d.get_temp::<Fonts>(fonts_id())).as_ref() != Some(fonts) {
+        install_fonts(ctx, fonts);
+        ctx.data_mut(|d| d.insert_temp(fonts_id(), fonts.clone()));
+    }
+}
+
+/// The names of the regular and semibold font data of `family`: a font of Atelier, or one the
+/// user installed, read from its folder (the default font when it is not there anymore).
+fn family_data(
+    fonts: &mut FontDefinitions,
+    family: &str,
+    builtin: &[&str],
+) -> (Vec<String>, Vec<String>) {
+    if builtin.contains(&family) {
+        let semibold = format!("{family} SemiBold");
+        let semibold = if fonts.font_data.contains_key(&semibold) {
+            semibold
+        } else {
+            family.to_string()
+        };
+        return (vec![family.to_string()], vec![semibold]);
+    }
+    let Some((regular, semibold)) = crate::fonts::load(family) else {
+        return family_data(fonts, builtin[0], builtin);
+    };
+    let mut add = |weight: &str, files: Vec<Vec<u8>>| -> Vec<String> {
+        files
+            .into_iter()
+            .enumerate()
+            .map(|(index, bytes)| {
+                let name = format!("{family} {weight} {index}");
+                fonts
+                    .font_data
+                    .insert(name.clone(), Arc::new(FontData::from_owned(bytes)));
+                name
+            })
+            .collect()
+    };
+    let regular = add("Regular", regular);
+    let semibold = add("SemiBold", semibold);
+    let semibold = if semibold.is_empty() {
+        regular.clone()
+    } else {
+        semibold
+    };
+    (regular, semibold)
+}
+
+fn install_fonts(ctx: &egui::Context, choice: &Fonts) {
     let mut fonts = FontDefinitions::default();
     for (name, bytes) in [
+        (
+            "Source Sans 3",
+            &include_bytes!("../assets/fonts/SourceSans3-Regular.ttf")[..],
+        ),
+        (
+            "Source Sans 3 SemiBold",
+            &include_bytes!("../assets/fonts/SourceSans3-Semibold.ttf")[..],
+        ),
         (
             "Inter",
             &include_bytes!("../assets/fonts/Inter-Regular.ttf")[..],
@@ -196,6 +280,10 @@ fn install_fonts(ctx: &egui::Context) {
         (
             "Inter SemiBold",
             &include_bytes!("../assets/fonts/Inter-SemiBold.ttf")[..],
+        ),
+        (
+            "Source Code Pro",
+            &include_bytes!("../assets/fonts/SourceCodePro-Regular.ttf")[..],
         ),
         (
             "JetBrains Mono",
@@ -209,42 +297,52 @@ fn install_fonts(ctx: &egui::Context) {
     // egui's own fonts stay as fallbacks for symbols and emoji.
     let proportional = fonts.families[&FontFamily::Proportional].clone();
     let monospace = fonts.families[&FontFamily::Monospace].clone();
-    let with = |first: &str, rest: &[String]| {
-        std::iter::once(first.to_string())
+    let with = |first: Vec<String>, rest: &[String]| {
+        first
+            .into_iter()
             .chain(rest.iter().cloned())
             .collect::<Vec<_>>()
     };
+    let (regular, semibold) = family_data(&mut fonts, &choice.interface, &INTERFACE_FONTS);
     fonts
         .families
-        .insert(FontFamily::Proportional, with("Inter", &proportional));
+        .insert(FontFamily::Proportional, with(regular, &proportional));
     fonts.families.insert(
         FontFamily::Name("semibold".into()),
-        with("Inter SemiBold", &proportional),
+        with(semibold, &proportional),
     );
-    let mut mono = with("JetBrains Mono", &monospace);
+    let (code, _) = family_data(&mut fonts, &choice.code, &CODE_FONTS);
+    let mut mono = with(code, &monospace);
+    let first_fallback = mono.len() - monospace.len();
     mono.extend(proportional);
     // The icons of prompts and command-line tools: a Nerd Font installed on the machine, right
-    // after JetBrains Mono, and the symbols of the system last.
-    let (nerd, symbols) = system_fallbacks();
+    // after the code font, and the symbols of the system last.
+    static FALLBACKS: OnceLock<Fallbacks> = OnceLock::new();
+    let (nerd, symbols) = FALLBACKS.get_or_init(system_fallbacks);
     if let Some(bytes) = nerd {
-        fonts
-            .font_data
-            .insert("Nerd Font".into(), Arc::new(FontData::from_owned(bytes)));
-        mono.insert(1, "Nerd Font".into());
+        fonts.font_data.insert(
+            "Nerd Font".into(),
+            Arc::new(FontData::from_owned(bytes.clone())),
+        );
+        mono.insert(first_fallback, "Nerd Font".into());
     }
     if let Some(bytes) = symbols {
-        fonts
-            .font_data
-            .insert("Symbols".into(), Arc::new(FontData::from_owned(bytes)));
+        fonts.font_data.insert(
+            "Symbols".into(),
+            Arc::new(FontData::from_owned(bytes.clone())),
+        );
         mono.push("Symbols".into());
     }
     fonts.families.insert(FontFamily::Monospace, mono);
     ctx.set_fonts(fonts);
 }
 
+/// A Nerd Font and a font of symbols of the system, when they are there.
+type Fallbacks = (Option<Vec<u8>>, Option<Vec<u8>>);
+
 /// A Nerd Font installed on the machine (the monospaced regular one first) and a font of
 /// symbols of the system (Segoe UI Symbol on Windows), when they are there.
-fn system_fallbacks() -> (Option<Vec<u8>>, Option<Vec<u8>>) {
+fn system_fallbacks() -> Fallbacks {
     let mut dirs: Vec<std::path::PathBuf> = Vec::new();
     if let Some(windir) = std::env::var_os("WINDIR") {
         dirs.push(std::path::Path::new(&windir).join("Fonts"));
@@ -306,10 +404,8 @@ fn system_fallbacks() -> (Option<Vec<u8>>, Option<Vec<u8>>) {
 
 /// Applies a theme to egui. Fonts are installed on first use.
 pub fn install(ctx: &egui::Context, t: Theme, editor_font_size: f32) {
-    let fonts_id = egui::Id::new("atelier_fonts");
-    if !ctx.data(|d| d.get_temp::<bool>(fonts_id).unwrap_or(false)) {
-        install_fonts(ctx);
-        ctx.data_mut(|d| d.insert_temp(fonts_id, true));
+    if ctx.data(|d| d.get_temp::<Fonts>(fonts_id())).is_none() {
+        set_fonts(ctx, &Fonts::default());
     }
     ctx.data_mut(|d| d.insert_temp(theme_id(), t));
     let mut v = if t.dark {

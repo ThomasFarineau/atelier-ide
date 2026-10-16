@@ -1,7 +1,9 @@
 {
   "problems.errors": "Erreurs",
-  "problems.list_errors_warnings_open_documents": "Liste des erreurs et avertissements des documents ouverts, groupés par fichier, avec accès direct à la ligne.",
-  "problems.no_problems_open_documents": "Aucun problème dans les documents ouverts",
+  "problems.inspect_project": "Inspecter le projet",
+  "problems.inspecting": "Inspection… {done}/{total}",
+  "problems.list_errors_warnings_open_documents": "Liste des erreurs et avertissements des documents ouverts et du projet une fois inspecté, groupés par fichier, avec accès direct à la ligne.",
+  "problems.no_problems_open_documents": "Aucun problème dans les documents ouverts ni dans les fichiers inspectés",
   "problems.no_problems_these_filters": "Aucun problème avec ces filtres",
   "problems.problems": "Problèmes",
   "problems.warnings": "Avertissements"

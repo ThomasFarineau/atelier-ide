@@ -251,6 +251,23 @@ impl Provider for JavaScript {
         matches!(language, "js" | "ts")
     }
 
+    fn workspace_diagnostics(&mut self) -> Vec<(PathBuf, Vec<lsp::ServerDiagnostic>)> {
+        let Some(client) = self.client() else {
+            return Vec::new();
+        };
+        client
+            .all_diagnostics()
+            .into_iter()
+            .filter_map(|(uri, list)| Some((lsp::uri_to_path(&uri)?, list)))
+            .collect()
+    }
+
+    fn lsp_target(&mut self, doc: &DocRef) -> Option<(Arc<lsp::Client>, String)> {
+        let client = self.client().filter(|c| c.ready())?.clone();
+        let data = self.docs.get(&doc.key)?;
+        Some((client, data.uri.clone().filter(|_| data.opened)?))
+    }
+
     fn update(&mut self, doc: &DocRef, text: &str, version: u64) {
         self.poll_control();
         self.ensure_server();

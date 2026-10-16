@@ -94,8 +94,17 @@ impl BuiltinPlugin for ProblemsPlugin {
         let all = host.problems();
         let count = |severity: u8| all.iter().filter(|p| p.severity == severity).count();
         let (errors, warnings) = (count(1), count(2) + count(3));
+        let progress = host.inspection_progress();
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
+            // Looks at every source file of the project, not only the open ones.
+            let label = match progress {
+                Some((done, total)) => trf!("problems.inspecting", done = done, total = total),
+                None => tr!("problems.inspect_project").to_string(),
+            };
+            if ui::button(ui, &label).clicked() && progress.is_none() {
+                host.inspect_project();
+            }
             for (label, on, n, color) in [
                 (
                     tr!("problems.errors"),

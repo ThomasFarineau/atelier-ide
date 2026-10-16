@@ -90,9 +90,21 @@ pub fn find_tsserver(project: &Path) -> Option<PathBuf> {
 /// How to start the server for a project, if it is installed.
 pub fn launch(project: &Path) -> Option<Launch> {
     let program = find_server(project)?;
+    // The hints the editor shows in the code: the names of the arguments that are literals, the
+    // types of the variables and the results of functions.
+    let preferences = json!({
+        "includeInlayParameterNameHints": "literals",
+        "includeInlayVariableTypeHints": true,
+        "includeInlayVariableTypeHintsWhenTypeMatchesName": false,
+        "includeInlayFunctionLikeReturnTypeHints": true,
+    });
     let options = match find_tsserver(project) {
-        Some(path) => json!({"tsserver": {"path": path.to_string_lossy()}, "hostInfo": "atelier"}),
-        None => json!({"hostInfo": "atelier"}),
+        Some(path) => json!({
+            "tsserver": {"path": path.to_string_lossy()},
+            "hostInfo": "atelier",
+            "preferences": preferences,
+        }),
+        None => json!({"hostInfo": "atelier", "preferences": preferences}),
     };
     Some(Launch {
         program,

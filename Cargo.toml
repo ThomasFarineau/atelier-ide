@@ -13,6 +13,10 @@ egui_extras = { version = "0.33", features = ["syntect", "svg", "svg_text", "ima
 resvg = { version = "0.47", default-features = false, features = ["text"] }
 mermaid-rs-renderer = { version = "0.3", default-features = false, features = ["png"] }
 egui_commonmark = { version = "0.22", features = ["better_syntax_highlighting", "svg"] }
+# The parser of egui_commonmark: where the HTML of a Markdown document is.
+pulldown-cmark = { version = "0.13", default-features = false }
+# The name of an installed font and whether it is monospaced.
+ttf-parser = "0.25"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico"] }
 rfd = "0.17"
 serde = { version = "1", features = ["derive"] }
@@ -43,6 +47,7 @@ tar = { version = "0.4", default-features = false }
 # The language of the system, the default language of the interface.
 sys-locale = "0.3"
 tree-sitter-java = "0.23"
+spellbook = "0.4.2"
 
 
 [target.'cfg(windows)'.build-dependencies]
@@ -53,6 +58,11 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+
+# Tests: only the lines in the debug information, which links faster. The optimization stays
+# the one of `dev`: at opt-level 0 the tests ran two and a half times slower.
+[profile.test]
+debug = "line-tables-only"
 
 [profile.release]
 lto = "thin"

@@ -13,6 +13,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+mod html;
+
 #[derive(Default)]
 struct View {
     /// Height of the rendered document and of the visible part, from the last frame.
@@ -127,12 +129,38 @@ impl BuiltinPlugin for MarkdownPlugin {
                         .insert(egui::TextStyle::Body, egui::FontId::proportional(14.0));
                     style.spacing.item_spacing.y = 8.0;
                     let max_width = (width - 80.0).max(100.0);
-                    let viewer =
+                    let base = base_uri(path);
+                    // egui_commonmark keeps the function of the HTML blocks as 'static.
+                    let html_base = base.clone();
+                    let render_html = move |ui: &mut egui::Ui, block: &str| {
+                        html::show(ui, block, &html_base, max_width)
+                    };
+                    let show =
                         |ui: &mut egui::Ui, cache: &mut CommonMarkCache, text: &mut String| {
                             CommonMarkViewer::new()
-                                .default_implicit_uri_scheme(base_uri(path))
+                                .default_implicit_uri_scheme(&base)
                                 .max_image_width(Some(max_width as usize))
+                                .render_html_fn(Some(&render_html))
                                 .show_mut(ui, cache, text);
+                        };
+                    let viewer =
+                        |ui: &mut egui::Ui, cache: &mut CommonMarkCache, text: &mut String| {
+                            // The HTML tags of the paragraphs are read as their Markdown.
+                            let Some(converted) = html::inline_to_markdown(text) else {
+                                show(ui, cache, text);
+                                return;
+                            };
+                            let mut copy = converted.text.clone();
+                            show(ui, cache, &mut copy);
+                            // A task ticked in the converted text: the same box in the source.
+                            if let Some(at) = copy
+                                .bytes()
+                                .zip(converted.text.bytes())
+                                .position(|(a, b)| a != b)
+                            {
+                                let source = converted.source_offset(at);
+                                text.replace_range(source..source + 1, &copy[at..at + 1]);
+                            }
                         };
                     let mut blocks = mermaid::split_blocks(text);
                     if blocks.iter().all(|b| matches!(b, Block::Text(_))) {
