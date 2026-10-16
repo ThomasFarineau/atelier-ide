@@ -9,7 +9,9 @@ Built-in plugins are compiled into the IDE, available in every project and enabl
 | Git | [Git integration](../guide/git) |
 | Markdown, Mermaid, SVG, CSV, Images, Microsoft Office | [File viewers](./viewers) |
 | Node.js | [npm window](./node) |
-| Runtimes & Jupyter | [Python, JDKs and Node.js in the project, Jupyter notebooks](./runtimes) |
+| Cargo | [Cargo window](./cargo) |
+| Runtimes | [Python, JDKs and Node.js in the project](./runtimes) |
+| Jupyter | [Jupyter notebooks](./jupyter) |
 | Maven, Gradle | [Maven and Gradle windows](./maven-gradle) |
 | Translations | [Translations window](./translations) |
 | Kubernetes | Browses the resources of a cluster, reads their description, YAML and logs, restarts and deletes them, with the installed `kubectl` and its kubeconfig |
