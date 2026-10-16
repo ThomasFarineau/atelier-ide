@@ -720,7 +720,7 @@ pub fn extract_method(
                 new_text: statement,
             },
         ],
-        name_at: Some(name_at).filter(|_| insert_at <= first),
+        name_at: (insert_at <= first).then_some(name_at),
     })
 }
 
