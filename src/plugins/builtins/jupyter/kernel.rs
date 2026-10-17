@@ -164,5 +164,5 @@ impl Drop for Kernel {
 }
 
 #[cfg(test)]
-#[path = "../../../../test/plugins/builtins/runtimes/kernel/tests.rs"]
+#[path = "../../../../test/plugins/builtins/jupyter/kernel/tests.rs"]
 mod tests;
