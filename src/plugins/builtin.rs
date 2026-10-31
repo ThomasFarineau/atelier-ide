@@ -241,6 +241,12 @@ pub trait BuiltinPlugin {
     fn annotations(&mut self, path: &Path) -> Option<String> {
         None
     }
+    /// Entries of the menu of the project tree, for the files and folders selected there.
+    fn tree_commands(&self, paths: &[PathBuf]) -> Vec<Command> {
+        Vec::new()
+    }
+    /// An entry of [`BuiltinPlugin::tree_commands`] was chosen for `paths`.
+    fn run_tree_command(&mut self, id: &str, paths: &[PathBuf], host: &mut dyn Host) {}
     fn gutter_commands(&self, path: &Path) -> Vec<Command> {
         Vec::new()
     }

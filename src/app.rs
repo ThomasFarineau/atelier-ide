@@ -2758,6 +2758,41 @@ impl Ide {
                 .into_iter()
                 .filter(|p| *p != self.root)
                 .collect();
+            // What the plugins offer for the selection, or for this entry alone.
+            let targets: Vec<PathBuf> =
+                if selection.len() > 1 && selection.iter().any(|p| p == path) {
+                    selection.clone()
+                } else if is_root {
+                    Vec::new()
+                } else {
+                    vec![path.to_path_buf()]
+                };
+            let tree_commands: Vec<(&'static str, crate::plugins::builtin::Command)> =
+                if targets.is_empty() {
+                    Vec::new()
+                } else {
+                    self.builtins
+                        .iter()
+                        .filter(|p| self.builtin_enabled(p.id()))
+                        .flat_map(|p| {
+                            p.tree_commands(&targets)
+                                .into_iter()
+                                .map(move |c| (p.id(), c))
+                        })
+                        .collect()
+                };
+            let tree_menu_commands = |ide: &mut Self, ui: &mut egui::Ui| {
+                if tree_commands.is_empty() {
+                    return;
+                }
+                ui::menu_separator(ui);
+                for (plugin, command) in &tree_commands {
+                    if ui::menu_item(ui, Some("git"), &command.label, None, false).clicked() {
+                        ide.run_tree_command(plugin, command.id, &targets);
+                        ui.close();
+                    }
+                }
+            };
             if selection.len() > 1 && selection.iter().any(|p| p == path) {
                 ui::menu_title(ui, &trf!("items_selected", count = selection.len()));
                 if ui::menu_item(
@@ -2780,6 +2815,7 @@ impl Ide {
                     ui.ctx().copy_text(paths.join("\n"));
                     ui.close();
                 }
+                tree_menu_commands(self, ui);
                 return;
             }
             if !is_dir
@@ -2890,6 +2926,7 @@ impl Ide {
                 self.execute(&command);
                 ui.close();
             }
+            tree_menu_commands(self, ui);
             if !is_dir {
                 let commands: Vec<_> = self
                     .builtins
@@ -6069,6 +6106,15 @@ impl Ide {
                 .extend(plugin.gutter_commands(&path).into_iter().map(|c| (id, c)));
         }
         gutter
+    }
+
+    fn run_tree_command(&mut self, plugin: &str, command: &str, paths: &[PathBuf]) {
+        self.each_builtin(|p, ide| {
+            if p.id() == plugin {
+                p.run_tree_command(command, paths, ide);
+            }
+        });
+        self.tree.clear();
     }
 
     fn run_builtin_command(&mut self, plugin: &str, command: &str) {
