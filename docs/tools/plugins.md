@@ -8,6 +8,7 @@ Built-in plugins are compiled into the IDE, available in every project and enabl
 | --- | --- |
 | Git | [Git integration](../guide/git) |
 | Markdown, Mermaid, SVG, CSV, Images, Microsoft Office | [File viewers](./viewers) |
+| Media player | [Music and videos](./media) |
 | Node.js | [npm window](./node) |
 | Cargo | [Cargo window](./cargo) |
 | Runtimes | [Python, JDKs and Node.js in the project](./runtimes) |
