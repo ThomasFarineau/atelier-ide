@@ -199,6 +199,7 @@
   "editor_menu.extend_selection": "Étendre la sélection",
   "editor_menu.go_declaration": "Aller à la déclaration",
   "editor_menu.paste": "Coller",
+  "editor_menu.reformat": "Reformater le code",
   "editor_menu.rename": "Renommer…",
   "editor_menu.select_all": "Tout sélectionner",
   "editor_menu.usages": "Trouver les utilisations",

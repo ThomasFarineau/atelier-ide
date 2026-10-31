@@ -201,20 +201,104 @@ fn a_property_is_inserted_with_its_colon_and_semicolon() {
 }
 
 #[test]
-fn the_formatter_reindents_and_spaces() {
-    let text = "a{\ncolor:red;\n    .b{\n top:0;\n}\n\n\n}\n/* keep\n     this */\n";
-    let formatted = format(text, Dialect::Scss, "  ").unwrap();
+fn a_minified_sheet_is_printed_out_clean() {
+    let text =
+        "a,b>c{color:red;margin:0 auto}@media (min-width:600px) and (max-width:900px){.x{top:0}}";
+    let clean = super::format::reformat(text, Dialect::Css, "  ").unwrap();
     assert_eq!(
-        formatted,
-        "a {\n  color: red;\n  .b {\n    top: 0;\n  }\n\n}\n/* keep\n     this */\n"
+        clean,
+        "a,\nb > c {\n  color: red;\n  margin: 0 auto;\n}\n\n\
+         @media (min-width: 600px) and (max-width: 900px) {\n  .x {\n    top: 0;\n  }\n}\n"
     );
-    // Selectors keep their colons.
+}
+
+#[test]
+fn reformat_keeps_comments_blank_lines_and_scss() {
+    let text = "/* head */\n$c:#fff; // the color\n.a{\n  &:hover{color:darken($c,10%)}\n\n\n  @include m(1px,2px);\n  .#{$n}-x{top:0}\n}\n";
+    let clean = super::format::reformat(text, Dialect::Scss, "  ").unwrap();
     assert_eq!(
-        format("a:hover{color:red}\n", Dialect::Css, "  ").unwrap(),
-        "a:hover {color: red}\n"
+        clean,
+        "/* head */\n$c: #fff; // the color\n.a {\n  &:hover {\n    color: darken($c, 10%);\n  }\n\n  @include m(1px, 2px);\n  .#{$n}-x {\n    top: 0;\n  }\n}\n"
     );
-    assert!(format("a\n  b: c\n", Dialect::Sass, "  ").is_err());
+    // Already clean: unchanged.
+    assert_eq!(
+        super::format::reformat(&clean, Dialect::Scss, "  ").unwrap(),
+        clean
+    );
+    assert!(super::format::reformat("a\n  b: c\n", Dialect::Sass, "  ").is_err());
     assert_eq!(indent_of("a {\n    b: c;\n}"), "    ");
+}
+
+#[test]
+fn minify_keeps_what_means_something() {
+    let text = "/*! license */\n/* note */\na :hover, b > c {\n  color : red ;\n  width: calc(100% - 2px);\n}\n@media screen and (min-width: 600px) {\n  .x { top: 0; }\n}\n";
+    let small = super::format::minify(text, Dialect::Css).unwrap();
+    assert_eq!(
+        small,
+        "/*! license */a :hover,b>c{color:red;width:calc(100% - 2px)}@media screen and (min-width:600px){.x{top:0}}"
+    );
+    // Minified then printed again: the same rules.
+    let again = super::format::reformat(&small, Dialect::Css, "  ").unwrap();
+    assert!(again.contains("width: calc(100% - 2px);"), "{again}");
+}
+
+#[test]
+fn colors_are_found_and_written_back_in_their_notation() {
+    use super::colors::{Notation, find, write};
+    use eframe::egui::Color32;
+    let text = "a { color: #f00; background: rgba(0, 0, 255, 0.5); border-color: hsl(120, 100%, 25%); outline: 1px solid tomato; }\n.red { x: y }";
+    let found = find(text, Dialect::Css);
+    let colors: Vec<(&str, Color32)> = found
+        .iter()
+        .map(|s| (&text[s.range.clone()], s.color))
+        .collect();
+    assert_eq!(
+        colors,
+        [
+            ("#f00", Color32::from_rgb(255, 0, 0)),
+            (
+                "rgba(0, 0, 255, 0.5)",
+                Color32::from_rgba_unmultiplied(0, 0, 255, 128)
+            ),
+            ("hsl(120, 100%, 25%)", Color32::from_rgb(0, 128, 0)),
+            ("tomato", Color32::from_rgb(255, 99, 71)),
+        ]
+    );
+    assert_eq!(found[1].notation, Notation::Rgb);
+    // A selector named after a color is no color.
+    assert!(!colors.iter().any(|(t, _)| *t == "red"));
+    assert_eq!(
+        write(Color32::from_rgb(18, 52, 86), Notation::Hex),
+        "#123456"
+    );
+    assert_eq!(
+        write(
+            Color32::from_rgba_unmultiplied(0, 0, 255, 128),
+            Notation::Rgb
+        ),
+        "rgba(0, 0, 255, 0.5)"
+    );
+    assert_eq!(
+        write(Color32::from_rgb(0, 128, 0), Notation::Hsl),
+        "hsl(120, 100%, 25%)"
+    );
+    // A variable inside: the color is not known.
+    assert!(find("a { color: rgb($r, 0, 0) }", Dialect::Scss).is_empty());
+}
+
+#[test]
+fn a_css_file_is_minified_next_to_itself() {
+    let dir = std::env::temp_dir().join(format!("atelier-minify-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("site.css");
+    std::fs::write(&file, "a {\n  color: red;\n}\n").unwrap();
+    super::minify_file(&file).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(dir.join("site.min.css")).unwrap(),
+        "a{color:red}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]

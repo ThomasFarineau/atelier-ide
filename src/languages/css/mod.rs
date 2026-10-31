@@ -9,7 +9,9 @@
 //! formatter that reindents.
 
 pub mod analysis;
+pub mod colors;
 pub mod data;
+pub mod format;
 pub mod lexer;
 mod server;
 
@@ -98,7 +100,11 @@ impl Language for CssLanguage {
             Some(_) => Dialect::of_path(path),
             None => Dialect::guess(text),
         };
-        analysis::format(text, dialect, &analysis::indent_of(text))
+        format::reformat(text, dialect, &analysis::indent_of(text))
+    }
+    /// The formatter of the IDE prints a minified sheet out again, which the server does not.
+    fn formats_itself(&self) -> bool {
+        true
     }
     fn tab_size(&self) -> usize {
         2
@@ -145,8 +151,20 @@ impl BuiltinPlugin for CssPlugin {
         }
     }
 
+    fn gutter_commands(&self, path: &Path) -> Vec<Command> {
+        if minifiable(path) {
+            vec![Command {
+                id: "css.minify",
+                label: tr!("css.command_minify_file").into(),
+            }]
+        } else {
+            Vec::new()
+        }
+    }
+
     fn commands(&self) -> Vec<Command> {
         [
+            ("css.minify", tr!("css.command_minify")),
             ("css.install", tr!("css.command_install")),
             ("css.restart", tr!("css.command_restart")),
         ]
@@ -165,9 +183,48 @@ impl BuiltinPlugin for CssPlugin {
                 server::install();
             }
             "css.restart" => with_control(&server::CONTROL, |c| c.restart_requested = true),
+            "css.minify" => match host.active_file().filter(|p| minifiable(p)) {
+                Some(path) => {
+                    // What the editor has, not an older text on the disk.
+                    host.save_files();
+                    match minify_file(&path) {
+                        Ok(message) => host.balloon("CSS", message, false),
+                        Err(e) => host.balloon("CSS", e, true),
+                    }
+                }
+                None => host.notify(tr!("css.minify_needs_css").into()),
+            },
             _ => {}
         }
     }
+}
+
+/// A sheet worth minifying: CSS, not already minified.
+fn minifiable(path: &Path) -> bool {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    name.ends_with(".css") && !name.ends_with(".min.css")
+}
+
+/// Writes `name.min.css` next to `name.css`. What to tell the user.
+pub fn minify_file(path: &Path) -> Result<String, String> {
+    let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let small = format::minify(&text, Dialect::Css)?;
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let target = path.with_file_name(format!("{stem}.min.css"));
+    std::fs::write(&target, &small).map_err(|e| e.to_string())?;
+    let kib = |n: usize| format!("{:.1}", n as f64 / 1024.0);
+    Ok(trf!(
+        "css.minified",
+        name = target.file_name().unwrap_or_default().to_string_lossy(),
+        from = kib(text.len()),
+        to = kib(small.len())
+    ))
 }
 
 #[cfg(test)]

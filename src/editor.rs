@@ -7,6 +7,7 @@
 
 mod actions;
 mod assist;
+mod color_picker;
 mod context;
 mod fold;
 mod intel;
@@ -112,6 +113,19 @@ pub struct EditorState {
     column_anchor: Option<(usize, usize)>,
     /// What the context menu of the text asked, handled as if typed with the next frame.
     menu_events: Vec<egui::Event>,
+    /// What the context menu asked of the IDE: Reformat Code, a command of a plugin.
+    menu_reformat: bool,
+    menu_command: Option<(&'static str, &'static str)>,
+    /// The colors written in a style sheet, for their swatches, and the revision and language
+    /// they were found for.
+    swatches: Vec<crate::languages::css::colors::Swatch>,
+    swatches_of: Option<(u64, String)>,
+    /// Where each swatch was drawn the last frame, before its color: (rect, swatch).
+    swatch_rects: Vec<(Rect, usize)>,
+    /// A press on a swatch: it opens the color picker, it does not move the caret.
+    swatch_press: bool,
+    /// The color picker open on a color of the text.
+    color_edit: Option<ColorEdit>,
 }
 
 impl Default for EditorState {
@@ -152,8 +166,53 @@ impl Default for EditorState {
             column_mode: false,
             column_anchor: None,
             menu_events: Vec::new(),
+            menu_reformat: false,
+            menu_command: None,
+            swatches: Vec::new(),
+            swatches_of: None,
+            swatch_rects: Vec::new(),
+            swatch_press: false,
+            color_edit: None,
         }
     }
+}
+
+/// The color picker of a color of the text.
+struct ColorEdit {
+    /// The bytes of the color in the text, as it is now.
+    range: Range<usize>,
+    picker: color_picker::Picker,
+    /// Where the picker opens, under the swatch.
+    at: Pos2,
+    /// The pass it opened in: the press that opened it does not close it.
+    opened: u64,
+    /// The changes made with the picker undo together.
+    group: u64,
+}
+
+/// What a swatch takes in the line: the room of two characters before its color.
+const SWATCH_LABEL: &str = "  ";
+
+/// A square of a color, a checkerboard under it when it lets through.
+fn paint_swatch(painter: &egui::Painter, rect: Rect, color: Color32, t: Theme) {
+    if color.a() < 255 {
+        let half = rect.width() / 2.0;
+        painter.rect_filled(rect, 2.0, Color32::WHITE);
+        for (dx, dy) in [(0.0, 0.0), (half, half)] {
+            painter.rect_filled(
+                Rect::from_min_size(rect.min + vec2(dx, dy), vec2(half, half)),
+                0.0,
+                Color32::from_gray(190),
+            );
+        }
+    }
+    painter.rect_filled(rect, 2.0, color);
+    painter.rect_stroke(
+        rect,
+        2.0,
+        Stroke::new(1.0_f32, t.border),
+        egui::StrokeKind::Outside,
+    );
 }
 
 /// A hint of the language server on a line, for the layout.
@@ -163,6 +222,8 @@ struct HintCol {
     label: String,
     /// The caret at that column is before the hint (a type) rather than after it (an argument).
     before_caret: bool,
+    /// The room of a color swatch (the index of the swatch), not a hint of the server.
+    swatch: Option<usize>,
 }
 
 /// Puts the hints of a line in the layout between the pieces of its text.
@@ -171,6 +232,8 @@ struct Hints {
     next: Option<HintCol>,
     column: usize,
     format: egui::TextFormat,
+    /// The room of a swatch: blank, as wide as the text.
+    room: egui::TextFormat,
 }
 
 impl Hints {
@@ -187,12 +250,18 @@ impl Hints {
                 background: opt.theme.hover,
                 ..egui::TextFormat::default()
             },
+            room: egui::TextFormat::simple(opt.font.clone(), Color32::TRANSPARENT),
         }
     }
 
     fn put(&mut self, job: &mut egui::text::LayoutJob) {
         if let Some(hint) = self.next.take() {
-            job.append(&hint.label, 0.0, self.format.clone());
+            let format = if hint.swatch.is_some() {
+                self.room.clone()
+            } else {
+                self.format.clone()
+            };
+            job.append(&hint.label, 0.0, format);
             self.next = self.hints.next();
         }
     }
@@ -278,6 +347,8 @@ pub struct Output {
     pub file_edits: Vec<(std::path::PathBuf, Vec<crate::languages::TextEdit>)>,
     /// A message for the status bar (after Reformat Code).
     pub message: Option<String>,
+    /// Reformat Code was chosen in the menu of the text.
+    pub reformat: bool,
 }
 
 /// What a read-only editor does with an event: it moves, selects, folds and copies, nothing more.
@@ -1615,6 +1686,29 @@ impl EditorState {
                 );
             }
         }
+        crate::ui::menu_separator(ui);
+        if crate::ui::menu_entry(
+            ui,
+            None,
+            tr!("editor_menu.reformat"),
+            Some("Ctrl+Alt+L"),
+            false,
+            editable,
+        )
+        .clicked()
+        {
+            self.menu_reformat = true;
+            ui.close();
+        }
+        if !opt.gutter_commands.is_empty() {
+            crate::ui::menu_separator(ui);
+            for (plugin, command) in opt.gutter_commands {
+                if crate::ui::menu_item(ui, None, &command.label, None, false).clicked() {
+                    self.menu_command = Some((*plugin, command.id));
+                    ui.close();
+                }
+            }
+        }
         if let Some(event) = chosen {
             self.menu_events.push(event);
             ui.ctx().request_repaint();
@@ -1713,18 +1807,55 @@ impl EditorState {
         ui.fonts_mut(|f| f.layout_job(job))
     }
 
+    // ---- Color swatches -----------------------------------------------------------------
+
+    /// The swatches of line `index`, in the room left for them before each color.
+    #[allow(clippy::too_many_arguments)]
+    fn paint_text_swatches(
+        &mut self,
+        painter: &egui::Painter,
+        text: &str,
+        index: usize,
+        galley: &egui::Galley,
+        text_left: f32,
+        y: f32,
+        row: f32,
+        char_width: f32,
+        t: Theme,
+    ) {
+        let head = self.line(text, index).len();
+        let rooms: Vec<(usize, usize)> = self
+            .hint_cols(text, index, head)
+            .iter()
+            .filter_map(|h| Some((h.column, h.swatch?)))
+            .collect();
+        for (column, swatch) in rooms {
+            // The room ends where the color starts.
+            let end = self.visual_column(text, index, column);
+            let room = end.saturating_sub(SWATCH_LABEL.len());
+            let x = galley.pos_from_cursor(CCursor::new(room)).min.x;
+            let side = (row - 6.0).clamp(8.0, char_width * 1.5);
+            let square = Rect::from_center_size(
+                pos2(text_left + x + char_width, y + row / 2.0),
+                vec2(side, side),
+            );
+            paint_swatch(painter, square, self.swatches[swatch].color, t);
+            self.swatch_rects.push((square, swatch));
+        }
+    }
+
     // ---- Hints --------------------------------------------------------------------------
 
     /// The hints of a line, in order. Only the ones before `head` (a byte offset in the line)
     /// when the line is collapsed.
     fn hint_cols(&self, text: &str, index: usize, head: usize) -> Vec<HintCol> {
-        if self.hints.is_empty() {
+        if self.hints.is_empty() && self.swatches.is_empty() {
             return Vec::new();
         }
         let start = self.lines[index];
         let line = self.line(text, index);
         let from = self.hints.partition_point(|h| h.offset < start);
-        self.hints[from..]
+        let mut cols: Vec<HintCol> = self.hints[from..]
             .iter()
             .take_while(|h| h.offset <= start + line.len())
             .filter(|h| h.offset - start <= head && line.is_char_boundary(h.offset - start))
@@ -1738,15 +1869,120 @@ impl EditorState {
                         h.label.clone()
                     },
                     before_caret: !parameter,
+                    swatch: None,
                 }
             })
-            .collect()
+            .collect();
+        // A swatch before each color, closest to it.
+        let first = self.swatches.partition_point(|s| s.range.start < start);
+        for (i, swatch) in self.swatches.iter().enumerate().skip(first) {
+            let at = swatch.range.start - start;
+            if at > line.len() {
+                break;
+            }
+            if at <= head && line.is_char_boundary(at) {
+                cols.push(HintCol {
+                    column: column_of(line, at),
+                    label: SWATCH_LABEL.into(),
+                    before_caret: false,
+                    swatch: Some(i),
+                });
+            }
+        }
+        cols.sort_by_key(|h| (h.column, h.swatch.is_some()));
+        cols
+    }
+
+    /// The colors of a style sheet, found again when the text or the language changed.
+    fn refresh_swatches(&mut self, text: &str, language: &str) {
+        if !crate::languages::css::is_style(language) {
+            self.swatches.clear();
+            self.swatches_of = None;
+            return;
+        }
+        let of = (self.rev, language.to_string());
+        if self.swatches_of.as_ref() != Some(&of) {
+            let dialect = crate::languages::css::lexer::Dialect::of(language);
+            self.swatches = crate::languages::css::colors::find(text, dialect);
+            self.swatches_of = Some(of);
+        }
+    }
+
+    /// Opens the color picker on swatch `index`, under `rect`.
+    fn open_color(&mut self, ui: &Ui, index: usize, rect: Rect) {
+        let Some(swatch) = self.swatches.get(index) else {
+            return;
+        };
+        self.next_group += 1;
+        self.color_edit = Some(ColorEdit {
+            range: swatch.range.clone(),
+            picker: color_picker::Picker::new(swatch.color, swatch.notation),
+            at: rect.left_bottom() + vec2(-8.0, 6.0),
+            opened: ui.ctx().cumulative_pass_nr(),
+            group: self.next_group,
+        });
+    }
+
+    /// The color picker, while it is open: what is picked replaces the color in the text.
+    fn color_picker(&mut self, ui: &Ui, id: Id, text: &mut String, t: Theme) -> bool {
+        let Some(edit) = &mut self.color_edit else {
+            return false;
+        };
+        let area = egui::Area::new(id.with("color_picker"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(edit.at)
+            .constrain(true)
+            .show(ui.ctx(), |ui| {
+                egui::Frame::new()
+                    .fill(t.popup)
+                    .stroke(Stroke::new(1.0_f32, t.border))
+                    .corner_radius(8.0)
+                    .inner_margin(12.0)
+                    .shadow(egui::Shadow {
+                        offset: [0, 4],
+                        blur: 16,
+                        spread: 0,
+                        color: Color32::from_black_alpha(80),
+                    })
+                    .show(ui, |ui| color_picker::show(ui, &mut edit.picker, t))
+                    .inner
+            });
+        let outside = ui.input(|i| {
+            i.pointer.primary_pressed()
+                && i.pointer
+                    .interact_pos()
+                    .is_some_and(|p| !area.response.rect.contains(p))
+        });
+        let opening = ui.ctx().cumulative_pass_nr() == edit.opened;
+        if ui.input(|i| i.key_pressed(Key::Escape)) || outside && !opening {
+            self.color_edit = None;
+            return false;
+        }
+        if !area.inner || edit.range.end > text.len() {
+            return false;
+        }
+        let written =
+            crate::languages::css::colors::write(edit.picker.color(), edit.picker.notation);
+        if text[edit.range.clone()] == written {
+            return false;
+        }
+        let range = edit.range.clone();
+        let group = edit.group;
+        edit.range = range.start..range.start + written.len();
+        let (cursor, anchor) = (self.cursor, self.anchor);
+        let previous = std::mem::replace(&mut self.group, group);
+        self.replace(text, range, &written, false);
+        self.group = previous;
+        // The caret stays where it was, as far as the text allows.
+        self.cursor = cursor.min(text.len());
+        self.anchor = anchor.min(text.len());
+        true
     }
 
     /// The column of the galley for the display column `column` of a line: what the hints before
     /// it add.
     fn visual_column(&self, text: &str, index: usize, column: usize) -> usize {
-        if self.hints.is_empty() {
+        if self.hints.is_empty() && self.swatches.is_empty() {
             return column;
         }
         let head = self.line(text, index).len();
@@ -1761,7 +1997,7 @@ impl EditorState {
 
     /// The display column of a column of the galley: a hint takes the column it is before.
     fn source_column(&self, text: &str, index: usize, visual: usize) -> usize {
-        if self.hints.is_empty() {
+        if self.hints.is_empty() && self.swatches.is_empty() {
             return visual;
         }
         let head = self.line(text, index).len();
@@ -1822,6 +2058,7 @@ impl EditorState {
             self.highlight = Some(Incremental::new(opt.language, opt.theme.dark));
         }
         self.refresh_folds(text, opt.language);
+        self.refresh_swatches(text, opt.language);
         self.assist_frame(ui, text, opt);
         self.intel_frame(ui, text, opt);
         self.spell_frame(ui, text, opt);
@@ -1901,6 +2138,10 @@ impl EditorState {
                     }
                 }
                 response.context_menu(|ui| self.text_menu(ui, opt));
+                output.reformat = std::mem::take(&mut self.menu_reformat);
+                if let Some(command) = self.menu_command.take() {
+                    output.command = Some(command);
+                }
                 // A click in the menu took the keyboard away: the entry chosen needs it back.
                 if !self.menu_events.is_empty() {
                     response.request_focus();
@@ -1936,6 +2177,22 @@ impl EditorState {
                     });
                     output.changed |=
                         self.handle_events(ui, text, opt.language, page, opt.read_only);
+                }
+                // A press on a color swatch opens the picker, and nothing else.
+                if !ui.input(|i| i.pointer.primary_down()) {
+                    self.swatch_press = false;
+                }
+                if !opt.read_only
+                    && ui.input(|i| i.pointer.primary_pressed())
+                    && let Some(pos) = ui.input(|i| i.pointer.interact_pos())
+                    && let Some((rect, index)) = self
+                        .swatch_rects
+                        .iter()
+                        .find(|(r, _)| r.expand(1.0).contains(pos))
+                        .copied()
+                {
+                    self.swatch_press = true;
+                    self.open_color(ui, index, rect);
                 }
                 // Mouse: click places the caret, drag selects, double and triple click select
                 // the word and the line. The gutter selects whole lines.
@@ -2032,6 +2289,7 @@ impl EditorState {
                     && !popup_click
                     && !over_popup
                     && !self.fold_press
+                    && !self.swatch_press
                     && !self.assist.ctrl_press
                     && self.own_press
                     && response.is_pointer_button_down_on()
@@ -2168,6 +2426,7 @@ impl EditorState {
                 let extra_selections = self.extra_selections();
                 let extra_cursors = self.extra_cursors();
                 let text_left = origin.x + text_x;
+                self.swatch_rects.clear();
                 for shown in first..last {
                     let index = self.line_at(shown);
                     let y = origin.y + shown as f32 * row;
@@ -2253,6 +2512,11 @@ impl EditorState {
                         galley.clone(),
                         t.text,
                     );
+                    if !self.swatches.is_empty() {
+                        self.paint_text_swatches(
+                            &painter, text, index, &galley, text_left, y, row, char_width, t,
+                        );
+                    }
                     self.squiggles(
                         &painter,
                         text,
@@ -2319,6 +2583,9 @@ impl EditorState {
                             );
                         }
                     }
+                }
+                if !opt.read_only && self.color_picker(ui, id, text, t) {
+                    output.changed = true;
                 }
                 // Gutter, fixed while the text scrolls horizontally underneath.
                 let left = origin.x + viewport.min.x;

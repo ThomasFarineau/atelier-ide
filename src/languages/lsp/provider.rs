@@ -67,6 +67,10 @@ pub trait Language: Send + Sync + 'static {
         let _ = language;
         self.language_id()
     }
+    /// Its own formatter is used even when the server runs.
+    fn formats_itself(&self) -> bool {
+        false
+    }
     /// Whether the server reads documents of `language`; the others get the local analysis.
     fn server_reads(&self, language: &str) -> bool {
         let _ = language;
@@ -699,7 +703,8 @@ impl<L: Language> Provider for LspProvider<L> {
                 repaint();
             });
         };
-        let Some((client, uri)) = self.target(doc.key) else {
+        let Some((client, uri)) = self.target(doc.key).filter(|_| !self.lang.formats_itself())
+        else {
             local(slot);
             return answer;
         };

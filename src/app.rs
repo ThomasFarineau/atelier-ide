@@ -4372,6 +4372,7 @@ impl Ide {
     fn editor(&mut self, ctx: &egui::Context) {
         let gutter = self.gutter();
         let mut gutter_command = None;
+        let mut reformat = false;
         let mut navigate: Option<(crate::languages::Location, Option<PathBuf>, usize)> = None;
         let mut file_edits: Vec<(PathBuf, Vec<crate::languages::TextEdit>)> = Vec::new();
         let mut new_layout = None;
@@ -4664,6 +4665,7 @@ impl Ide {
                 if output.command.is_some() {
                     gutter_command = output.command;
                 }
+                reformat |= output.reformat;
                 {
                     use crate::find::Action;
                     let selection = doc.view.selection();
@@ -4734,6 +4736,9 @@ impl Ide {
         }
         if let Some((plugin, command)) = gutter_command {
             self.run_builtin_command(plugin, command);
+        }
+        if reformat {
+            self.reformat_code();
         }
         if let Some((target, from, offset)) = navigate {
             self.go_to(target, from, offset);
