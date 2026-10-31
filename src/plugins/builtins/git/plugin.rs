@@ -1434,6 +1434,14 @@ impl GitPlugin {
 }
 
 impl BuiltinPlugin for GitPlugin {
+    fn file_closed(&mut self, _ctx: &egui::Context, path: &Path) {
+        // The text of the file at the last commit, and a copy of the open one.
+        self.bases.remove(path);
+        self.marks.remove(path);
+        self.blame.remove(path);
+        self.blame_jobs.remove(path);
+        self.annotated.remove(path);
+    }
     fn id(&self) -> &'static str {
         "git"
     }

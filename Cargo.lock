@@ -374,6 +374,7 @@ dependencies = [
  "portable-pty",
  "pulldown-cmark",
  "quick-xml 0.37.5",
+ "raw-window-handle",
  "regex",
  "resvg 0.47.0",
  "rfd",
@@ -396,6 +397,7 @@ dependencies = [
  "ttf-parser",
  "ureq",
  "vt100",
+ "windows-sys 0.61.2",
  "winresource",
  "zip",
 ]

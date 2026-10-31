@@ -385,6 +385,9 @@ impl RuntimesPlugin {
 }
 
 impl BuiltinPlugin for RuntimesPlugin {
+    fn file_closed(&mut self, _ctx: &egui::Context, path: &Path) {
+        self.views.remove(path);
+    }
     fn id(&self) -> &'static str {
         "runtimes"
     }

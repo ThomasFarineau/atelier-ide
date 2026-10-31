@@ -193,6 +193,9 @@ pub trait BuiltinPlugin {
     fn update(&mut self, ctx: &egui::Context, host: &mut dyn Host) {}
     fn shortcuts(&mut self, ctx: &egui::Context, host: &mut dyn Host) {}
     fn file_saved(&mut self, path: &Path) {}
+    /// The last tab of `path` closed: what the plugin kept for it (pictures, copies of the
+    /// text) goes, and its memory with it.
+    fn file_closed(&mut self, ctx: &egui::Context, path: &Path) {}
     /// Widgets after the project menu of the title bar.
     fn toolbar(&mut self, ui: &mut egui::Ui, host: &mut dyn Host) {}
     /// Widgets of the status bar, laid out right to left.

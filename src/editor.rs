@@ -52,6 +52,9 @@ struct Change {
     group: u64,
 }
 
+/// Bytes of a line drawn at most: past them, the line ends with a mark.
+pub const MAX_DRAWN_LINE: usize = 10_000;
+
 /// View state of a document in the editor.
 pub struct EditorState {
     pub cursor: usize,
@@ -1464,6 +1467,18 @@ impl EditorState {
         let head = fold.map_or(full.len(), |(head_end, ..)| {
             head_end.saturating_sub(self.lines[index]).min(full.len())
         });
+        // A huge line (minified code, a dump) is drawn up to a limit, as VS Code does: laid out
+        // whole, its glyphs took gigabytes and the IDE went down without a word.
+        let cut = head > MAX_DRAWN_LINE;
+        let head = if cut {
+            let mut at = MAX_DRAWN_LINE;
+            while !full.is_char_boundary(at) {
+                at -= 1;
+            }
+            at
+        } else {
+            head
+        };
         let line = &full[..head];
         let mut job = egui::text::LayoutJob::default();
         let format = |color| egui::TextFormat::simple(opt.font.clone(), color);
@@ -1500,7 +1515,13 @@ impl EditorState {
             _ => hints.append(&mut job, &display(line), format(opt.theme.text)),
         }
         hints.finish(&mut job);
-        if let Some((_, tail_start, last)) = fold {
+        if cut {
+            let chip = egui::TextFormat {
+                background: opt.theme.hover,
+                ..egui::TextFormat::simple(opt.font.clone(), opt.theme.text_secondary)
+            };
+            job.append(tr!("line_cut"), 8.0, chip);
+        } else if let Some((_, tail_start, last)) = fold {
             let chip = egui::TextFormat {
                 background: opt.theme.hover,
                 ..egui::TextFormat::simple(opt.font.clone(), opt.theme.text_secondary)
