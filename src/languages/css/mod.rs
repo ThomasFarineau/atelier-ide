@@ -10,6 +10,7 @@
 
 pub mod analysis;
 pub mod colors;
+pub mod convert;
 pub mod data;
 pub mod format;
 pub mod lexer;
@@ -152,19 +153,32 @@ impl BuiltinPlugin for CssPlugin {
     }
 
     fn gutter_commands(&self, path: &Path) -> Vec<Command> {
+        let mut commands = Vec::new();
         if minifiable(path) {
-            vec![Command {
+            commands.push(Command {
                 id: "css.minify",
                 label: tr!("css.command_minify_file").into(),
-            }]
-        } else {
-            Vec::new()
+            });
         }
+        if let Some(from) = style_dialect(path) {
+            for (id, to, label) in conversions() {
+                if to != from {
+                    commands.push(Command {
+                        id,
+                        label: label.into(),
+                    });
+                }
+            }
+        }
+        commands
     }
 
     fn commands(&self) -> Vec<Command> {
         [
             ("css.minify", tr!("css.command_minify")),
+            ("css.to_scss", tr!("css.command_convert_scss")),
+            ("css.to_less", tr!("css.command_convert_less")),
+            ("css.to_sass", tr!("css.command_convert_sass")),
             ("css.install", tr!("css.command_install")),
             ("css.restart", tr!("css.command_restart")),
         ]
@@ -194,9 +208,85 @@ impl BuiltinPlugin for CssPlugin {
                 }
                 None => host.notify(tr!("css.minify_needs_css").into()),
             },
-            _ => {}
+            _ => {
+                let Some((_, to, _)) = conversions().into_iter().find(|(c, ..)| *c == id) else {
+                    return;
+                };
+                let Some(path) = host.active_file().filter(|p| style_dialect(p).is_some()) else {
+                    host.notify(tr!("css.convert_needs_style").into());
+                    return;
+                };
+                host.save_files();
+                match convert_file(&path, to) {
+                    Ok(target) => {
+                        host.balloon(
+                            "CSS",
+                            trf!(
+                                "css.converted",
+                                name = target.file_name().unwrap_or_default().to_string_lossy()
+                            ),
+                            false,
+                        );
+                        host.open_file(target);
+                    }
+                    Err(e) => host.balloon("CSS", e, true),
+                }
+            }
         }
     }
+}
+
+/// The conversions offered: (command, dialect, label).
+fn conversions() -> [(&'static str, Dialect, &'static str); 3] {
+    [
+        (
+            "css.to_scss",
+            Dialect::Scss,
+            tr!("css.command_convert_scss_file"),
+        ),
+        (
+            "css.to_less",
+            Dialect::Less,
+            tr!("css.command_convert_less_file"),
+        ),
+        (
+            "css.to_sass",
+            Dialect::Sass,
+            tr!("css.command_convert_sass_file"),
+        ),
+    ]
+}
+
+/// The dialect of a style sheet, None for another file.
+fn style_dialect(path: &Path) -> Option<Dialect> {
+    let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+    is_style(&extension).then(|| Dialect::of(&extension))
+}
+
+/// Writes `path` in dialect `to` next to it: `name.scss`, or `name-2.scss` when that one
+/// already exists, never over a file. The file written.
+pub fn convert_file(path: &Path, to: Dialect) -> Result<std::path::PathBuf, String> {
+    let from = style_dialect(path).ok_or_else(|| tr!("css.convert_needs_style").to_string())?;
+    let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let converted = convert::convert(&text, from, to)?;
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let extension = convert::extension(to);
+    let target = (1..)
+        .map(|n| {
+            let name = if n == 1 {
+                format!("{stem}.{extension}")
+            } else {
+                format!("{stem}-{n}.{extension}")
+            };
+            path.with_file_name(name)
+        })
+        .find(|p| !p.exists())
+        .expect("a free name");
+    std::fs::write(&target, converted).map_err(|e| e.to_string())?;
+    Ok(target)
 }
 
 /// A sheet worth minifying: CSS, not already minified.

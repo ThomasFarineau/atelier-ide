@@ -42,7 +42,7 @@ fn spaced(
 
 /// The index (in `tokens`) of the colon of a declaration: the first one outside parentheses,
 /// after a property or a variable.
-fn declaration_colon(text: &str, tokens: &[&Token]) -> Option<usize> {
+pub(super) fn declaration_colon(text: &str, tokens: &[&Token]) -> Option<usize> {
     let first = tokens.first()?;
     if !matches!(
         first.kind,

@@ -314,3 +314,65 @@ fn a_translucent_color_comes_back_to_the_unit() {
     );
     assert_eq!(write(found[1].rgba, found[1].notation), "#3672f226");
 }
+
+fn convert(text: &str, from: Dialect, to: Dialect) -> String {
+    super::convert::convert(text, from, to).unwrap()
+}
+
+#[test]
+fn css_becomes_nested_scss() {
+    let css = "/* card */\n.card { padding: 4px; }\n.card .title { font-weight: bold; }\n.card:hover { color: red; }\n.card > .icon { width: 1em; }\n@media (max-width: 600px) {\n  .card { padding: 0; }\n}\n";
+    assert_eq!(
+        convert(css, Dialect::Css, Dialect::Scss),
+        "/* card */\n.card {\n  padding: 4px;\n  .title {\n    font-weight: bold;\n  }\n  &:hover {\n    color: red;\n  }\n  > .icon {\n    width: 1em;\n  }\n}\n\n@media (max-width: 600px) {\n  .card {\n    padding: 0;\n  }\n}\n"
+    );
+}
+
+#[test]
+fn scss_becomes_sass_and_back() {
+    let scss = "$main: #333 !default;\n@mixin round($r: 4px) {\n  border-radius: $r;\n}\n.box {\n  color: $main;\n  @include round(2px);\n  @extend %base;\n  .#{$name}-x { top: 0; }\n}\n";
+    let sass = convert(scss, Dialect::Scss, Dialect::Sass);
+    assert_eq!(
+        sass,
+        "$main: #333 !default\n=round($r: 4px)\n  border-radius: $r\n\n.box\n  color: $main\n  +round(2px)\n  @extend %base\n  .#{$name}-x\n    top: 0\n"
+    );
+    // And back: the same SCSS, the blank line between the rules aside.
+    assert_eq!(
+        convert(&sass, Dialect::Sass, Dialect::Scss),
+        "$main: #333 !default;\n@mixin round($r: 4px) {\n  border-radius: $r;\n}\n\n.box {\n  color: $main;\n  @include round(2px);\n  @extend %base;\n  .#{$name}-x {\n    top: 0;\n  }\n}\n"
+    );
+}
+
+#[test]
+fn scss_becomes_less_and_back() {
+    let scss = "$main: #333 !default;\n@mixin round($r) {\n  border-radius: $r;\n}\n.box {\n  color: darken($main, 10%);\n  @include round(2px);\n  @extend .base;\n  .#{$name}-x { top: 0; }\n}\n";
+    let less = convert(scss, Dialect::Scss, Dialect::Less);
+    assert_eq!(
+        less,
+        "@main: #333;\n.round(@r) {\n  border-radius: @r;\n}\n\n.box {\n  color: darken(@main, 10%);\n  .round(2px);\n  &:extend(.base);\n  .@{name}-x {\n    top: 0;\n  }\n}\n"
+    );
+    let back = convert(&less, Dialect::Less, Dialect::Scss);
+    assert!(back.contains("$main: #333;"), "{back}");
+    assert!(back.contains("@mixin round($r) {"), "{back}");
+    assert!(back.contains("@include round(2px);"), "{back}");
+    assert!(back.contains("@extend .base;"), "{back}");
+    assert!(back.contains("color: darken($main, 10%);"), "{back}");
+}
+
+#[test]
+fn a_converted_file_never_overwrites_one() {
+    let dir = std::env::temp_dir().join(format!("atelier-convert-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("site.css");
+    std::fs::write(&file, "a { b: c; }\n").unwrap();
+    std::fs::write(dir.join("site.scss"), "keep").unwrap();
+    let written = super::convert_file(&file, Dialect::Scss).unwrap();
+    assert_eq!(written, dir.join("site-2.scss"));
+    assert_eq!(
+        std::fs::read_to_string(dir.join("site.scss")).unwrap(),
+        "keep"
+    );
+    assert!(super::convert::convert("a{}", Dialect::Scss, Dialect::Css).is_err());
+    let _ = std::fs::remove_dir_all(&dir);
+}

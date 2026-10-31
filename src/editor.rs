@@ -1550,6 +1550,8 @@ impl EditorState {
     /// The menu of the text: each entry does what its shortcut does.
     fn text_menu(&mut self, ui: &mut Ui, opt: &Options) {
         crate::ui::menu_begin(ui);
+        // As wide as its longest entry and its shortcut, not as the editor.
+        ui.set_max_width(crate::ui::MENU_WIDTH + 60.0);
         let editable = !opt.read_only;
         let code = opt.assist.is_some();
         let key = |key: Key, modifiers: Modifiers| egui::Event::Key {
