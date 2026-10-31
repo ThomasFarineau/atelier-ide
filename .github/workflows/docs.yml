@@ -25,7 +25,7 @@ jobs:
       run:
         working-directory: docs
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # The "last updated" date of each page comes from git.
           fetch-depth: 0
