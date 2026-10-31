@@ -245,41 +245,31 @@ fn minify_keeps_what_means_something() {
 #[test]
 fn colors_are_found_and_written_back_in_their_notation() {
     use super::colors::{Notation, find, write};
-    use eframe::egui::Color32;
     let text = "a { color: #f00; background: rgba(0, 0, 255, 0.5); border-color: hsl(120, 100%, 25%); outline: 1px solid tomato; }\n.red { x: y }";
     let found = find(text, Dialect::Css);
-    let colors: Vec<(&str, Color32)> = found
+    let colors: Vec<(&str, [u8; 4])> = found
         .iter()
-        .map(|s| (&text[s.range.clone()], s.color))
+        .map(|s| (&text[s.range.clone()], s.rgba))
         .collect();
     assert_eq!(
         colors,
         [
-            ("#f00", Color32::from_rgb(255, 0, 0)),
-            (
-                "rgba(0, 0, 255, 0.5)",
-                Color32::from_rgba_unmultiplied(0, 0, 255, 128)
-            ),
-            ("hsl(120, 100%, 25%)", Color32::from_rgb(0, 128, 0)),
-            ("tomato", Color32::from_rgb(255, 99, 71)),
+            ("#f00", [255, 0, 0, 255]),
+            ("rgba(0, 0, 255, 0.5)", [0, 0, 255, 128]),
+            ("hsl(120, 100%, 25%)", [0, 128, 0, 255]),
+            ("tomato", [255, 99, 71, 255]),
         ]
     );
     assert_eq!(found[1].notation, Notation::Rgb);
     // A selector named after a color is no color.
     assert!(!colors.iter().any(|(t, _)| *t == "red"));
+    assert_eq!(write([18, 52, 86, 255], Notation::Hex), "#123456");
     assert_eq!(
-        write(Color32::from_rgb(18, 52, 86), Notation::Hex),
-        "#123456"
-    );
-    assert_eq!(
-        write(
-            Color32::from_rgba_unmultiplied(0, 0, 255, 128),
-            Notation::Rgb
-        ),
+        write([0, 0, 255, 128], Notation::Rgb),
         "rgba(0, 0, 255, 0.5)"
     );
     assert_eq!(
-        write(Color32::from_rgb(0, 128, 0), Notation::Hsl),
+        write([0, 128, 0, 255], Notation::Hsl),
         "hsl(120, 100%, 25%)"
     );
     // A variable inside: the color is not known.
@@ -310,4 +300,17 @@ fn the_dialect_comes_from_the_extension_or_the_text() {
     );
     assert_eq!(Dialect::guess(".a\n  color: red\n"), Dialect::Sass);
     assert_eq!(Dialect::guess(".a { color: red }"), Dialect::Scss);
+}
+
+#[test]
+fn a_translucent_color_comes_back_to_the_unit() {
+    use super::colors::{find, write};
+    let text = "a { background: rgba(53, 116, 240, 0.15); color: #3672f226; }";
+    let found = find(text, Dialect::Css);
+    assert_eq!(found[0].rgba, [53, 116, 240, 38]);
+    assert_eq!(
+        write(found[0].rgba, found[0].notation),
+        "rgba(53, 116, 240, 0.15)"
+    );
+    assert_eq!(write(found[1].rgba, found[1].notation), "#3672f226");
 }

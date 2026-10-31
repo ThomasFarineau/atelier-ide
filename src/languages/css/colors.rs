@@ -3,6 +3,9 @@
 
 use super::lexer::{self, Dialect, Kind, Role};
 use eframe::egui::Color32;
+
+/// A color as CSS writes it: red, green, blue and alpha, not premultiplied.
+pub type Rgba = [u8; 4];
 use std::ops::Range;
 
 /// How a color is written.
@@ -20,8 +23,16 @@ pub enum Notation {
 pub struct Swatch {
     /// The bytes of the whole color: `#fff`, `rgb(1, 2, 3)`.
     pub range: Range<usize>,
-    pub color: Color32,
+    pub rgba: Rgba,
     pub notation: Notation,
+}
+
+impl Swatch {
+    /// The color to paint.
+    pub fn color(&self) -> Color32 {
+        let [r, g, b, a] = self.rgba;
+        Color32::from_rgba_unmultiplied(r, g, b, a)
+    }
 }
 
 /// The names of colors and their value.
@@ -91,10 +102,10 @@ pub fn find(text: &str, dialect: Dialect) -> Vec<Swatch> {
         let word = &text[token.range.clone()];
         match token.kind {
             Kind::Hash if roles[i] == Role::Number => {
-                if let Some(color) = parse_hex(word) {
+                if let Some(rgba) = parse_hex(word) {
                     out.push(Swatch {
                         range: token.range.clone(),
-                        color,
+                        rgba,
                         notation: Notation::Hex,
                     });
                 }
@@ -115,15 +126,15 @@ pub fn find(text: &str, dialect: Dialect) -> Vec<Swatch> {
                 if inside.contains(['$', '@']) || inside.contains("var(") || inside.contains('\n') {
                     continue;
                 }
-                let color = if notation == Notation::Rgb {
+                let rgba = if notation == Notation::Rgb {
                     parse_rgb(inside)
                 } else {
                     parse_hsl(inside)
                 };
-                if let Some(color) = color {
+                if let Some(rgba) = rgba {
                     out.push(Swatch {
                         range: token.range.start..close + 1,
-                        color,
+                        rgba,
                         notation,
                     });
                 }
@@ -133,7 +144,7 @@ pub fn find(text: &str, dialect: Dialect) -> Vec<Swatch> {
                 if let Some((_, rgb)) = NAMED.iter().find(|(n, _)| *n == lower) {
                     out.push(Swatch {
                         range: token.range.clone(),
-                        color: from_rgb(*rgb),
+                        rgba: from_rgb(*rgb),
                         notation: Notation::Named,
                     });
                 }
@@ -144,11 +155,11 @@ pub fn find(text: &str, dialect: Dialect) -> Vec<Swatch> {
     out
 }
 
-fn from_rgb(rgb: u32) -> Color32 {
-    Color32::from_rgb((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8)
+fn from_rgb(rgb: u32) -> Rgba {
+    [(rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8, 255]
 }
 
-pub fn parse_hex(hash: &str) -> Option<Color32> {
+pub fn parse_hex(hash: &str) -> Option<Rgba> {
     if !lexer::is_color(hash) {
         return None;
     }
@@ -166,7 +177,7 @@ pub fn parse_hex(hash: &str) -> Option<Color32> {
         8 => (byte(0)?, byte(2)?, byte(4)?, byte(6)?),
         _ => return None,
     };
-    Some(Color32::from_rgba_unmultiplied(r, g, b, a))
+    Some([r, g, b, a])
 }
 
 /// The arguments of a color function, separated by commas, spaces or `/`.
@@ -186,7 +197,7 @@ fn alpha(value: &str) -> Option<u8> {
     Some((a.clamp(0.0, 1.0) * 255.0).round() as u8)
 }
 
-fn parse_rgb(inside: &str) -> Option<Color32> {
+fn parse_rgb(inside: &str) -> Option<Rgba> {
     let args = arguments(inside);
     if !(3..=4).contains(&args.len()) {
         return None;
@@ -202,15 +213,10 @@ fn parse_rgb(inside: &str) -> Option<Color32> {
         Some(v) => alpha(v)?,
         None => 255,
     };
-    Some(Color32::from_rgba_unmultiplied(
-        channel(args[0])?,
-        channel(args[1])?,
-        channel(args[2])?,
-        a,
-    ))
+    Some([channel(args[0])?, channel(args[1])?, channel(args[2])?, a])
 }
 
-fn parse_hsl(inside: &str) -> Option<Color32> {
+fn parse_hsl(inside: &str) -> Option<Rgba> {
     let args = arguments(inside);
     if !(3..=4).contains(&args.len()) {
         return None;
@@ -227,7 +233,7 @@ fn parse_hsl(inside: &str) -> Option<Color32> {
         Some(v) => alpha(v)?,
         None => 255,
     };
-    Some(Color32::from_rgba_unmultiplied(r, g, b, a))
+    Some([r, g, b, a])
 }
 
 fn hsl_to_rgb(hue: f32, saturation: f32, lightness: f32) -> (u8, u8, u8) {
@@ -276,8 +282,8 @@ fn alpha_text(a: u8) -> String {
 }
 
 /// `color` written in `notation`.
-pub fn write(color: Color32, notation: Notation) -> String {
-    let [r, g, b, a] = color.to_srgba_unmultiplied();
+pub fn write(rgba: Rgba, notation: Notation) -> String {
+    let [r, g, b, a] = rgba;
     match notation {
         Notation::Hex | Notation::Named => {
             if a == 255 {

@@ -189,6 +189,7 @@
   "edit": "Edit",
   "edit_configurations": "Edit Configurations…",
   "editor": "Editor",
+  "editor.color_original": "Back to the original color",
   "editor_font": "Editor Font",
   "editor_menu.comment": "Comment / Uncomment",
   "editor_menu.context_actions": "Show Context Actions",

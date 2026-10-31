@@ -189,6 +189,7 @@
   "edit": "Édition",
   "edit_configurations": "Modifier les configurations…",
   "editor": "Éditeur",
+  "editor.color_original": "Revenir à la couleur d'origine",
   "editor_font": "Police de l'éditeur",
   "editor_menu.comment": "Commenter / décommenter",
   "editor_menu.context_actions": "Actions contextuelles",

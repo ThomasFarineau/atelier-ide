@@ -1839,7 +1839,7 @@ impl EditorState {
                 pos2(text_left + x + char_width, y + row / 2.0),
                 vec2(side, side),
             );
-            paint_swatch(painter, square, self.swatches[swatch].color, t);
+            paint_swatch(painter, square, self.swatches[swatch].color(), t);
             self.swatch_rects.push((square, swatch));
         }
     }
@@ -1916,7 +1916,7 @@ impl EditorState {
         self.next_group += 1;
         self.color_edit = Some(ColorEdit {
             range: swatch.range.clone(),
-            picker: color_picker::Picker::new(swatch.color, swatch.notation),
+            picker: color_picker::Picker::new(swatch.rgba, swatch.notation),
             at: rect.left_bottom() + vec2(-8.0, 6.0),
             opened: ui.ctx().cumulative_pass_nr(),
             group: self.next_group,
@@ -1962,7 +1962,7 @@ impl EditorState {
             return false;
         }
         let written =
-            crate::languages::css::colors::write(edit.picker.color(), edit.picker.notation);
+            crate::languages::css::colors::write(edit.picker.rgba(), edit.picker.notation);
         if text[edit.range.clone()] == written {
             return false;
         }

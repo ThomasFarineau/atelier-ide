@@ -2,7 +2,7 @@
   color-scheme: dark;
   font-family: system-ui, sans-serif;
   background: #17181c;
-  color: #f0edf8 #20eaf8;
+  color: #f0edf8 #a320f8;
 }
 
 body {
@@ -17,7 +17,7 @@ main {
 }
 
 .badge {
-  color: #6a00ff;
+  color: #b1ddc3;
   font-size: 12px;
   letter-spacing: 3px;
 }
@@ -27,13 +27,16 @@ h1 {
 }
 
 p {
-  color: #aaa5b8;
+  color: #8900ff;
   line-height: 1.7;
+  .test {
+    accent-color: red;
+  }
 }
 
 button {
   background: #9678ff;
-  color: #17181c;
+  color: #9fa9d1;
   border: 0;
   border-radius: 8px;
   padding: 14px 24px;
@@ -41,5 +44,5 @@ button {
 }
 
 button:hover {
-  background: #b5a0ff;
+  background: #b19dff73;
 }
