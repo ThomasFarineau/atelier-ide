@@ -275,6 +275,9 @@ pub fn language(path: &Path) -> &'static str {
     {
         "html" | "htm" => "html",
         "css" => "css",
+        "scss" => "scss",
+        "sass" => "sass",
+        "less" => "less",
         "js" | "mjs" | "cjs" | "jsx" => "js",
         "ts" | "tsx" => "ts",
         "java" => "java",

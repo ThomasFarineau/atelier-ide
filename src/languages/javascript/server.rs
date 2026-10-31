@@ -56,7 +56,7 @@ fn executable_names(name: &str) -> Vec<String> {
     }
 }
 
-fn find_in(dir: &Path, name: &str) -> Option<PathBuf> {
+pub(crate) fn find_in(dir: &Path, name: &str) -> Option<PathBuf> {
     executable_names(name)
         .into_iter()
         .map(|n| dir.join(n))
@@ -113,7 +113,7 @@ pub fn launch(project: &Path) -> Option<Launch> {
     })
 }
 
-fn npm() -> Command {
+pub(crate) fn npm() -> Command {
     let mut command = Command::new(if cfg!(windows) { "npm.cmd" } else { "npm" });
     command
         .stdin(Stdio::null())

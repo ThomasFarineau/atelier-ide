@@ -1,0 +1,18 @@
+{
+  "css.cannot_format_errors": "Le fichier a un commentaire ou une chaîne non fermé : corrigez-le avant de le formater",
+  "css.cannot_install_server": "Installation du serveur de langage CSS impossible : {e}",
+  "css.command_install": "CSS : installer le serveur de langage (npm vscode-langservers-extracted)",
+  "css.command_restart": "CSS : redémarrer le serveur de langage",
+  "css.description": "CSS, SCSS, Sass et Less : couleurs, erreurs, complétion des propriétés et des valeurs, navigation vers les variables, mixins et sélecteurs, occurrences, structure et formatage, avec le serveur de langage de VS Code (CSS, SCSS, Less) et par analyse locale sans lui.",
+  "css.empty_value": "Déclaration sans valeur",
+  "css.installing_server": "Installation du serveur de langage CSS…",
+  "css.needs_server": "Cette action demande le serveur de langage CSS : installez-le depuis Rechercher partout (« CSS : installer »)",
+  "css.not_closed": "« {what} » n'est pas fermé",
+  "css.npm_not_found": "npm est introuvable : installez Node.js depuis https://nodejs.org",
+  "css.sass_no_formatter": "Pas de formateur pour la syntaxe indentée de Sass",
+  "css.server_installed": "Serveur de langage CSS installé",
+  "css.source": "syntaxe",
+  "css.unclosed_comment": "Commentaire non fermé",
+  "css.unclosed_string": "Chaîne non fermée",
+  "css.unexpected": "« {what} » inattendu"
+}

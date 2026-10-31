@@ -349,7 +349,8 @@ fn offset_of(line: &str, column: usize) -> usize {
 
 pub fn comment_prefix(language: &str) -> Option<&'static str> {
     match language {
-        "rs" | "js" | "ts" | "java" | "c" | "cpp" | "cs" | "go" | "php" | "css" => Some("//"),
+        "rs" | "js" | "ts" | "java" | "c" | "cpp" | "cs" | "go" | "php" | "scss" | "sass"
+        | "less" => Some("//"),
         "py" | "sh" | "yaml" | "toml" | "rb" => Some("#"),
         "sql" => Some("--"),
         _ => None,
@@ -1034,6 +1035,27 @@ impl EditorState {
     }
 
     fn toggle_comment(&mut self, text: &mut String, language: &str) {
+        if language == "css" {
+            // CSS has no line comment: each line goes between `/*` and `*/`.
+            let block = self.selected_lines(text);
+            let commented = text[block]
+                .split('\n')
+                .filter(|l| !l.trim().is_empty())
+                .all(|l| l.trim_start().starts_with("/*") && l.trim_end().ends_with("*/"));
+            self.edit_lines(text, |line| {
+                let start = line.len() - line.trim_start().len();
+                let body = line.trim();
+                if body.is_empty() {
+                    line.to_string()
+                } else if commented {
+                    let inner = &body[2..body.len() - 2];
+                    format!("{}{}", &line[..start], inner.trim())
+                } else {
+                    format!("{}/* {body} */", &line[..start])
+                }
+            });
+            return;
+        }
         let Some(prefix) = comment_prefix(language) else {
             return;
         };
