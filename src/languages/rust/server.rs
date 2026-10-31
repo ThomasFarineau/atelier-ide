@@ -128,6 +128,7 @@ pub fn launch(program: PathBuf, root: &Path) -> Launch {
         program,
         args: Vec::new(),
         options: options(root),
+        settings: serde_json::Value::Null,
     }
 }
 

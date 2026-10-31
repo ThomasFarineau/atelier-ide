@@ -67,6 +67,9 @@ fn load(ctx: &egui::Context, path: &Path) -> Result<(TextureHandle, [u32; 2]), S
 }
 
 impl BuiltinPlugin for ImagePlugin {
+    fn file_closed(&mut self, _ctx: &egui::Context, path: &Path) {
+        self.loaded.remove(path);
+    }
     fn id(&self) -> &'static str {
         "image"
     }

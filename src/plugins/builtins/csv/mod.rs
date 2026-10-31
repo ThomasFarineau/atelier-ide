@@ -244,6 +244,9 @@ pub struct CsvPlugin {
 }
 
 impl BuiltinPlugin for CsvPlugin {
+    fn file_closed(&mut self, _ctx: &egui::Context, path: &Path) {
+        self.states.remove(path);
+    }
     fn id(&self) -> &'static str {
         "csv"
     }

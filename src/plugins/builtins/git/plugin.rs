@@ -1434,6 +1434,14 @@ impl GitPlugin {
 }
 
 impl BuiltinPlugin for GitPlugin {
+    fn file_closed(&mut self, _ctx: &egui::Context, path: &Path) {
+        // The text of the file at the last commit, and a copy of the open one.
+        self.bases.remove(path);
+        self.marks.remove(path);
+        self.blame.remove(path);
+        self.blame_jobs.remove(path);
+        self.annotated.remove(path);
+    }
     fn id(&self) -> &'static str {
         "git"
     }
@@ -1685,6 +1693,57 @@ impl BuiltinPlugin for GitPlugin {
         Some("Chargement…".into())
     }
 
+    fn tree_commands(&self, paths: &[PathBuf]) -> Vec<Command> {
+        let Some(repo) = &self.repo else {
+            return Vec::new();
+        };
+        // Inside the work tree, not its root, and not ignored yet.
+        let offered = paths
+            .iter()
+            .all(|p| repo.rel(p).is_some_and(|r| !r.is_empty()))
+            && paths.iter().any(|p| !self.is_ignored(p));
+        if !offered {
+            return Vec::new();
+        }
+        vec![Command {
+            id: "git.ignore",
+            label: tr!("git.add_to_gitignore").into(),
+        }]
+    }
+
+    fn run_tree_command(&mut self, id: &str, paths: &[PathBuf], host: &mut dyn Host) {
+        if id != "git.ignore" {
+            return;
+        }
+        let Some(repo) = &self.repo else {
+            return;
+        };
+        let entries: Vec<(String, bool)> = paths
+            .iter()
+            .filter(|p| !self.is_ignored(p))
+            .filter_map(|p| Some((repo.rel(p)?, p.is_dir())))
+            .filter(|(rel, _)| !rel.is_empty())
+            .collect();
+        let file = repo.root.join(".gitignore");
+        match add_to_gitignore(&file, &entries) {
+            Ok(added) => {
+                let rels: Vec<String> = entries.iter().map(|(r, _)| r.clone()).collect();
+                let tracked = repo.tracked(&rels);
+                let mut text = trf!("git.ignored_added", count = added);
+                if !tracked.is_empty() {
+                    text.push('\n');
+                    text.push_str(&trf!(
+                        "git.ignored_still_tracked",
+                        paths = tracked.join(", ")
+                    ));
+                }
+                host.balloon(".gitignore", text, false);
+                self.stale = true;
+            }
+            Err(e) => host.balloon(".gitignore", e.to_string(), true),
+        }
+    }
+
     fn gutter_commands(&self, path: &Path) -> Vec<Command> {
         let Some(repo) = &self.repo else {
             return Vec::new();
@@ -1721,6 +1780,50 @@ impl BuiltinPlugin for GitPlugin {
         }
         commands
     }
+}
+
+/// The line of `.gitignore` for an entry of the work tree: anchored at the root, with a slash
+/// after a folder.
+fn ignore_line(rel: &str, is_dir: bool) -> String {
+    let mut line = String::from("/");
+    for c in rel.chars() {
+        // What the patterns of git read as wildcards or comments is taken literally.
+        if matches!(c, '*' | '?' | '[' | '\\' | '#' | '!') {
+            line.push('\\');
+        }
+        line.push(c);
+    }
+    if is_dir {
+        line.push('/');
+    }
+    line
+}
+
+/// Adds to `file` the lines of `entries` it does not have yet. How many it added.
+pub(super) fn add_to_gitignore(file: &Path, entries: &[(String, bool)]) -> std::io::Result<usize> {
+    let mut text = match std::fs::read_to_string(file) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(e),
+    };
+    let existing: HashSet<String> = text.lines().map(|l| l.trim().to_string()).collect();
+    let mut added = 0;
+    for (rel, is_dir) in entries {
+        let line = ignore_line(rel, *is_dir);
+        if existing.contains(&line) {
+            continue;
+        }
+        if !text.is_empty() && !text.ends_with('\n') {
+            text.push('\n');
+        }
+        text.push_str(&line);
+        text.push('\n');
+        added += 1;
+    }
+    if added > 0 {
+        std::fs::write(file, text)?;
+    }
+    Ok(added)
 }
 
 #[cfg(test)]

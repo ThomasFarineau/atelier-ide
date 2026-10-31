@@ -56,9 +56,12 @@ fn grammar(tsx: bool) -> &'static Grammar {
 }
 
 /// Which color a capture name stands for: 0 none, 1 keyword, 2 string, 3 number, 4 comment,
-/// 5 function, 6 constant, 7 annotation, 8 tag, 9 escape.
+/// 5 function, 6 constant, 7 annotation, 8 tag, 9 escape, 10 the color of the text.
 fn code_of(name: &str) -> u8 {
     match name {
+        // The code of a template string (`${…}`) is code again, its `${` and `}` keywords.
+        "embedded" => 10,
+        "punctuation.special" => 1,
         n if n.starts_with("keyword")
             || n == "type.builtin"
             || n == "variable.builtin"
@@ -130,7 +133,9 @@ pub fn colors(text: &str, palette: &Palette) -> Option<Vec<LineColors>> {
         }
         offset += query.pattern_count();
     }
-    marks.sort_by_key(|(priority, _, _)| *priority);
+    // The innermost node wins, then the later pattern: the code inside a template string
+    // keeps its colors instead of taking the one of the whole string.
+    marks.sort_by_key(|(priority, range, _)| (std::cmp::Reverse(range.len()), *priority));
     let mut paint = vec![0u8; text.len()];
     for (_, range, code) in marks {
         let end = range.end.min(paint.len());

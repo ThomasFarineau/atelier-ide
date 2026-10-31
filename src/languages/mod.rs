@@ -5,11 +5,13 @@
 //! (analysis done in Rust) or later (a language server answering in the background), through
 //! a [`Oneshot`] the editor polls.
 
+pub mod css;
 pub mod format;
 pub mod inspect;
 pub mod java;
 pub mod javascript;
 pub mod lsp;
+pub mod python;
 pub mod rust;
 pub mod syntax;
 pub mod templates;
@@ -375,7 +377,9 @@ impl Service {
         let service = Self::default();
         service.add(Box::new(javascript::JavaScript::new(root, repaint.clone())));
         service.add(Box::new(rust::provider(root, repaint.clone())));
-        service.add(Box::new(java::provider(root, repaint)));
+        service.add(Box::new(java::provider(root, repaint.clone())));
+        service.add(Box::new(css::provider(root, repaint.clone())));
+        service.add(Box::new(python::provider(root, repaint)));
         service
     }
 

@@ -6,8 +6,8 @@ interface Project {
 const project: Project = {
   name: "Atelier IDE",
   languages: ["HTML", "CSS", "JavaScript", "TypeScript", "Java", "Python", "Rust"],
-};a
-a
+};
+
 console.log(`${project.name} : ${project.languages.join(", ")}`);
 console.log(`${project.name} : ${project.languages.join(", ")}`);
 console.log(`${project.name} : ${project.languages.join(", ")}`);
