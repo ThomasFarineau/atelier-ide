@@ -110,6 +110,8 @@ pub struct EditorState {
     pub column_mode: bool,
     /// Line and display column where a column selection began.
     column_anchor: Option<(usize, usize)>,
+    /// What the context menu of the text asked, handled as if typed with the next frame.
+    menu_events: Vec<egui::Event>,
 }
 
 impl Default for EditorState {
@@ -149,6 +151,7 @@ impl Default for EditorState {
             next_group: 0,
             column_mode: false,
             column_anchor: None,
+            menu_events: Vec::new(),
         }
     }
 }
@@ -1104,7 +1107,8 @@ impl EditorState {
         page: isize,
         read_only: bool,
     ) -> bool {
-        let events = ui.input(|i| i.events.clone());
+        let mut events = std::mem::take(&mut self.menu_events);
+        events.extend(ui.input(|i| i.events.clone()));
         let before = text.len();
         let mut changed = false;
         let mut typed_char = None;
@@ -1448,6 +1452,153 @@ impl EditorState {
         None
     }
 
+    // ---- Context menu -------------------------------------------------------------------
+
+    /// The menu of the text: each entry does what its shortcut does.
+    fn text_menu(&mut self, ui: &mut Ui, opt: &Options) {
+        crate::ui::menu_begin(ui);
+        let editable = !opt.read_only;
+        let code = opt.assist.is_some();
+        let key = |key: Key, modifiers: Modifiers| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers,
+        };
+        let ctrl = Modifiers::COMMAND;
+        let mut chosen = None;
+        let mut entry = |ui: &mut Ui,
+                         icon: Option<&str>,
+                         label: &str,
+                         shortcut: &str,
+                         enabled: bool,
+                         event: egui::Event| {
+            if crate::ui::menu_entry(ui, icon, label, Some(shortcut), false, enabled).clicked() {
+                chosen = Some(event);
+                ui.close();
+            }
+        };
+        if code {
+            entry(
+                ui,
+                None,
+                tr!("editor_menu.context_actions"),
+                "Alt+Enter",
+                true,
+                key(Key::Enter, Modifiers::ALT),
+            );
+            crate::ui::menu_separator(ui);
+        }
+        entry(
+            ui,
+            None,
+            tr!("editor_menu.cut"),
+            "Ctrl+X",
+            editable,
+            egui::Event::Cut,
+        );
+        entry(
+            ui,
+            Some("copy"),
+            tr!("editor_menu.copy"),
+            "Ctrl+C",
+            true,
+            egui::Event::Copy,
+        );
+        let paste = crate::ui::menu_entry(
+            ui,
+            None,
+            tr!("editor_menu.paste"),
+            Some("Ctrl+V"),
+            false,
+            editable,
+        );
+        if paste.clicked() {
+            // The clipboard arrives as a Paste event with the next frame.
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+            ui.close();
+        }
+        crate::ui::menu_separator(ui);
+        entry(
+            ui,
+            None,
+            tr!("editor_menu.select_all"),
+            "Ctrl+A",
+            true,
+            key(Key::A, ctrl),
+        );
+        entry(
+            ui,
+            None,
+            tr!("editor_menu.extend_selection"),
+            "Ctrl+W",
+            true,
+            key(Key::W, ctrl),
+        );
+        if editable {
+            crate::ui::menu_separator(ui);
+            entry(
+                ui,
+                None,
+                tr!("editor_menu.comment"),
+                "Ctrl+/",
+                true,
+                key(Key::Slash, ctrl),
+            );
+            entry(
+                ui,
+                None,
+                tr!("editor_menu.duplicate"),
+                "Ctrl+D",
+                true,
+                key(Key::D, ctrl),
+            );
+        }
+        if code {
+            crate::ui::menu_separator(ui);
+            entry(
+                ui,
+                None,
+                tr!("editor_menu.go_declaration"),
+                "Ctrl+B",
+                true,
+                key(Key::B, ctrl),
+            );
+            entry(
+                ui,
+                None,
+                tr!("editor_menu.usages"),
+                "Alt+F7",
+                true,
+                key(Key::F7, Modifiers::ALT),
+            );
+            entry(
+                ui,
+                None,
+                tr!("editor_menu.documentation"),
+                "Ctrl+Q",
+                true,
+                key(Key::Q, ctrl),
+            );
+            if editable {
+                entry(
+                    ui,
+                    None,
+                    tr!("editor_menu.rename"),
+                    "Shift+F6",
+                    true,
+                    key(Key::F6, Modifiers::SHIFT),
+                );
+            }
+        }
+        if let Some(event) = chosen {
+            self.menu_events.push(event);
+            ui.ctx().request_repaint();
+        }
+    }
+
     // ---- Drawing ------------------------------------------------------------------------
 
     /// Galley of a visible line, colored when highlighting has reached it, with the hints of the
@@ -1711,6 +1862,25 @@ impl EditorState {
                     || response.drag_started()
                     || (cfg!(debug_assertions) && std::env::var_os("ATELIER_SHOT_FOCUS").is_some())
                 {
+                    response.request_focus();
+                }
+                // Right click: the caret goes there, unless it is in the selection, which the
+                // menu then works on.
+                if response.secondary_clicked()
+                    && let Some(pos) = response.interact_pointer_pos()
+                {
+                    response.request_focus();
+                    let at = self.hit(ui, text, origin, row, text_x, pos, opt);
+                    let selection = self.selection();
+                    if selection.is_empty() || !selection.contains(&at) {
+                        self.clear_extras();
+                        self.anchor = at;
+                        self.cursor = at;
+                    }
+                }
+                response.context_menu(|ui| self.text_menu(ui, opt));
+                // A click in the menu took the keyboard away: the entry chosen needs it back.
+                if !self.menu_events.is_empty() {
                     response.request_focus();
                 }
                 let focused = response.has_focus();
