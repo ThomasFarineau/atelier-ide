@@ -121,7 +121,7 @@ fn theme(scheme: &Scheme) -> Theme {
             None,
         ),
         (
-            "entity.name.function, support.function, meta.function-call entity.name.function, support.macro, entity.name.macro",
+            "entity.name.function, support.function, meta.function-call entity.name.function, variable.function, support.macro, entity.name.macro",
             scheme.function,
             None,
         ),
