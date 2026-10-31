@@ -281,7 +281,7 @@ pub fn language(path: &Path) -> &'static str {
         "js" | "mjs" | "cjs" | "jsx" => "js",
         "ts" | "tsx" => "ts",
         "java" => "java",
-        "py" => "py",
+        "py" | "pyi" | "pyw" => "py",
         "rs" => "rs",
         "json" => "json",
         "toml" => "toml",

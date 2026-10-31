@@ -110,6 +110,7 @@ pub fn launch(project: &Path) -> Option<Launch> {
         program,
         args: vec!["--stdio".into()],
         options,
+        settings: serde_json::Value::Null,
     })
 }
 

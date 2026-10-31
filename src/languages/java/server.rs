@@ -195,6 +195,7 @@ pub fn find(root: &Path) -> Option<Launch> {
                 program: java,
                 args: arguments(&dir, &jar, root),
                 options: json!({}),
+                settings: serde_json::Value::Null,
             });
         }
         control(|c| {
@@ -212,6 +213,7 @@ pub fn find(root: &Path) -> Option<Launch> {
             data_dir(root).to_string_lossy().into_owned(),
         ],
         options: json!({}),
+        settings: serde_json::Value::Null,
     })
 }
 

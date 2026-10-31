@@ -41,6 +41,7 @@ pub fn launch(project: &Path) -> Option<Launch> {
         args: vec!["--stdio".into()],
         // Without it the server does not format.
         options: json!({"provideFormatter": true}),
+        settings: serde_json::Value::Null,
     })
 }
 

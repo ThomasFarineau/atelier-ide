@@ -60,6 +60,8 @@ pub struct Client {
     shared: Arc<Mutex<Shared>>,
     next_id: AtomicU64,
     exited: Arc<AtomicBool>,
+    /// The settings of [`Launch::settings`].
+    settings: Value,
 }
 
 /// How to launch a server.
@@ -69,6 +71,9 @@ pub struct Launch {
     pub args: Vec<String>,
     /// The `initializationOptions` of the initialize request.
     pub options: Value,
+    /// What the server is told when it asks for its settings (`workspace/configuration`), by
+    /// section: `{"python": {…}, "python.analysis": {…}}`. Null for none.
+    pub settings: Value,
 }
 
 impl Client {
@@ -112,6 +117,7 @@ impl Client {
             shared: shared.clone(),
             next_id: AtomicU64::new(1),
             exited: exited.clone(),
+            settings: launch.settings.clone(),
         });
 
         // Reader: answers and notifications from the server.
@@ -393,8 +399,22 @@ fn handle_message(message: Value, shared: &Arc<Mutex<Shared>>, client: Option<&C
         (Some(id), Some(method)) => {
             let result = match method {
                 "workspace/configuration" => {
-                    let count = message["params"]["items"].as_array().map_or(0, Vec::len);
-                    json!(vec![Value::Null; count])
+                    let items = message["params"]["items"]
+                        .as_array()
+                        .cloned()
+                        .unwrap_or_default();
+                    let settings = client.map_or(&Value::Null, |c| &c.settings);
+                    let answers: Vec<Value> = items
+                        .iter()
+                        .map(|item| {
+                            item["section"]
+                                .as_str()
+                                .and_then(|section| settings.get(section))
+                                .cloned()
+                                .unwrap_or(Value::Null)
+                        })
+                        .collect();
+                    json!(answers)
                 }
                 _ => Value::Null,
             };

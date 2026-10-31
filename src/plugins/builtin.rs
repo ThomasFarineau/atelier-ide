@@ -286,6 +286,7 @@ pub fn all() -> Vec<Box<dyn BuiltinPlugin>> {
         Box::new(crate::languages::rust::RustPlugin),
         Box::new(crate::languages::java::JavaPlugin),
         Box::new(crate::languages::css::CssPlugin),
+        Box::new(crate::languages::python::PythonPlugin),
         Box::new(crate::features::search::SearchPlugin::default()),
         Box::new(crate::features::problems::ProblemsPlugin::default()),
         Box::new(crate::plugins::builtins::msoffice::MsOfficeViewerPlugin::default()),
