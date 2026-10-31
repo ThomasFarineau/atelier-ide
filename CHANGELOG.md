@@ -2,6 +2,60 @@
 
 Every version of Atelier IDE. The entries come from the files of `.changeset/` (see [Versions & releases](https://thomasfarineau.github.io/atelier-ide/contributing/releases)).
 
+## 0.1.4 (2026-10-31)
+
+### Features
+
+#### CSS, SCSS, Sass et Less
+
+Les fichiers `.css`, `.scss`, `.sass` et `.less` sont colorés (sélecteurs, propriétés, variables, mixins, interpolations) et analysés sans serveur : erreurs de syntaxe, structure, complétion des propriétés, des valeurs, des couleurs, des pseudo-classes, des `@règles`, des variables et des mixins, aller à la déclaration et occurrences des variables, mixins, classes et keyframes. Le serveur de langage de VS Code (« CSS : installer » dans Rechercher partout, avec Node.js) ajoute les erreurs complètes, la documentation et le renommage pour CSS, SCSS et Less.
+
+Une pastille s'affiche devant chaque couleur (`#hex`, `rgb()`, `hsl()`, noms). Un clic ouvre un sélecteur de couleur (teinte, opacité, couleur d'avant et d'après, hexadécimal, canaux, format d'écriture) qui modifie la couleur dans le texte ; un Ctrl+Z annule tous les changements faits avec le sélecteur.
+
+Reformater le code (Ctrl+Alt+L) remet une déclaration et un sélecteur par ligne, même pour un fichier minifié. Le clic droit propose aussi **Minifier** (écrit `nom.min.css`) et **Transformer en SCSS, Less ou Sass** : variables, mixins, `@extend` et interpolations suivent, et les règles CSS qui se suivent sont imbriquées. Le fichier est écrit à côté, sans jamais en écraser un.
+
+Ctrl+/ entoure les lignes CSS de `/* */`.
+
+#### Fenêtres centrées, écran de démarrage et plantages expliqués
+
+Une fenêtre s'ouvre toujours au milieu de l'écran où se trouve la souris, à sa taille par défaut ou à ce que l'écran permet. Elle ne revient plus toute petite dans le coin en haut à gauche après avoir été fermée réduite, et rouvre agrandie si la précédente l'était. Son bouton dans la barre des tâches suit la fenêtre quand elle passe sur un autre écran.
+
+Chaque projet ouvert dans une nouvelle fenêtre est un programme à part : fermer la première fenêtre ne ferme plus les autres.
+
+Lancé sans dossier, Atelier ouvre un écran de démarrage avec les projets récents, « Ouvrir… », « Cloner un dépôt… » et **« Nouveau projet… »** (un nom et un emplacement), au lieu d'ouvrir le dossier du programme.
+
+Quand Atelier s'arrête de façon inattendue (erreur, mémoire saturée), la cause est écrite dans `logs/crash.log` du dossier de données et la fenêtre suivante le signale. Les lignes très longues (code minifié) ne sont affichées que sur leurs 10 000 premiers caractères : elles pouvaient prendre des gigaoctets de mémoire. Fermer l'onglet d'un gros fichier libère aussi ce que les plugins gardaient pour lui.
+
+#### Lecteur multimédia : musique et vidéos
+
+Les fichiers MP3, WAV, FLAC, OGG et M4A s'ouvrent dans un lecteur, sans rien à installer. Les vidéos MP4, MKV, AVI, MOV et WebM (et les sons comme Opus) sont lues avec ffmpeg : celui du PATH, ou un build que le lecteur propose de télécharger (Windows et Linux), vérifié par sa somme SHA-256.
+
+Lecture et pause (Espace ou clic sur l'image), déplacement dans le fichier (barre de temps, ← et →), volume et son coupé. Un fichier se met en pause quand son onglet n'est plus affiché.
+
+#### Menu contextuel de l'éditeur et « Ajouter au .gitignore »
+
+Un clic droit dans le texte ouvre un menu : couper, copier, coller, tout sélectionner, étendre la sélection, commenter, dupliquer, reformater le code et, dans du code, les actions contextuelles, aller à la déclaration, trouver les utilisations, la documentation et renommer. Les commandes des plugins pour le fichier s'y ajoutent. Le clic droit garde la sélection quand il tombe dedans.
+
+Dans l'arborescence du projet, le groupe Git du clic droit propose **« Ajouter au .gitignore »** pour un fichier, un dossier ou toute la sélection. Une notification prévient quand git suit déjà le fichier, que le `.gitignore` n'ignore alors pas.
+
+#### Plugin Cargo, et Jupyter séparé de Runtimes
+
+**Cargo.** Une fenêtre Cargo, sur le rail de droite des projets qui ont un `Cargo.toml`, liste les paquets et les workspaces du projet avec leurs cibles (binaires, exemples, tests, benchmarks). Un double-clic exécute une cible ; le menu d'un `Cargo.toml` compile, vérifie, teste, lance Clippy, formate, ouvre la documentation, met à jour les dépendances ou nettoie.
+
+**Jupyter.** Les notebooks ont leur propre plugin, Jupyter, qui se désactive sans toucher aux environnements du projet ; le plugin Runtimes ne s'occupe plus que des Python, JDK et Node.js du projet et de son `.venv`.
+
+#### Python
+
+Sans serveur, Atelier connaît les fichiers Python par lui-même : erreurs de syntaxe, structure (classes, méthodes, fonctions, noms du module), occurrences d'un nom dans sa portée, aller à la déclaration (paramètres, affectations, boucles, imports, `self.x`), complétion des noms du fichier, des membres de `self`, des mots-clés et des fonctions intégrées, et modèles (`main`, `init`, `try`, `prop`…).
+
+pyright (ou basedpyright, pris dans le venv du projet, le `PATH`, ou installé avec « Python : installer » dans Rechercher partout) prend le relais : types, erreurs, documentation, renommage, avec les paquets du `.venv` du projet. Reformater le code passe par ruff, sinon black. Les fichiers `.pyi` et `.pyw` sont aussi du Python.
+
+### Fixes
+
+#### Couleurs du code dans les template strings
+
+En TypeScript, le code entre `${` et `}` d'une template string n'est plus coloré comme la chaîne : il garde les couleurs du code. En JavaScript, les appels de méthode (`liste.join(…)`) prennent la couleur des fonctions, comme en TypeScript.
+
 ## 0.1.3 (2026-10-16)
 
 ### Features
