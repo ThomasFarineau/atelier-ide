@@ -2750,6 +2750,13 @@ impl Ide {
     }
 
     fn tree_menu(&mut self, response: &egui::Response, path: &Path, is_dir: bool) {
+        /// What a plugin offers in the menu of the tree.
+        struct PluginSection {
+            plugin: &'static str,
+            name: &'static str,
+            tree: Vec<crate::plugins::builtin::Command>,
+            file: Vec<crate::plugins::builtin::Command>,
+        }
         response.context_menu(|ui| {
             ui::menu_begin(ui);
             let is_root = path == self.root;
@@ -2767,29 +2774,46 @@ impl Ide {
                 } else {
                     vec![path.to_path_buf()]
                 };
-            let tree_commands: Vec<(&'static str, crate::plugins::builtin::Command)> =
-                if targets.is_empty() {
-                    Vec::new()
-                } else {
-                    self.builtins
-                        .iter()
-                        .filter(|p| self.builtin_enabled(p.id()))
-                        .flat_map(|p| {
-                            p.tree_commands(&targets)
-                                .into_iter()
-                                .map(move |c| (p.id(), c))
-                        })
-                        .collect()
-                };
+            // A section per plugin, under its name: what it does with the selected entries,
+            // then with the file (the gutter commands, which act on it as the open document).
+            let single_file = !is_dir && targets.len() == 1;
+            let sections: Vec<PluginSection> = self
+                .builtins
+                .iter()
+                .filter(|p| self.builtin_enabled(p.id()))
+                .map(|p| PluginSection {
+                    plugin: p.id(),
+                    name: p.name(),
+                    tree: if targets.is_empty() {
+                        Vec::new()
+                    } else {
+                        p.tree_commands(&targets)
+                    },
+                    file: if single_file {
+                        p.gutter_commands(path)
+                    } else {
+                        Vec::new()
+                    },
+                })
+                .filter(|s| !s.tree.is_empty() || !s.file.is_empty())
+                .collect();
             let tree_menu_commands = |ide: &mut Self, ui: &mut egui::Ui| {
-                if tree_commands.is_empty() {
-                    return;
-                }
-                ui::menu_separator(ui);
-                for (plugin, command) in &tree_commands {
-                    if ui::menu_item(ui, Some("git"), &command.label, None, false).clicked() {
-                        ide.run_tree_command(plugin, command.id, &targets);
-                        ui.close();
+                for section in &sections {
+                    ui::menu_separator(ui);
+                    ui::menu_title(ui, section.name);
+                    let icon = Some(section.plugin).filter(|id| *id == "git");
+                    for command in &section.tree {
+                        if ui::menu_item(ui, icon, &command.label, None, false).clicked() {
+                            ide.run_tree_command(section.plugin, command.id, &targets);
+                            ui.close();
+                        }
+                    }
+                    for command in &section.file {
+                        if ui::menu_item(ui, icon, &command.label, None, false).clicked() {
+                            ide.open_file(path.to_path_buf());
+                            ide.run_builtin_command(section.plugin, command.id);
+                            ui.close();
+                        }
                     }
                 }
             };
@@ -2927,30 +2951,6 @@ impl Ide {
                 ui.close();
             }
             tree_menu_commands(self, ui);
-            if !is_dir {
-                let commands: Vec<_> = self
-                    .builtins
-                    .iter()
-                    .filter(|p| self.builtin_enabled(p.id()))
-                    .flat_map(|p| {
-                        p.gutter_commands(path)
-                            .into_iter()
-                            .map(move |c| (p.id(), c))
-                    })
-                    .collect();
-                if !commands.is_empty() {
-                    ui::menu_separator(ui);
-                    ui::menu_title(ui, "Git");
-                    for (plugin, command) in commands {
-                        if ui::menu_item(ui, Some("git"), &command.label, None, false).clicked() {
-                            // File commands act on the active document.
-                            self.open_file(path.to_path_buf());
-                            self.run_builtin_command(plugin, command.id);
-                            ui.close();
-                        }
-                    }
-                }
-            }
         });
     }
 
