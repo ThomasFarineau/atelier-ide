@@ -13,7 +13,7 @@ pub(crate) mod hover;
 pub(crate) mod imports;
 pub(crate) mod navigate;
 pub(crate) mod rename;
-mod server;
+pub(crate) mod server;
 pub(crate) mod symbols;
 
 use crate::languages::{

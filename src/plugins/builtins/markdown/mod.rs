@@ -50,6 +50,12 @@ fn base_uri(path: &Path) -> String {
 }
 
 impl BuiltinPlugin for MarkdownPlugin {
+    fn file_closed(&mut self, _ctx: &egui::Context, path: &Path) {
+        if self.views.remove(path).is_some() {
+            // What the previews laid out; the ones still open lay it out again.
+            self.cache = CommonMarkCache::default();
+        }
+    }
     fn id(&self) -> &'static str {
         "markdown"
     }

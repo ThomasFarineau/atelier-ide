@@ -369,6 +369,12 @@ pub struct MermaidPlugin {
 }
 
 impl BuiltinPlugin for MermaidPlugin {
+    fn file_closed(&mut self, ctx: &egui::Context, path: &Path) {
+        self.zoom.remove(path);
+        if let Some(uri) = self.uris.remove(path) {
+            ctx.forget_image(&uri);
+        }
+    }
     fn id(&self) -> &'static str {
         "mermaid"
     }

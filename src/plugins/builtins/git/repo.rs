@@ -381,6 +381,23 @@ impl Repo {
         Ok(parse_status(&out))
     }
 
+    /// Of `rels` (relative to the root), the ones git tracks, or that hold tracked files.
+    pub fn tracked(&self, rels: &[String]) -> Vec<String> {
+        // The paths are taken literally: `GIT_LITERAL_PATHSPECS` is set.
+        let mut args = vec!["ls-files", "-z", "--"];
+        args.extend(rels.iter().map(String::as_str));
+        let out = self.read(&args).unwrap_or_default();
+        let files: Vec<&str> = out.split('\0').filter(|p| !p.is_empty()).collect();
+        rels.iter()
+            .filter(|r| {
+                files
+                    .iter()
+                    .any(|f| *f == r.as_str() || f.starts_with(&format!("{r}/")))
+            })
+            .cloned()
+            .collect()
+    }
+
     /// Ignored files and folders (a folder that is ignored as a whole counts once).
     pub fn ignored(&self) -> Vec<PathBuf> {
         let out = self

@@ -285,7 +285,7 @@ impl View {
         if self.kernel.is_some() {
             return;
         }
-        let python = super::install::python(root)
+        let python = crate::plugins::builtins::runtimes::install::python(root)
             .unwrap_or_else(|| PathBuf::from(if cfg!(windows) { "python" } else { "python3" }));
         let cwd = path.parent().unwrap_or(root);
         let ctx = ctx.clone();
@@ -338,7 +338,7 @@ impl View {
                 }
                 Event::Failed(why) => {
                     let why = match why.trim() {
-                        "" => tr!("runtimes.kernel_stopped").to_string(),
+                        "" => tr!("jupyter.kernel_stopped").to_string(),
                         why => why.lines().last().unwrap_or(why).to_string(),
                     };
                     self.status = Status::Failed(why);
@@ -390,7 +390,7 @@ impl View {
         let Some(notebook) = self.notebook.clone() else {
             ui.add_space(20.0);
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new(tr!("runtimes.notebook_invalid")).color(t.error));
+                ui.label(RichText::new(tr!("jupyter.notebook_invalid")).color(t.error));
             });
             return;
         };
@@ -420,20 +420,15 @@ impl View {
                             ui.add_space(10.0);
                         }
                         ui.horizontal(|ui| {
-                            if ui::icon_text_button(
-                                ui,
-                                Some("add"),
-                                tr!("runtimes.add_code"),
-                                false,
-                            )
-                            .clicked()
+                            if ui::icon_text_button(ui, Some("add"), tr!("jupyter.add_code"), false)
+                                .clicked()
                             {
                                 actions.push(Action::Add(cells.len(), "code"));
                             }
                             if ui::icon_text_button(
                                 ui,
                                 Some("add"),
-                                tr!("runtimes.add_markdown"),
+                                tr!("jupyter.add_markdown"),
                                 false,
                             )
                             .clicked()
@@ -474,38 +469,38 @@ impl View {
         let t = ui::theme(ui.ctx());
         ui.horizontal(|ui| {
             ui.add_space(8.0);
-            if ui::icon_button(ui, "run", tr!("runtimes.run_all")).clicked() {
+            if ui::icon_button(ui, "run", tr!("jupyter.run_all")).clicked() {
                 actions.push(Action::RunAll);
             }
             let running = self.kernel.is_some();
-            if ui::icon_button_enabled(ui, "stop", running, tr!("runtimes.interrupt")).clicked() {
+            if ui::icon_button_enabled(ui, "stop", running, tr!("jupyter.interrupt")).clicked() {
                 actions.push(Action::Interrupt);
             }
-            if ui::icon_button_enabled(ui, "rerun", running, tr!("runtimes.restart")).clicked() {
+            if ui::icon_button_enabled(ui, "rerun", running, tr!("jupyter.restart")).clicked() {
                 actions.push(Action::Restart);
             }
-            if ui::icon_button(ui, "delete", tr!("runtimes.clear_outputs")).clicked() {
+            if ui::icon_button(ui, "delete", tr!("jupyter.clear_outputs")).clicked() {
                 actions.push(Action::ClearOutputs);
             }
-            if ui::icon_button(ui, "openNewTab", tr!("runtimes.open_jupyterlab")).clicked() {
+            if ui::icon_button(ui, "openNewTab", tr!("jupyter.open_jupyterlab")).clicked() {
                 requests.push(Request::OpenJupyterLab(path.to_path_buf()));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(8.0);
                 match &self.status {
                     Status::Missing => {
-                        if ui::primary_button(ui, tr!("runtimes.install_jupyter")).clicked() {
+                        if ui::primary_button(ui, tr!("jupyter.install_jupyter")).clicked() {
                             requests.push(Request::InstallJupyter);
                             self.status = Status::Off;
                         }
                         ui.label(
-                            RichText::new(tr!("runtimes.jupyter_missing"))
+                            RichText::new(tr!("jupyter.jupyter_missing"))
                                 .small()
                                 .color(t.warning),
                         );
                     }
                     Status::Failed(why) => {
-                        if ui::button(ui, tr!("runtimes.title")).clicked() {
+                        if ui::button(ui, tr!("jupyter.show_runtimes")).clicked() {
                             requests.push(Request::ShowRuntimes);
                         }
                         ui.label(RichText::new(why).small().color(t.error))
@@ -513,14 +508,14 @@ impl View {
                     }
                     status => {
                         let label = match status {
-                            Status::Starting => tr!("runtimes.kernel_starting").to_string(),
+                            Status::Starting => tr!("jupyter.kernel_starting").to_string(),
                             Status::Ready(version) if !self.queued.is_empty() => {
-                                trf!("runtimes.kernel_busy", version = version)
+                                trf!("jupyter.kernel_busy", version = version)
                             }
                             Status::Ready(version) => {
-                                trf!("runtimes.kernel_idle", version = version)
+                                trf!("jupyter.kernel_idle", version = version)
                             }
-                            _ => tr!("runtimes.kernel_off").to_string(),
+                            _ => tr!("jupyter.kernel_off").to_string(),
                         };
                         ui.label(RichText::new(label).small().color(t.text_secondary));
                     }
@@ -546,7 +541,7 @@ impl View {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             if kind == "code" {
-                if ui::icon_button(ui, "run", tr!("runtimes.run_cell")).clicked() {
+                if ui::icon_button(ui, "run", tr!("jupyter.run_cell")).clicked() {
                     actions.push(Action::Run(key));
                 }
                 let count = if self.queued.first() == Some(&key) {
@@ -569,20 +564,20 @@ impl View {
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
-                if ui::icon_button(ui, "delete", tr!("runtimes.delete_cell")).clicked() {
+                if ui::icon_button(ui, "delete", tr!("jupyter.delete_cell")).clicked() {
                     actions.push(Action::Delete(key));
                 }
-                if ui::icon_button(ui, "down", tr!("runtimes.move_down")).clicked() {
+                if ui::icon_button(ui, "down", tr!("jupyter.move_down")).clicked() {
                     actions.push(Action::Move(key, 1));
                 }
-                if ui::icon_button(ui, "up", tr!("runtimes.move_up")).clicked() {
+                if ui::icon_button(ui, "up", tr!("jupyter.move_up")).clicked() {
                     actions.push(Action::Move(key, -1));
                 }
                 let other = if kind == "code" { "markdown" } else { "code" };
                 let label = if other == "code" {
-                    tr!("runtimes.to_code")
+                    tr!("jupyter.to_code")
                 } else {
-                    tr!("runtimes.to_markdown")
+                    tr!("jupyter.to_markdown")
                 };
                 if ui::icon_button(ui, "changelist", label).clicked() {
                     actions.push(Action::ChangeType(key, other));
@@ -642,7 +637,7 @@ impl View {
             if response.changed() {
                 edited = Some(source.clone());
             }
-            if kind == "markdown" && ui::button(ui, tr!("runtimes.done_editing")).clicked() {
+            if kind == "markdown" && ui::button(ui, tr!("jupyter.done_editing")).clicked() {
                 self.editing.remove(&key);
             }
         } else {
@@ -652,7 +647,7 @@ impl View {
                     ui.set_min_width(ui.available_width());
                     if source.trim().is_empty() {
                         ui.label(
-                            RichText::new(tr!("runtimes.empty_markdown"))
+                            RichText::new(tr!("jupyter.empty_markdown"))
                                 .italics()
                                 .color(t.text_secondary),
                         );
@@ -665,7 +660,7 @@ impl View {
             if response.double_clicked() {
                 self.editing.insert(key);
             }
-            response.on_hover_text(tr!("runtimes.double_click_edit"));
+            response.on_hover_text(tr!("jupyter.double_click_edit"));
         }
         if kind == "code"
             && let Some(outputs) = cell["outputs"].as_array()
@@ -747,7 +742,7 @@ impl View {
                         mono(ui, &strip_ansi(&text_of(plain)), t.text);
                     } else if let Some(mime) = data.as_object().and_then(|m| m.keys().next()) {
                         ui.label(
-                            RichText::new(trf!("runtimes.output_unsupported", mime = mime))
+                            RichText::new(trf!("jupyter.output_unsupported", mime = mime))
                                 .italics()
                                 .color(t.text_secondary),
                         );
@@ -871,5 +866,5 @@ impl View {
 }
 
 #[cfg(test)]
-#[path = "../../../../test/plugins/builtins/runtimes/notebook/tests.rs"]
+#[path = "../../../../test/plugins/builtins/jupyter/notebook/tests.rs"]
 mod tests;

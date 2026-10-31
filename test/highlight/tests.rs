@@ -70,3 +70,48 @@ fn work_stops_at_the_time_budget() {
     assert!(h.lines.len() < 100_000);
     assert!(Incremental::new("txt", true).advance(|_| None, 10, Duration::ZERO));
 }
+
+/// The color of the first `needle` of the line, the text color where nothing colors it.
+fn shown_at(h: &mut Incremental, line: usize, text: &str, needle: &str) -> Color32 {
+    let start = text.find(needle).unwrap();
+    h.line(line, text)
+        .unwrap()
+        .spans
+        .iter()
+        .find(|(r, _)| r.contains(&start))
+        .map_or(rgb(DARK.text), |(_, c)| *c)
+}
+
+#[test]
+fn the_code_of_a_template_string_is_colored_as_code() {
+    let line = r#"log(`${project.name} : ${project.languages.join(", ")}`);"#;
+    for language in ["js", "ts"] {
+        let mut h = Incremental::new(language, true);
+        assert!(h.advance(
+            |i| (i == 0).then(|| line.to_string()),
+            1,
+            Duration::from_secs(5)
+        ));
+        // The text of the template is a string, the code between `${` and `}` is not.
+        assert_eq!(
+            shown_at(&mut h, 0, line, " : "),
+            rgb(DARK.string),
+            "{language}"
+        );
+        assert_eq!(
+            shown_at(&mut h, 0, line, "project"),
+            rgb(DARK.text),
+            "{language}"
+        );
+        assert_eq!(
+            shown_at(&mut h, 0, line, "join"),
+            rgb(DARK.function),
+            "{language}"
+        );
+        assert_eq!(
+            shown_at(&mut h, 0, line, "\", \""),
+            rgb(DARK.string),
+            "{language}"
+        );
+    }
+}

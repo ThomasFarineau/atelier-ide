@@ -4,13 +4,16 @@ use super::*;
 fn special_names_win_over_extensions() {
     assert_eq!(
         file_key(Path::new("Cargo.toml")),
-        "file/extensions/cargo.toml"
+        "languages/rust/extensions/cargo.toml"
     );
     assert_eq!(
         file_key(Path::new("Cargo.lock")),
         "file/extensions/lock+package-lock.json"
     );
-    assert_eq!(file_key(Path::new("a/main.RS")), "file/extensions/rs");
+    assert_eq!(
+        file_key(Path::new("a/main.RS")),
+        "languages/rust/extensions/rs"
+    );
     assert_eq!(file_key(Path::new("README")), "file/file");
     assert_eq!(
         file_key(Path::new("Dockerfile")),

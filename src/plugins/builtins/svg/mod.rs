@@ -23,6 +23,11 @@ pub fn is_svg(path: &Path) -> bool {
 }
 
 impl BuiltinPlugin for SvgPlugin {
+    fn file_closed(&mut self, ctx: &egui::Context, path: &Path) {
+        if let Some(uri) = self.uris.remove(path) {
+            ctx.forget_image(&uri);
+        }
+    }
     fn id(&self) -> &'static str {
         "svg"
     }

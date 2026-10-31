@@ -1,0 +1,12 @@
+{
+  "python.cannot_install_server": "Cannot install pyright: {e}",
+  "python.command_install": "Python: install the language server (npm pyright)",
+  "python.command_restart": "Python: restart the language server",
+  "python.description": "Errors, completion, hover, navigation, rename and quick fixes for Python with pyright (or basedpyright), which knows the venv of the project; structure, syntax errors, names of the file and of self, and templates by local analysis without it; formatting with ruff or black.",
+  "python.formatter_failed": "{name} could not format the file: {error}",
+  "python.installing_server": "Installing pyright…",
+  "python.needs_server": "This action needs pyright: install it from Search Everywhere (\"Python: install\")",
+  "python.no_formatter": "No formatter: install ruff (pip install ruff) or black in the project",
+  "python.npm_not_found": "npm cannot be found: install Node.js from https://nodejs.org",
+  "python.server_installed": "pyright installed"
+}

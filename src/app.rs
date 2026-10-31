@@ -45,6 +45,8 @@ use crate::editor::FormatRequest;
 use settings_page::{Draft, Page, RunTool};
 
 const TITLE_HEIGHT: f32 = 40.0;
+/// Size of the window that opens without a project, in points.
+const START_SCREEN_SIZE: [f32; 2] = [980.0, 680.0];
 const STATUS_HEIGHT: f32 = 28.0;
 const STRIPE_WIDTH: f32 = 40.0;
 const HEADER_HEIGHT: f32 = 38.0;
@@ -261,6 +263,8 @@ struct Settings {
     /// The language of the interface; the one of the system until the user picks one.
     /// Its identifier (`fr_FR`, `en_US`).
     language: Option<String>,
+    /// The last window closed was maximized: the next one opens maximized.
+    window_maximized: bool,
 }
 
 /// The projects the Projects page keeps; the project widget shows the first ten.
@@ -404,6 +408,17 @@ pub struct Ide {
     /// The Projects page, open, and its search.
     show_projects: bool,
     projects_filter: String,
+    /// Started without a folder: the window shows the Projects page alone, until a project
+    /// is opened or created.
+    start_screen: bool,
+    /// The dialog that creates a project: its name and the folder it goes in.
+    new_project: Option<projects_page::NewProject>,
+    /// The native window, placed and kept on the taskbar of its monitor.
+    window: Option<crate::window::Window>,
+    /// The project chosen on the start screen, opened by the next frame.
+    pending_start: Option<PathBuf>,
+    /// The files of the open documents the last frame, to tell the plugins which are closed.
+    open_paths: Vec<PathBuf>,
     settings_page: Page,
     /// What the settings dialog edits, and the settings it started from.
     settings_draft: Draft,
@@ -623,6 +638,11 @@ impl Ide {
             show_settings: false,
             show_projects: false,
             projects_filter: String::new(),
+            start_screen: false,
+            new_project: None,
+            window: None,
+            pending_start: None,
+            open_paths: Vec::new(),
             settings_page: Page::Appearance,
             settings_draft: draft.clone(),
             settings_original: draft,
@@ -704,8 +724,34 @@ impl Ide {
             Some(language) => crate::i18n::set(language),
             None => crate::i18n::set(crate::i18n::system()),
         }
-        let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let mut ide = Self::blank(root, settings, crate::dev::listen(&cc.egui_ctx));
+        let target = crate::cli::target();
+        let reload = crate::dev::listen(&cc.egui_ctx);
+        let session = crate::dev::session_path().filter(|p| reload.is_some() && p.exists());
+        // Without a folder to open, the window offers to open or create one: the folder it was
+        // started from (often the one of the program) is no project.
+        let start_screen = target.is_none() && session.is_none();
+        let root = if start_screen {
+            let dir = crate::cli::data_dir();
+            let _ = fs::create_dir_all(&dir);
+            dir
+        } else {
+            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+        };
+        let mut ide = Self::blank(root, settings, reload);
+        ide.start_screen = start_screen;
+        ide.window = crate::window::Window::new(cc);
+        if let Some(window) = &mut ide.window {
+            let size = if start_screen {
+                START_SCREEN_SIZE
+            } else {
+                crate::window::DEFAULT_SIZE
+            };
+            window.center(size);
+        }
+        if ide.settings.window_maximized && !start_screen {
+            cc.egui_ctx
+                .send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+        }
         let ctx = cc.egui_ctx.clone();
         ide.repaint = Arc::new(move || ctx.request_repaint());
         ide.languages = Arc::new(crate::languages::Service::new(
@@ -715,22 +761,33 @@ impl Ide {
         egui_extras::install_image_loaders(&cc.egui_ctx);
         ide.sync_in(&cc.egui_ctx);
         // `atelier <folder|file>`: a folder is the project, a file opens in the current one.
-        let target = crate::cli::target();
         if let Some(path) = target.clone().filter(|p| p.is_dir()) {
             ide.switch_project(path);
         }
-        if ide.reload.is_some()
-            && let Some(path) = crate::dev::session_path()
-        {
+        if let Some(path) = session {
             ide.restore_session(&path);
         }
         if let Some(file) = target.filter(|p| p.is_file()) {
             ide.open_file(file);
         }
         ide.cli = crate::cli::serve(&ide.root, ide.repaint.clone());
-        ide.graph.set_root(&ide.root, ide.repaint.clone());
+        if !start_screen {
+            ide.graph.set_root(&ide.root, ide.repaint.clone());
+        }
         crate::stats::start();
         ide.apply_theme(&cc.egui_ctx);
+        if let Some(line) = crate::crash::previous() {
+            ide.push_note(
+                tr!("crash.previous_title"),
+                trf!(
+                    "crash.previous",
+                    line = line,
+                    path = crate::crash::crash_log().display()
+                ),
+                true,
+                true,
+            );
+        }
         ide
     }
 
@@ -745,7 +802,20 @@ impl Ide {
             None => return,
         };
         for path in requests {
-            if path.is_dir() {
+            if self.start_screen {
+                // The window had no project: what it is given becomes it.
+                let project = if path.is_dir() {
+                    Some(path.clone())
+                } else {
+                    path.parent().map(Path::to_path_buf)
+                };
+                if let Some(project) = project {
+                    self.leave_start_screen(ctx, project);
+                }
+                if path.is_file() {
+                    self.open_file(path);
+                }
+            } else if path.is_dir() {
                 self.open_project(path);
             } else {
                 self.open_file(path);
@@ -1012,7 +1082,7 @@ impl Ide {
     }
     fn choose_project(&mut self, new_window: bool) {
         if let Some(path) = rfd::FileDialog::new()
-            .set_directory(&self.root)
+            .set_directory(self.projects_folder())
             .pick_folder()
         {
             if new_window {
@@ -1025,20 +1095,37 @@ impl Ide {
     /// Opens a project, asking first whether to replace this one or use a new window.
     fn open_project(&mut self, path: PathBuf) {
         let path = path.canonicalize().unwrap_or(path);
-        if path != self.root {
+        if self.start_screen {
+            // Nothing to replace: no question.
+            self.pending_start = Some(path);
+        } else if path != self.root {
             self.project_choice = Some(path);
+        }
+    }
+    /// The window of the start screen becomes the one of `project`.
+    fn leave_start_screen(&mut self, ctx: &egui::Context, project: PathBuf) {
+        self.start_screen = false;
+        self.show_projects = false;
+        self.switch_project(project);
+        if let Some(window) = &mut self.window {
+            window.center(crate::window::DEFAULT_SIZE);
+        }
+        if self.settings.window_maximized {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
         }
     }
     /// Each project window is its own process, as IntelliJ on Windows.
     fn open_window(&mut self, path: PathBuf) {
         let result = std::env::current_exe().and_then(|exe| {
-            std::process::Command::new(exe)
-                .arg("--new-window")
-                .arg(project::simplify(&path))
-                .current_dir(project::simplify(&path))
-                .env_remove(crate::dev::CHILD_ENV)
-                .env_remove(crate::dev::SESSION_ENV)
-                .spawn()
+            // Detached: closing this window, or what started it, leaves the new one open.
+            crate::window::spawn_detached(
+                std::process::Command::new(exe)
+                    .arg("--new-window")
+                    .arg(project::simplify(&path))
+                    .current_dir(project::simplify(&path))
+                    .env_remove(crate::dev::CHILD_ENV)
+                    .env_remove(crate::dev::SESSION_ENV),
+            )
         });
         match result {
             Ok(_) => {
@@ -1046,6 +1133,43 @@ impl Ide {
                 self.status = trf!("project_opened_new_window", path = path.display());
             }
             Err(e) => self.status = trf!("error_cannot_open_new_window", e = e),
+        }
+    }
+    /// Remembers whether the window is maximized, for the next one, and keeps its taskbar
+    /// button on the monitor it is on.
+    fn track_window(&mut self, ctx: &egui::Context) {
+        let (maximized, minimized) =
+            ctx.input(|i| (i.viewport().maximized, i.viewport().minimized));
+        if !self.start_screen
+            && minimized != Some(true)
+            && let Some(maximized) = maximized
+        {
+            self.settings.window_maximized = maximized;
+        }
+        if let Some(wait) = self.window.as_mut().and_then(|w| w.follow_monitor()) {
+            ctx.request_repaint_after(wait);
+        }
+    }
+    /// The plugins let go of what they kept for the files that were closed (pictures,
+    /// copies of the text): a big file gives its memory back when its tab closes.
+    fn release_closed_files(&mut self, ctx: &egui::Context) {
+        let open = self.documents.iter().filter_map(|d| d.path.as_ref());
+        if open.eq(self.open_paths.iter()) {
+            return;
+        }
+        let now: Vec<PathBuf> = self
+            .documents
+            .iter()
+            .filter_map(|d| d.path.clone())
+            .collect();
+        let closed: Vec<PathBuf> = std::mem::replace(&mut self.open_paths, now)
+            .into_iter()
+            .filter(|p| !self.open_paths.contains(p))
+            .collect();
+        for path in &closed {
+            for plugin in &mut self.builtins {
+                plugin.file_closed(ctx, path);
+            }
         }
     }
     fn remember(&mut self, path: &Path) {
@@ -2626,6 +2750,13 @@ impl Ide {
     }
 
     fn tree_menu(&mut self, response: &egui::Response, path: &Path, is_dir: bool) {
+        /// What a plugin offers in the menu of the tree.
+        struct PluginSection {
+            plugin: &'static str,
+            name: &'static str,
+            tree: Vec<crate::plugins::builtin::Command>,
+            file: Vec<crate::plugins::builtin::Command>,
+        }
         response.context_menu(|ui| {
             ui::menu_begin(ui);
             let is_root = path == self.root;
@@ -2634,6 +2765,58 @@ impl Ide {
                 .into_iter()
                 .filter(|p| *p != self.root)
                 .collect();
+            // What the plugins offer for the selection, or for this entry alone.
+            let targets: Vec<PathBuf> =
+                if selection.len() > 1 && selection.iter().any(|p| p == path) {
+                    selection.clone()
+                } else if is_root {
+                    Vec::new()
+                } else {
+                    vec![path.to_path_buf()]
+                };
+            // A section per plugin, under its name: what it does with the selected entries,
+            // then with the file (the gutter commands, which act on it as the open document).
+            let single_file = !is_dir && targets.len() == 1;
+            let sections: Vec<PluginSection> = self
+                .builtins
+                .iter()
+                .filter(|p| self.builtin_enabled(p.id()))
+                .map(|p| PluginSection {
+                    plugin: p.id(),
+                    name: p.name(),
+                    tree: if targets.is_empty() {
+                        Vec::new()
+                    } else {
+                        p.tree_commands(&targets)
+                    },
+                    file: if single_file {
+                        p.gutter_commands(path)
+                    } else {
+                        Vec::new()
+                    },
+                })
+                .filter(|s| !s.tree.is_empty() || !s.file.is_empty())
+                .collect();
+            let tree_menu_commands = |ide: &mut Self, ui: &mut egui::Ui| {
+                for section in &sections {
+                    ui::menu_separator(ui);
+                    ui::menu_title(ui, section.name);
+                    let icon = Some(section.plugin).filter(|id| *id == "git");
+                    for command in &section.tree {
+                        if ui::menu_item(ui, icon, &command.label, None, false).clicked() {
+                            ide.run_tree_command(section.plugin, command.id, &targets);
+                            ui.close();
+                        }
+                    }
+                    for command in &section.file {
+                        if ui::menu_item(ui, icon, &command.label, None, false).clicked() {
+                            ide.open_file(path.to_path_buf());
+                            ide.run_builtin_command(section.plugin, command.id);
+                            ui.close();
+                        }
+                    }
+                }
+            };
             if selection.len() > 1 && selection.iter().any(|p| p == path) {
                 ui::menu_title(ui, &trf!("items_selected", count = selection.len()));
                 if ui::menu_item(
@@ -2656,6 +2839,7 @@ impl Ide {
                     ui.ctx().copy_text(paths.join("\n"));
                     ui.close();
                 }
+                tree_menu_commands(self, ui);
                 return;
             }
             if !is_dir
@@ -2766,30 +2950,7 @@ impl Ide {
                 self.execute(&command);
                 ui.close();
             }
-            if !is_dir {
-                let commands: Vec<_> = self
-                    .builtins
-                    .iter()
-                    .filter(|p| self.builtin_enabled(p.id()))
-                    .flat_map(|p| {
-                        p.gutter_commands(path)
-                            .into_iter()
-                            .map(move |c| (p.id(), c))
-                    })
-                    .collect();
-                if !commands.is_empty() {
-                    ui::menu_separator(ui);
-                    ui::menu_title(ui, "Git");
-                    for (plugin, command) in commands {
-                        if ui::menu_item(ui, Some("git"), &command.label, None, false).clicked() {
-                            // File commands act on the active document.
-                            self.open_file(path.to_path_buf());
-                            self.run_builtin_command(plugin, command.id);
-                            ui.close();
-                        }
-                    }
-                }
-            }
+            tree_menu_commands(self, ui);
         });
     }
 
@@ -4211,6 +4372,7 @@ impl Ide {
     fn editor(&mut self, ctx: &egui::Context) {
         let gutter = self.gutter();
         let mut gutter_command = None;
+        let mut reformat = false;
         let mut navigate: Option<(crate::languages::Location, Option<PathBuf>, usize)> = None;
         let mut file_edits: Vec<(PathBuf, Vec<crate::languages::TextEdit>)> = Vec::new();
         let mut new_layout = None;
@@ -4503,6 +4665,7 @@ impl Ide {
                 if output.command.is_some() {
                     gutter_command = output.command;
                 }
+                reformat |= output.reformat;
                 {
                     use crate::find::Action;
                     let selection = doc.view.selection();
@@ -4573,6 +4736,9 @@ impl Ide {
         }
         if let Some((plugin, command)) = gutter_command {
             self.run_builtin_command(plugin, command);
+        }
+        if reformat {
+            self.reformat_code();
         }
         if let Some((target, from, offset)) = navigate {
             self.go_to(target, from, offset);
@@ -5173,6 +5339,7 @@ impl Ide {
     fn dialogs(&mut self, ctx: &egui::Context) {
         self.settings_dialog(ctx);
         self.projects_dialog(ctx);
+        self.new_project_dialog(ctx);
         self.reformat_dialog(ctx);
         self.run_dialog(ctx);
         self.tree_dialogs(ctx);
@@ -5946,6 +6113,15 @@ impl Ide {
         gutter
     }
 
+    fn run_tree_command(&mut self, plugin: &str, command: &str, paths: &[PathBuf]) {
+        self.each_builtin(|p, ide| {
+            if p.id() == plugin {
+                p.run_tree_command(command, paths, ide);
+            }
+        });
+        self.tree.clear();
+    }
+
     fn run_builtin_command(&mut self, plugin: &str, command: &str) {
         self.each_builtin(|p, ide| {
             if p.id() == plugin {
@@ -6425,6 +6601,10 @@ impl eframe::App for Ide {
         self.track_recent_files();
         self.update_window_title(ctx);
         self.serve_command_line(ctx);
+        if let Some(project) = self.pending_start.take() {
+            self.leave_start_screen(ctx, project);
+        }
+        self.track_window(ctx);
         if self
             .reload
             .as_ref()
@@ -6444,6 +6624,13 @@ impl eframe::App for Ide {
         }
         if self.can_quit {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        if self.start_screen {
+            Self::resize_edges(ctx);
+            self.start_screen_ui(ctx);
+            self.dialogs(ctx);
+            self.balloons(ctx);
+            return;
         }
         if self.pending.is_none()
             && self.project_choice.is_none()
@@ -6505,6 +6692,7 @@ impl eframe::App for Ide {
         self.dialogs(ctx);
         self.log_status();
         self.balloons(ctx);
+        self.release_closed_files(ctx);
     }
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         ui::theme_by_index(self.settings.theme)

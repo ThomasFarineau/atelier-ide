@@ -193,6 +193,9 @@ pub trait BuiltinPlugin {
     fn update(&mut self, ctx: &egui::Context, host: &mut dyn Host) {}
     fn shortcuts(&mut self, ctx: &egui::Context, host: &mut dyn Host) {}
     fn file_saved(&mut self, path: &Path) {}
+    /// The last tab of `path` closed: what the plugin kept for it (pictures, copies of the
+    /// text) goes, and its memory with it.
+    fn file_closed(&mut self, ctx: &egui::Context, path: &Path) {}
     /// Widgets after the project menu of the title bar.
     fn toolbar(&mut self, ui: &mut egui::Ui, host: &mut dyn Host) {}
     /// Widgets of the status bar, laid out right to left.
@@ -238,6 +241,12 @@ pub trait BuiltinPlugin {
     fn annotations(&mut self, path: &Path) -> Option<String> {
         None
     }
+    /// Entries of the menu of the project tree, for the files and folders selected there.
+    fn tree_commands(&self, paths: &[PathBuf]) -> Vec<Command> {
+        Vec::new()
+    }
+    /// An entry of [`BuiltinPlugin::tree_commands`] was chosen for `paths`.
+    fn run_tree_command(&mut self, id: &str, paths: &[PathBuf], host: &mut dyn Host) {}
     fn gutter_commands(&self, path: &Path) -> Vec<Command> {
         Vec::new()
     }
@@ -276,13 +285,18 @@ pub fn all() -> Vec<Box<dyn BuiltinPlugin>> {
         Box::new(crate::languages::javascript::JavaScriptPlugin),
         Box::new(crate::languages::rust::RustPlugin),
         Box::new(crate::languages::java::JavaPlugin),
+        Box::new(crate::languages::css::CssPlugin),
+        Box::new(crate::languages::python::PythonPlugin),
         Box::new(crate::features::search::SearchPlugin::default()),
         Box::new(crate::features::problems::ProblemsPlugin::default()),
         Box::new(crate::plugins::builtins::msoffice::MsOfficeViewerPlugin::default()),
         Box::new(crate::plugins::builtins::image::ImagePlugin::default()),
+        Box::new(crate::plugins::builtins::media::MediaPlugin::default()),
         Box::new(crate::plugins::builtins::k8s::K8sPlugin::default()),
         Box::new(crate::plugins::builtins::node::NodePlugin::default()),
+        Box::new(crate::plugins::builtins::cargo::CargoPlugin::default()),
         Box::new(crate::plugins::builtins::runtimes::RuntimesPlugin::default()),
+        Box::new(crate::plugins::builtins::jupyter::JupyterPlugin::default()),
         Box::new(crate::plugins::builtins::maven::MavenPlugin::default()),
         Box::new(crate::plugins::builtins::gradle::GradlePlugin::default()),
         Box::new(crate::plugins::builtins::translations::TranslationsPlugin::default()),

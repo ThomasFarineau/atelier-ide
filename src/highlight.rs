@@ -121,7 +121,7 @@ fn theme(scheme: &Scheme) -> Theme {
             None,
         ),
         (
-            "entity.name.function, support.function, meta.function-call entity.name.function, support.macro, entity.name.macro",
+            "entity.name.function, support.function, meta.function-call entity.name.function, variable.function, support.macro, entity.name.macro",
             scheme.function,
             None,
         ),
@@ -305,6 +305,45 @@ fn palette(scheme: &Scheme) -> crate::languages::typescript::highlight::Palette 
     }
 }
 
+/// The colors of a style sheet (CSS, SCSS, Sass, Less), from its own lexer: syntect knows
+/// none but CSS, and not its nesting.
+fn style_colors(
+    text: &str,
+    language: &str,
+    scheme: &Scheme,
+) -> Option<Vec<crate::languages::typescript::highlight::LineColors>> {
+    use crate::languages::css::lexer::{self, Role};
+    if text.len() > crate::languages::css::analysis::MAX_TEXT {
+        return None;
+    }
+    let c = |rgb: u32| Color32::from_rgb((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8);
+    let color = |role: Role| match role {
+        Role::Comment => c(scheme.comment),
+        Role::String => c(scheme.string),
+        Role::Number => c(scheme.number),
+        Role::Keyword | Role::Interpolation => c(scheme.keyword),
+        Role::Property => c(scheme.key),
+        Role::Variable => c(scheme.constant),
+        Role::Tag => c(scheme.tag),
+        Role::Class | Role::Function => c(scheme.function),
+        Role::Pseudo => c(scheme.annotation),
+        Role::Attribute => c(scheme.attribute),
+        Role::Text => c(scheme.text),
+    };
+    let lines = lexer::line_roles(text, lexer::Dialect::of(language));
+    Some(
+        lines
+            .into_iter()
+            .map(|spans| {
+                spans
+                    .into_iter()
+                    .map(|(r, role)| (r, color(role)))
+                    .collect()
+            })
+            .collect(),
+    )
+}
+
 /// Highlighting of one document, computed line by line on demand.
 pub struct Incremental {
     tree_colors: TreeColors,
@@ -333,7 +372,7 @@ impl Incremental {
         };
         let theme = &settings.ts.themes[if dark { DARK_KEY } else { LIGHT_KEY }];
         let mut highlighter = Self {
-            tree_colors: if language == "ts" {
+            tree_colors: if language == "ts" || crate::languages::css::is_style(language) {
                 TreeColors::Stale
             } else {
                 TreeColors::Unavailable
@@ -357,7 +396,7 @@ impl Incremental {
 
     /// Forgets lines from `line` on; they are computed again when needed.
     pub fn invalidate_from(&mut self, line: usize) {
-        if self.language == "ts" && self.tree_colors != TreeColors::Unavailable {
+        if self.tree_colors != TreeColors::Unavailable {
             self.tree_colors = TreeColors::Stale;
             self.lines.clear();
         }
@@ -395,7 +434,7 @@ impl Incremental {
         until: usize,
         budget: Duration,
     ) -> bool {
-        if self.syntax.is_none() {
+        if self.syntax.is_none() && self.tree_colors == TreeColors::Unavailable {
             return true;
         }
         if self.tree_colors != TreeColors::Unavailable {
@@ -406,10 +445,14 @@ impl Incremental {
                     all.push(line);
                 }
                 let scheme = if self.dark { &DARK } else { &LIGHT };
-                let colored = crate::languages::typescript::highlight::colors(
-                    &all.join("\n"),
-                    &palette(scheme),
-                );
+                let colored = if self.language == "ts" {
+                    crate::languages::typescript::highlight::colors(
+                        &all.join("\n"),
+                        &palette(scheme),
+                    )
+                } else {
+                    style_colors(&all.join("\n"), &self.language, scheme)
+                };
                 match colored {
                     Some(per_line) if per_line.len() == all.len() => {
                         self.lines = per_line

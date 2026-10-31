@@ -61,6 +61,21 @@ pub trait Language: Send + Sync + 'static {
     fn name(&self) -> &'static str;
     /// The `languageId` the protocol wants (`rust`).
     fn language_id(&self) -> &'static str;
+    /// The `languageId` of a document of `language` (as `project::language` names it), for a
+    /// server of several languages (CSS, SCSS, Less).
+    fn language_id_for(&self, language: &str) -> &'static str {
+        let _ = language;
+        self.language_id()
+    }
+    /// Its own formatter is used even when the server runs.
+    fn formats_itself(&self) -> bool {
+        false
+    }
+    /// Whether the server reads documents of `language`; the others get the local analysis.
+    fn server_reads(&self, language: &str) -> bool {
+        let _ = language;
+        true
+    }
     /// The name of its server, for the status bar (`rust-analyzer`).
     fn server_name(&self) -> &'static str;
     /// How to start the server for a project; None when it is not installed. Called on a
@@ -112,6 +127,8 @@ enum Server {
 
 struct DocData {
     path: Option<PathBuf>,
+    /// The language of the document, as `project::language` names it.
+    language: String,
     uri: Option<String>,
     text: String,
     version: u64,
@@ -264,10 +281,10 @@ impl<L: Language> LspProvider<L> {
         let Some(client) = self.client().cloned() else {
             return;
         };
-        let language_id = self.lang.language_id();
         let Some(doc) = self.docs.get_mut(&key) else {
             return;
         };
+        let language_id = self.lang.language_id_for(&doc.language);
         let Some(uri) = &doc.uri else {
             return;
         };
@@ -336,10 +353,12 @@ impl<L: Language> Provider for LspProvider<L> {
             .path
             .as_ref()
             .filter(|p| crate::wsl::parse(p).is_none())
+            .filter(|_| self.lang.server_reads(&doc.language))
             .map(|p| lsp::path_to_uri(p));
         let client = self.client().cloned();
         let data = self.docs.entry(doc.key).or_insert_with(|| DocData {
             path: doc.path.clone(),
+            language: doc.language.clone(),
             uri: None,
             text: String::new(),
             version: 0,
@@ -684,7 +703,8 @@ impl<L: Language> Provider for LspProvider<L> {
                 repaint();
             });
         };
-        let Some((client, uri)) = self.target(doc.key) else {
+        let Some((client, uri)) = self.target(doc.key).filter(|_| !self.lang.formats_itself())
+        else {
             local(slot);
             return answer;
         };

@@ -280,3 +280,34 @@ fn ignored_files_and_folders_are_orange() {
     assert_eq!(plugin.file_color(&t.repo.abs("target/debug/x.bin")), orange);
     assert!(plugin.file_color(&t.repo.abs("a.txt")).is_none());
 }
+
+#[test]
+fn ignored_entries_are_anchored_lines_written_once() {
+    assert_eq!(ignore_line("target", true), "/target/");
+    assert_eq!(ignore_line("src/notes.txt", false), "/src/notes.txt");
+    assert_eq!(ignore_line("a*b#[1]!.txt", false), r"/a\*b\#\[1]\!.txt");
+    let temp = TempRepo::new("ignore-lines");
+    let file = temp.path.join(".gitignore");
+    std::fs::write(&file, "node_modules").unwrap();
+    let entries = [
+        ("dist".to_string(), true),
+        ("secret.env".to_string(), false),
+    ];
+    assert_eq!(add_to_gitignore(&file, &entries).unwrap(), 2);
+    assert_eq!(add_to_gitignore(&file, &entries).unwrap(), 0);
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "node_modules\n/dist/\n/secret.env\n"
+    );
+}
+
+#[test]
+fn git_says_which_ignored_entries_it_still_tracks() {
+    let temp = TempRepo::new("ignore-tracked");
+    temp.write("kept.txt", "x");
+    temp.write("logs/a.log", "x");
+    temp.commit_all("first");
+    temp.write("new.txt", "x");
+    let rels = ["kept.txt", "logs", "new.txt"].map(String::from);
+    assert_eq!(temp.repo.tracked(&rels), ["kept.txt", "logs"]);
+}

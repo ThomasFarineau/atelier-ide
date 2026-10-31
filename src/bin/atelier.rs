@@ -138,7 +138,24 @@ fn check_and_start(
         return Progress::Failed(trf!("atelier_ide_not_installed_could", log = log));
     }
     progress(Progress::Starting);
-    match Command::new(&app).args(args).spawn() {
+    let mut command = Command::new(&app);
+    command.args(args);
+    // The IDE is a process of its own: what started the bootstrap (a terminal, a job) may go.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+        command.creation_flags(
+            DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB,
+        );
+        if command.spawn().is_ok() {
+            return Progress::Done;
+        }
+        command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+    }
+    match command.spawn() {
         Ok(_) => Progress::Done,
         Err(e) => Progress::Failed(trf!("cannot_start_2", app = app.display(), e = e)),
     }

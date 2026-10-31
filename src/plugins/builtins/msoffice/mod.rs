@@ -1188,6 +1188,9 @@ impl MsOfficeViewerPlugin {
 }
 
 impl BuiltinPlugin for MsOfficeViewerPlugin {
+    fn file_closed(&mut self, _ctx: &egui::Context, path: &Path) {
+        self.loaded.remove(path);
+    }
     fn id(&self) -> &'static str {
         "msofficeviewer"
     }
