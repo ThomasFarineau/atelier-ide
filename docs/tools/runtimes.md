@@ -1,6 +1,6 @@
-# Runtimes & Jupyter
+# Runtimes
 
-The built-in **Runtimes & Jupyter** plugin installs a Python, JDKs and Node.js versions **inside the project**, and runs Jupyter notebooks with the Python of the project. Its **Runtimes** window is on the right rail.
+The built-in **Runtimes** plugin installs a Python, JDKs and Node.js versions **inside the project**. Its **Runtimes** window is on the right rail; the [Jupyter](./jupyter) and [Node.js](./node) plugins use what it installs.
 
 ## Runtimes of the project
 
@@ -18,14 +18,4 @@ Each runtime is downloaded into `.atelier/runtimes/<python|jdk|node>/<version>`,
 - **Create .venv** runs `python -m venv .venv` with the Python of the project.
 - The npm window shows the Node.js version of the project when there is one.
 
-## Jupyter notebooks
-
-`.ipynb` files open as a notebook (the layout switch at the top right shows the JSON next to it or instead of it):
-
-- Code cells are edited in place with highlighting; **▶** or **Shift+Enter** runs a cell, the toolbar runs all of them, interrupts or restarts the kernel and clears the outputs.
-- Outputs are written into the notebook as Jupyter does: text, errors (without their colors), PNG, JPEG and SVG images, Markdown. Save the file to keep them.
-- Markdown cells are rendered; double-click one to edit it. Cells can be added, moved, deleted and changed between code and Markdown.
-- The kernel runs with the Python of the project: its `.venv`, else its Python runtime, else the one of the system. It needs `ipykernel` and `jupyter_client`: when they are missing, **Install Jupyter** runs `pip install` in a terminal.
-- **Open in JupyterLab** starts `python -m jupyter lab` on the notebook (JupyterLab must be installed).
-
-Search Everywhere: **Runtimes: Show Project Runtimes**, **Jupyter: New Notebook**, **Jupyter: Install Jupyter in the Project Python**, **Jupyter: Open JupyterLab**, **Python: Create a Virtual Environment (.venv)**.
+Search Everywhere: **Runtimes: Show Project Runtimes**, **Python: Create a Virtual Environment (.venv)**.
