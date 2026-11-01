@@ -869,6 +869,9 @@ impl Provider for JavaScript {
 pub struct JavaScriptPlugin;
 
 impl BuiltinPlugin for JavaScriptPlugin {
+    fn language(&self) -> bool {
+        true
+    }
     fn id(&self) -> &'static str {
         "javascript"
     }

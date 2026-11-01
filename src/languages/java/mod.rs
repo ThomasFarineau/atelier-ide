@@ -84,6 +84,9 @@ pub fn provider(root: &Path, repaint: Arc<dyn Fn() + Send + Sync>) -> Java {
 pub struct JavaPlugin;
 
 impl BuiltinPlugin for JavaPlugin {
+    fn language(&self) -> bool {
+        true
+    }
     fn id(&self) -> &'static str {
         "java"
     }

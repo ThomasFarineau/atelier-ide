@@ -86,6 +86,9 @@ pub fn provider(root: &Path, repaint: Arc<dyn Fn() + Send + Sync>) -> Rust {
 pub struct RustPlugin;
 
 impl BuiltinPlugin for RustPlugin {
+    fn language(&self) -> bool {
+        true
+    }
     fn id(&self) -> &'static str {
         "rust"
     }

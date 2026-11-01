@@ -73,6 +73,7 @@ impl Window {
                 return None;
             };
             let hwnd = handle.hwnd.get() as usize;
+            imp::round_corners(hwnd);
             Some(Self {
                 hwnd,
                 monitor: imp::monitor(hwnd),
@@ -145,6 +146,7 @@ mod imp {
     use windows_sys::{
         Win32::{
             Foundation::{HWND, POINT},
+            Graphics::Dwm::{DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DwmSetWindowAttribute},
             Graphics::Gdi::{
                 GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTOPRIMARY, MONITORINFO,
                 MonitorFromPoint, MonitorFromWindow,
@@ -168,6 +170,21 @@ mod imp {
 
     pub fn monitor(window: usize) -> usize {
         unsafe { MonitorFromWindow(hwnd(window), MONITOR_DEFAULTTONEAREST) as usize }
+    }
+
+    /// Rounded corners, as the windows of Windows 11 have: without its native title bar the
+    /// window kept square ones. Windows squares them itself while the window is maximized or
+    /// snapped; Windows 10 has no such corners and ignores the request.
+    pub fn round_corners(window: usize) {
+        let preference = DWMWCP_ROUND;
+        unsafe {
+            DwmSetWindowAttribute(
+                hwnd(window),
+                DWMWA_WINDOW_CORNER_PREFERENCE as u32,
+                (&raw const preference).cast(),
+                size_of_val(&preference) as u32,
+            );
+        }
     }
 
     pub fn minimized(window: usize) -> bool {

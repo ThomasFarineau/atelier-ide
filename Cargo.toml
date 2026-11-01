@@ -53,11 +53,34 @@ raw-window-handle = "0.6"
 tree-sitter-python = "0.25"
 rodio = { version = "0.23", default-features = false, features = ["playback", "mp3", "wav", "flac", "vorbis", "mp4"] }
 lzma-rs = "0.3"
+# The 3D model viewer: glTF and GLB files, and the matrices of their scenes and animations.
+# The extensions a file may require: without them in the parser, a model that lists one as
+# required cannot be read at all. The viewer draws such models without their effect.
+gltf = { version = "1", features = [
+    "KHR_lights_punctual",
+    "KHR_materials_emissive_strength",
+    "KHR_materials_ior",
+    "KHR_materials_pbrSpecularGlossiness",
+    "KHR_materials_specular",
+    "KHR_materials_transmission",
+    "KHR_materials_unlit",
+    "KHR_materials_variants",
+    "KHR_materials_volume",
+    "KHR_texture_transform",
+] }
+glam = "0.30"
+mongodb = { version = "3", features = ["sync"] }
+postgres = "0.19"
+postgres-native-tls = "0.5"
+native-tls = "0.2"
+mysql = { version = "28", default-features = false, features = ["minimal-rust", "native-tls"] }
 
 [target.'cfg(windows)'.dependencies]
-# Placement of the window on the monitor in use, its taskbar button and its crash log.
+# Placement of the window on the monitor in use, its taskbar button, its rounded corners and
+# its crash log.
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
+    "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
     "Win32_System_Com",
     "Win32_System_Console",

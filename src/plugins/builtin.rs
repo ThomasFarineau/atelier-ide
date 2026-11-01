@@ -175,6 +175,11 @@ pub trait BuiltinPlugin {
     fn core(&self) -> bool {
         false
     }
+    /// Support for a programming language: its commands go in the Languages menu rather than
+    /// in the Plugins one.
+    fn language(&self) -> bool {
+        false
+    }
     fn name(&self) -> &'static str;
     fn description(&self) -> &'static str;
     /// Whether the plugin has something to do in the open project (a `pom.xml` for Maven…).
@@ -286,13 +291,16 @@ pub fn all() -> Vec<Box<dyn BuiltinPlugin>> {
         Box::new(crate::languages::rust::RustPlugin),
         Box::new(crate::languages::java::JavaPlugin),
         Box::new(crate::languages::css::CssPlugin),
+        Box::new(crate::languages::html::HtmlPlugin),
         Box::new(crate::languages::python::PythonPlugin),
         Box::new(crate::features::search::SearchPlugin::default()),
         Box::new(crate::features::problems::ProblemsPlugin::default()),
         Box::new(crate::plugins::builtins::msoffice::MsOfficeViewerPlugin::default()),
         Box::new(crate::plugins::builtins::image::ImagePlugin::default()),
         Box::new(crate::plugins::builtins::media::MediaPlugin::default()),
+        Box::new(crate::plugins::builtins::gltf::GltfPlugin::default()),
         Box::new(crate::plugins::builtins::k8s::K8sPlugin::default()),
+        Box::new(crate::plugins::builtins::database::DatabasePlugin::default()),
         Box::new(crate::plugins::builtins::node::NodePlugin::default()),
         Box::new(crate::plugins::builtins::cargo::CargoPlugin::default()),
         Box::new(crate::plugins::builtins::runtimes::RuntimesPlugin::default()),

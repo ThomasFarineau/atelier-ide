@@ -344,6 +344,119 @@ fn style_colors(
     )
 }
 
+/// The colors of a page (HTML, Pug): its markup from its own lexer, and the code it holds
+/// (`<script>`, `<style>`, the `style` and `onclick` attributes, Pug's code) in the colors of
+/// that code's language, each part colored on its own.
+fn markup_colors(
+    text: &str,
+    language: &str,
+    scheme: &Scheme,
+) -> Option<Vec<crate::languages::typescript::highlight::LineColors>> {
+    use crate::languages::html::{embedded, lexer, pug};
+    if text.len() > crate::languages::html::analysis::MAX_TEXT {
+        return None;
+    }
+    let c = |rgb: u32| {
+        Some(Color32::from_rgb(
+            (rgb >> 16) as u8,
+            (rgb >> 8) as u8,
+            rgb as u8,
+        ))
+    };
+    let mut paint: Vec<Option<Color32>> = vec![None; text.len()];
+    let fill = |paint: &mut [Option<Color32>], range: Range<usize>, color: Option<Color32>| {
+        let end = range.end.min(paint.len());
+        for slot in &mut paint[range.start.min(end)..end] {
+            *slot = color;
+        }
+    };
+    let regions = if language == "pug" {
+        let scan = pug::scan(text);
+        for (range, role) in &scan.tokens {
+            let color = match role {
+                pug::Role::Tag => c(scheme.tag),
+                pug::Role::Id => c(scheme.constant),
+                pug::Role::Class | pug::Role::Name => c(scheme.function),
+                pug::Role::AttrName => c(scheme.attribute),
+                pug::Role::Keyword => c(scheme.keyword),
+                pug::Role::Comment => c(scheme.comment),
+                pug::Role::String => c(scheme.string),
+                pug::Role::Text => None,
+            };
+            fill(&mut paint, range.clone(), color);
+        }
+        scan.regions
+    } else {
+        let scan = lexer::scan(text);
+        for token in &scan.tokens {
+            let color = match token.kind {
+                lexer::Kind::TagOpen
+                | lexer::Kind::TagName
+                | lexer::Kind::TagClose
+                | lexer::Kind::Declaration => c(scheme.tag),
+                lexer::Kind::AttrName | lexer::Kind::Equals => c(scheme.attribute),
+                lexer::Kind::AttrValue => c(scheme.string),
+                lexer::Kind::Comment => c(scheme.comment),
+                lexer::Kind::Entity => c(scheme.escape),
+                lexer::Kind::Text | lexer::Kind::RawText => None,
+            };
+            fill(&mut paint, token.range.clone(), color);
+        }
+        embedded::html_regions(text, &scan)
+    };
+    for region in &regions {
+        let code = &text[region.range.clone()];
+        // The prefix and suffix make the code complete for its language (`*{` `}` around the
+        // declarations of a `style` attribute).
+        let source = format!("{}{code}{}", region.prefix, region.suffix);
+        let lines = match region.language {
+            "js" | "ts" => {
+                crate::languages::typescript::highlight::colors(&source, &palette(scheme))
+            }
+            other => style_colors(&source, other, scheme),
+        };
+        let Some(lines) = lines else { continue };
+        fill(&mut paint, region.range.clone(), None);
+        let mut line_start = 0;
+        for (line, spans) in source.split('\n').zip(lines) {
+            for (range, color) in spans {
+                let from = (line_start + range.start).saturating_sub(region.prefix.len());
+                let to = (line_start + range.end)
+                    .saturating_sub(region.prefix.len())
+                    .min(code.len());
+                if line_start + range.start >= region.prefix.len() && from < to {
+                    let at = region.range.start;
+                    fill(&mut paint, at + from..at + to, Some(color));
+                }
+            }
+            line_start += line.len() + 1;
+        }
+    }
+    let mut out = Vec::new();
+    let mut start = 0;
+    for line in text.split('\n') {
+        let mut spans: Vec<(Range<usize>, Color32)> = Vec::new();
+        let colors = &paint[start..start + line.len()];
+        let mut i = 0;
+        while i < colors.len() {
+            let color = colors[i];
+            let from = i;
+            while i < colors.len() && colors[i] == color {
+                i += 1;
+            }
+            if let Some(color) = color
+                && line.is_char_boundary(from)
+                && line.is_char_boundary(i)
+            {
+                spans.push((from..i, color));
+            }
+        }
+        out.push(spans);
+        start += line.len() + 1;
+    }
+    Some(out)
+}
+
 /// Highlighting of one document, computed line by line on demand.
 pub struct Incremental {
     tree_colors: TreeColors,
@@ -372,7 +485,10 @@ impl Incremental {
         };
         let theme = &settings.ts.themes[if dark { DARK_KEY } else { LIGHT_KEY }];
         let mut highlighter = Self {
-            tree_colors: if language == "ts" || crate::languages::css::is_style(language) {
+            tree_colors: if language == "ts"
+                || crate::languages::css::is_style(language)
+                || crate::languages::html::is_markup(language)
+            {
                 TreeColors::Stale
             } else {
                 TreeColors::Unavailable
@@ -450,6 +566,8 @@ impl Incremental {
                         &all.join("\n"),
                         &palette(scheme),
                     )
+                } else if crate::languages::html::is_markup(&self.language) {
+                    markup_colors(&all.join("\n"), &self.language, scheme)
                 } else {
                     style_colors(&all.join("\n"), &self.language, scheme)
                 };

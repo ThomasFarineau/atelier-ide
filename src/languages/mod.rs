@@ -7,6 +7,7 @@
 
 pub mod css;
 pub mod format;
+pub mod html;
 pub mod inspect;
 pub mod java;
 pub mod javascript;
@@ -18,10 +19,12 @@ pub mod templates;
 pub mod typescript;
 
 use std::{
+    borrow::Cow,
     collections::HashMap,
     ops::Range,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -363,22 +366,104 @@ struct Inner {
     /// Provider of each open document.
     owners: HashMap<u64, usize>,
     versions: HashMap<u64, u64>,
+    /// The code of other languages in each page (HTML, Pug), and the documents of those
+    /// languages made from it (see `html::embedded`).
+    pages: HashMap<u64, Page>,
+    /// Documents made to format one block of code of a page, closed a while later.
+    scratch: Vec<(u64, Instant)>,
+    /// The document that answered the last completion of a page, for `resolve`.
+    completed_in: HashMap<u64, DocRef>,
+    /// The problems of each page with the ones of its code, and what they were made of.
+    merged: HashMap<u64, (Vec<usize>, Arc<Vec<Diagnostic>>)>,
+}
+
+/// The code of other languages in a page.
+#[derive(Default)]
+struct Page {
+    regions: Vec<html::embedded::Region>,
+    docs: Vec<DocRef>,
 }
 
 /// The hub of language intelligence, shared by every editor.
 #[derive(Default)]
 pub struct Service {
     inner: Mutex<Inner>,
+    /// Tells the interface that a result arrived in the background.
+    repaint: Option<Arc<dyn Fn() + Send + Sync>>,
+}
+
+/// The key of the document of `language` made from the page `key`.
+fn embedded_key(key: u64, language: &str, salt: u64) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    ("embedded", key, language, salt).hash(&mut hasher);
+    hasher.finish()
+}
+
+/// The document of `language` made from a page: `index.html` gives `index.html.js`.
+fn embedded_doc(page: &DocRef, language: &'static str, key: u64, tag: &str) -> DocRef {
+    DocRef {
+        key,
+        path: page.path.as_ref().map(|p| {
+            let name = p.file_name().unwrap_or_default().to_string_lossy();
+            p.with_file_name(format!("{name}{tag}.{language}"))
+        }),
+        language: language.to_string(),
+    }
+}
+
+/// Places in the document of a page's code are places in the page.
+fn page_locations(mut found: Vec<Location>, virtual_path: &Option<PathBuf>) -> Vec<Location> {
+    for location in &mut found {
+        if location.path.is_some() && &location.path == virtual_path {
+            location.path = None;
+        }
+    }
+    found
+}
+
+/// Waits in the background for every part, then gives them all at once.
+fn join<T: Send + 'static, R: Send + 'static>(
+    parts: Vec<Oneshot<T>>,
+    repaint: Option<Arc<dyn Fn() + Send + Sync>>,
+    finish: impl FnOnce(Vec<Option<T>>) -> R + Send + 'static,
+) -> Oneshot<R> {
+    let answer = Oneshot::pending();
+    let slot = answer.clone();
+    std::thread::spawn(move || {
+        let started = Instant::now();
+        let mut got: Vec<Option<T>> = parts.iter().map(|_| None).collect();
+        while got.iter().any(Option::is_none) && started.elapsed() < Duration::from_secs(10) {
+            for (part, value) in parts.iter().zip(got.iter_mut()) {
+                if value.is_none() {
+                    *value = part.take();
+                }
+            }
+            if got.iter().any(Option::is_none) {
+                std::thread::sleep(Duration::from_millis(15));
+            }
+        }
+        slot.fulfill(finish(got));
+        if let Some(repaint) = repaint {
+            repaint();
+        }
+    });
+    answer
 }
 
 impl Service {
     /// The service with the providers of the supported languages, for a project folder.
     pub fn new(root: &Path, repaint: Arc<dyn Fn() + Send + Sync>) -> Self {
-        let service = Self::default();
+        let service = Self {
+            repaint: Some(repaint.clone()),
+            ..Self::default()
+        };
         service.add(Box::new(javascript::JavaScript::new(root, repaint.clone())));
         service.add(Box::new(rust::provider(root, repaint.clone())));
         service.add(Box::new(java::provider(root, repaint.clone())));
         service.add(Box::new(css::provider(root, repaint.clone())));
+        service.add(Box::new(html::provider(root, repaint.clone())));
+        service.add(Box::new(html::pug_provider(root, repaint.clone())));
         service.add(Box::new(python::provider(root, repaint)));
         service
     }
@@ -401,22 +486,71 @@ impl Service {
             .is_ok_and(|inner| inner.providers.iter().any(|p| p.handles(language)))
     }
 
-    /// Tells the provider the document is at `version`. Cheap when nothing changed.
+    /// Tells the provider the document is at `version`. Cheap when nothing changed. A page
+    /// also gives the code of other languages it holds to their providers.
     pub fn update(&self, doc: &DocRef, text: &str, version: u64) {
         let Ok(mut inner) = self.inner.lock() else {
             return;
         };
+        if !Self::update_in(&mut inner, doc, text, version) {
+            return;
+        }
+        if html::is_markup(&doc.language) {
+            let regions = html::embedded::regions(text, &doc.language);
+            let docs: Vec<DocRef> = html::embedded::languages(&regions)
+                .into_iter()
+                .filter(|l| inner.providers.iter().any(|p| p.handles(l)))
+                .map(|l| embedded_doc(doc, l, embedded_key(doc.key, l, 0), ""))
+                .collect();
+            for embedded in &docs {
+                let code = html::embedded::document(text, &regions, &embedded.language);
+                Self::update_in(&mut inner, embedded, &code, version);
+            }
+            let old = inner.pages.insert(
+                doc.key,
+                Page {
+                    regions,
+                    docs: docs.clone(),
+                },
+            );
+            for gone in old
+                .map(|p| p.docs)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|o| !docs.iter().any(|d| d.key == o.key))
+            {
+                Self::close_in(&mut inner, gone.key);
+            }
+        }
+        // The documents made to format code are closed once the formatting is long done.
+        let expired: Vec<u64> = inner
+            .scratch
+            .iter()
+            .filter(|(_, made)| made.elapsed() > Duration::from_secs(60))
+            .map(|(key, _)| *key)
+            .collect();
+        if !expired.is_empty() {
+            inner.scratch.retain(|(key, _)| !expired.contains(key));
+            for key in expired {
+                Self::close_in(&mut inner, key);
+            }
+        }
+    }
+
+    /// Tells the provider of `doc` its text. False when nothing changed, or no provider
+    /// handles it.
+    fn update_in(inner: &mut Inner, doc: &DocRef, text: &str, version: u64) -> bool {
         let Some(index) = inner
             .providers
             .iter()
             .position(|p| p.handles(&doc.language))
         else {
-            return;
+            return false;
         };
         if inner.versions.get(&doc.key) == Some(&version)
             && inner.owners.get(&doc.key) == Some(&index)
         {
-            return;
+            return false;
         }
         // A document whose language changed (saved under another name) leaves its old provider.
         if let Some(old) = inner.owners.insert(doc.key, index)
@@ -426,21 +560,106 @@ impl Service {
         }
         inner.versions.insert(doc.key, version);
         inner.providers[index].update(doc, text, version);
+        true
+    }
+
+    fn close_in(inner: &mut Inner, key: u64) {
+        if let Some(index) = inner.owners.remove(&key) {
+            inner.providers[index].close(key);
+        }
+        inner.versions.remove(&key);
+        inner.completed_in.remove(&key);
+        inner.merged.remove(&key);
+        if let Some(page) = inner.pages.remove(&key) {
+            for doc in page.docs {
+                Self::close_in(inner, doc.key);
+            }
+        }
     }
 
     pub fn close(&self, key: u64) {
         let Ok(mut inner) = self.inner.lock() else {
             return;
         };
-        if let Some(index) = inner.owners.remove(&key) {
-            inner.providers[index].close(key);
-        }
-        inner.versions.remove(&key);
+        Self::close_in(&mut inner, key);
     }
 
+    /// The problems of a document; for a page, with the ones its code has in its own language.
     pub fn diagnostics(&self, doc: &DocRef) -> Arc<Vec<Diagnostic>> {
-        self.with(&doc.language, |p, _| p.diagnostics(doc.key))
-            .unwrap_or_default()
+        let Ok(mut inner) = self.inner.lock() else {
+            return Arc::default();
+        };
+        let Some(index) = inner
+            .providers
+            .iter()
+            .position(|p| p.handles(&doc.language))
+        else {
+            return Arc::default();
+        };
+        let own = inner.providers[index].diagnostics(doc.key);
+        let Some(page) = inner.pages.get(&doc.key) else {
+            return own;
+        };
+        let docs = page.docs.clone();
+        let regions = page.regions.clone();
+        let mut parts = vec![own];
+        for embedded in &docs {
+            let found = inner
+                .providers
+                .iter_mut()
+                .find(|p| p.handles(&embedded.language))
+                .map(|p| p.diagnostics(embedded.key))
+                .unwrap_or_default();
+            parts.push(found);
+        }
+        // Made of the same parts as last time: the same list.
+        let made_of: Vec<usize> = parts.iter().map(|p| Arc::as_ptr(p) as usize).collect();
+        if let Some((cached_of, cached)) = inner.merged.get(&doc.key)
+            && *cached_of == made_of
+        {
+            return cached.clone();
+        }
+        let mut all: Vec<Diagnostic> = parts[0].as_ref().clone();
+        for (embedded, found) in docs.iter().zip(&parts[1..]) {
+            // Only what is about the code: not the spaces that stand for the rest of the page.
+            all.extend(
+                found
+                    .iter()
+                    .filter(|d| {
+                        regions.iter().any(|r| {
+                            r.analyzed
+                                && r.language == embedded.language
+                                && d.range.start + r.prefix.len() >= r.range.start
+                                && d.range.start <= r.range.end + r.suffix.len()
+                        })
+                    })
+                    .cloned(),
+            );
+        }
+        all.sort_by_key(|d| (d.range.start, d.severity));
+        let merged = Arc::new(all);
+        inner.merged.insert(doc.key, (made_of, merged.clone()));
+        merged
+    }
+
+    /// The document that answers at `offset` of `doc`, with its text: for the code of another
+    /// language in a page, the document of that language made from the page.
+    fn route<'a>(&self, doc: &DocRef, text: &'a str, offset: usize) -> (DocRef, Cow<'a, str>) {
+        if !html::is_markup(&doc.language) {
+            return (doc.clone(), Cow::Borrowed(text));
+        }
+        let regions = html::embedded::regions(text, &doc.language);
+        let Some(region) = html::embedded::region_at(&regions, offset).filter(|r| r.analyzed)
+        else {
+            return (doc.clone(), Cow::Borrowed(text));
+        };
+        let language = region.language;
+        if !self.handles(language) {
+            return (doc.clone(), Cow::Borrowed(text));
+        }
+        let embedded = embedded_doc(doc, language, embedded_key(doc.key, language, 0), "");
+        let code = html::embedded::document(text, &regions, language);
+        (embedded, Cow::Owned(code))
     }
 
     pub fn complete(
@@ -450,15 +669,41 @@ impl Service {
         offset: usize,
         explicit: bool,
     ) -> Oneshot<Option<Completion>> {
-        self.with(&doc.language, |p, _| {
-            p.complete(doc, text, offset, explicit)
+        let (target, text) = self.route(doc, text, offset);
+        if let Ok(mut inner) = self.inner.lock() {
+            inner.completed_in.insert(doc.key, target.clone());
+        }
+        self.with(&target.language, |p, _| {
+            p.complete(&target, &text, offset, explicit)
         })
         .unwrap_or_else(|| Oneshot::ready(None))
     }
 
     pub fn hover(&self, doc: &DocRef, text: &str, offset: usize) -> Oneshot<Option<Hover>> {
-        self.with(&doc.language, |p, _| p.hover(doc, text, offset))
+        let (target, text) = self.route(doc, text, offset);
+        self.with(&target.language, |p, _| p.hover(&target, &text, offset))
             .unwrap_or_else(|| Oneshot::ready(None))
+    }
+
+    /// Places found by the provider that answers at `offset`, as places of `doc`.
+    fn locate(
+        &self,
+        doc: &DocRef,
+        text: &str,
+        offset: usize,
+        find: impl FnOnce(&mut dyn Provider, &DocRef, &str) -> Oneshot<Vec<Location>>,
+    ) -> Oneshot<Vec<Location>> {
+        let (target, text) = self.route(doc, text, offset);
+        let found = self
+            .with(&target.language, |p, _| find(p, &target, &text))
+            .unwrap_or_else(|| Oneshot::ready(Vec::new()));
+        if target.key == doc.key {
+            return found;
+        }
+        let path = target.path.clone();
+        join(vec![found], self.repaint.clone(), move |mut parts| {
+            page_locations(parts.pop().flatten().unwrap_or_default(), &path)
+        })
     }
 
     pub fn type_definition(
@@ -467,8 +712,7 @@ impl Service {
         text: &str,
         offset: usize,
     ) -> Oneshot<Vec<Location>> {
-        self.with(&doc.language, |p, _| p.type_definition(doc, text, offset))
-            .unwrap_or_else(|| Oneshot::ready(Vec::new()))
+        self.locate(doc, text, offset, |p, d, t| p.type_definition(d, t, offset))
     }
 
     pub fn implementation(
@@ -477,8 +721,7 @@ impl Service {
         text: &str,
         offset: usize,
     ) -> Oneshot<Vec<Location>> {
-        self.with(&doc.language, |p, _| p.implementation(doc, text, offset))
-            .unwrap_or_else(|| Oneshot::ready(Vec::new()))
+        self.locate(doc, text, offset, |p, d, t| p.implementation(d, t, offset))
     }
 
     pub fn highlights(
@@ -487,13 +730,54 @@ impl Service {
         text: &str,
         offset: usize,
     ) -> Oneshot<Vec<Range<usize>>> {
-        self.with(&doc.language, |p, _| p.highlights(doc, text, offset))
-            .unwrap_or_else(|| Oneshot::ready(Vec::new()))
+        let (target, text) = self.route(doc, text, offset);
+        self.with(&target.language, |p, _| {
+            p.highlights(&target, &text, offset)
+        })
+        .unwrap_or_else(|| Oneshot::ready(Vec::new()))
     }
 
+    /// The structure of a document; for a page, the one of its code is put under the element
+    /// that holds it.
     pub fn symbols(&self, doc: &DocRef, text: &str) -> Oneshot<Vec<Symbol>> {
-        self.with(&doc.language, |p, _| p.symbols(doc, text))
-            .unwrap_or_else(|| Oneshot::ready(Vec::new()))
+        let own = self
+            .with(&doc.language, |p, _| p.symbols(doc, text))
+            .unwrap_or_else(|| Oneshot::ready(Vec::new()));
+        if !html::is_markup(&doc.language) {
+            return own;
+        }
+        let regions = html::embedded::regions(text, &doc.language);
+        let mut parts = vec![own];
+        for language in html::embedded::languages(&regions) {
+            let embedded = embedded_doc(doc, language, embedded_key(doc.key, language, 0), "");
+            let code = html::embedded::document(text, &regions, language);
+            if let Some(found) = self.with(language, |p, _| p.symbols(&embedded, &code)) {
+                parts.push(found);
+            }
+        }
+        if parts.len() == 1 {
+            return parts.pop().unwrap_or_else(|| Oneshot::ready(Vec::new()));
+        }
+        join(parts, self.repaint.clone(), |parts| {
+            let mut parts = parts.into_iter().map(Option::unwrap_or_default);
+            let mut all: Vec<Symbol> = parts.next().unwrap_or_default();
+            let page = all.clone();
+            for symbol in parts.flatten() {
+                // One level under the element the code is in: the last one that starts
+                // before it.
+                let parent = page
+                    .iter()
+                    .rev()
+                    .find(|s| s.range.start <= symbol.range.start)
+                    .map_or(0, |s| s.depth + 1);
+                all.push(Symbol {
+                    depth: symbol.depth + parent,
+                    ..symbol
+                });
+            }
+            all.sort_by_key(|s| s.range.start);
+            all
+        })
     }
 
     pub fn rename(
@@ -503,24 +787,62 @@ impl Service {
         offset: usize,
         new_name: &str,
     ) -> Oneshot<Result<Vec<FileEdit>, String>> {
-        self.with(&doc.language, |p, _| p.rename(doc, text, offset, new_name))
-            .unwrap_or_else(|| Oneshot::ready(Err(tr!("rename_not_supported_language").into())))
+        let (target, text) = self.route(doc, text, offset);
+        let answer = self
+            .with(&target.language, |p, _| {
+                p.rename(&target, &text, offset, new_name)
+            })
+            .unwrap_or_else(|| Oneshot::ready(Err(tr!("rename_not_supported_language").into())));
+        if target.key == doc.key {
+            return answer;
+        }
+        // The edits of the document of the page's code are edits of the page.
+        let path = target.path.clone();
+        join(vec![answer], self.repaint.clone(), move |mut parts| {
+            parts
+                .pop()
+                .flatten()
+                .unwrap_or_else(|| Err(tr!("rename_not_supported_language").into()))
+                .map(|edits| {
+                    edits
+                        .into_iter()
+                        .map(|mut edit| {
+                            if edit.path.is_some() && edit.path == path {
+                                edit.path = None;
+                            }
+                            edit
+                        })
+                        .collect()
+                })
+        })
     }
 
     pub fn quick_fixes(&self, doc: &DocRef, text: &str, offset: usize) -> Oneshot<Vec<QuickFix>> {
-        self.with(&doc.language, |p, _| p.quick_fixes(doc, text, offset))
-            .unwrap_or_else(|| Oneshot::ready(Vec::new()))
+        let (target, text) = self.route(doc, text, offset);
+        self.with(&target.language, |p, _| {
+            p.quick_fixes(&target, &text, offset)
+        })
+        .unwrap_or_else(|| Oneshot::ready(Vec::new()))
     }
 
-    /// The problems the language servers found in the files of the project.
+    /// The problems the language servers found in the files of the project; not the ones of
+    /// the documents made from the code of pages, which are not files.
     pub fn workspace_diagnostics(&self) -> Vec<(PathBuf, Vec<lsp::ServerDiagnostic>)> {
         let Ok(mut inner) = self.inner.lock() else {
             return Vec::new();
         };
+        let made: Vec<PathBuf> = inner
+            .pages
+            .values()
+            .flat_map(|p| p.docs.iter().filter_map(|d| d.path.clone()))
+            .collect();
         inner
             .providers
             .iter_mut()
             .flat_map(|p| p.workspace_diagnostics())
+            .filter(|(path, _)| {
+                !made.contains(path) && !path.to_string_lossy().contains(".format-")
+            })
             .collect()
     }
 
@@ -536,8 +858,9 @@ impl Service {
         text: &str,
         offset: usize,
     ) -> Oneshot<Option<lsp::extras::Signature>> {
-        match self.lsp_target(doc) {
-            Some((client, uri)) => lsp::extras::signature_help(&client, &uri, text, offset),
+        let (target, text) = self.route(doc, text, offset);
+        match self.lsp_target(&target) {
+            Some((client, uri)) => lsp::extras::signature_help(&client, &uri, &text, offset),
             None => Oneshot::ready(None),
         }
     }
@@ -563,8 +886,9 @@ impl Service {
         text: &str,
         range: Range<usize>,
     ) -> Oneshot<Vec<lsp::extras::Refactoring>> {
-        match self.lsp_target(doc) {
-            Some((client, uri)) => lsp::extras::refactorings(&client, &uri, text, range),
+        let (target, text) = self.route(doc, text, range.start);
+        match self.lsp_target(&target) {
+            Some((client, uri)) => lsp::extras::refactorings(&client, &uri, &text, range),
             None => Oneshot::ready(Vec::new()),
         }
     }
@@ -600,13 +924,11 @@ impl Service {
     }
 
     pub fn definition(&self, doc: &DocRef, text: &str, offset: usize) -> Oneshot<Vec<Location>> {
-        self.with(&doc.language, |p, _| p.definition(doc, text, offset))
-            .unwrap_or_else(|| Oneshot::ready(Vec::new()))
+        self.locate(doc, text, offset, |p, d, t| p.definition(d, t, offset))
     }
 
     pub fn references(&self, doc: &DocRef, text: &str, offset: usize) -> Oneshot<Vec<Location>> {
-        self.with(&doc.language, |p, _| p.references(doc, text, offset))
-            .unwrap_or_else(|| Oneshot::ready(Vec::new()))
+        self.locate(doc, text, offset, |p, d, t| p.references(d, t, offset))
     }
 
     /// Whether Reformat Code works for a language: with its provider, or by the IDE itself.
@@ -616,6 +938,9 @@ impl Service {
 
     /// The edits that reformat the document: its provider's, else the IDE's own for JSON.
     pub fn format(&self, doc: &DocRef, text: &str) -> Oneshot<Result<Vec<TextEdit>, String>> {
+        if html::is_markup(&doc.language) {
+            return self.format_page(doc, text);
+        }
         if let Some(answer) = self.with(&doc.language, |p, _| p.format(doc, text)) {
             return answer;
         }
@@ -635,8 +960,74 @@ impl Service {
     }
 
     pub fn resolve(&self, doc: &DocRef, item: &CompletionItem) -> Oneshot<Option<CompletionItem>> {
-        self.with(&doc.language, |p, _| p.resolve(doc, item))
+        // The item came from the provider of the code the completion was asked in.
+        let target = self
+            .inner
+            .lock()
+            .ok()
+            .and_then(|inner| inner.completed_in.get(&doc.key).cloned())
+            .unwrap_or_else(|| doc.clone());
+        self.with(&target.language, |p, _| p.resolve(&target, item))
             .unwrap_or_else(|| Oneshot::ready(None))
+    }
+
+    /// Reformat Code for a page: the page by the IDE, then each block of code by its language,
+    /// put back under its tag.
+    fn format_page(&self, doc: &DocRef, text: &str) -> Oneshot<Result<Vec<TextEdit>, String>> {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static CALLS: AtomicU64 = AtomicU64::new(1);
+        let page = if doc.language == "pug" {
+            html::format::reformat_pug(text)
+        } else {
+            html::format::reformat(text)
+        };
+        let regions = html::embedded::regions(&page, &doc.language);
+        let call = CALLS.fetch_add(1, Ordering::Relaxed);
+        let mut blocks = Vec::new();
+        let mut parts = Vec::new();
+        if let Ok(mut inner) = self.inner.lock() {
+            let code_blocks = regions.iter().filter(|r| r.analyzed && r.prefix.is_empty());
+            for (index, region) in code_blocks.enumerate() {
+                let Some(block) = html::embedded::Block::of(&page, region.range.clone()) else {
+                    continue;
+                };
+                if !inner.providers.iter().any(|p| p.handles(region.language)) {
+                    continue;
+                }
+                // A document of its own for each block, never seen before.
+                let key = embedded_key(doc.key, region.language, call * 1000 + index as u64);
+                let tag = format!(".format-{call}-{index}");
+                let scratch = embedded_doc(doc, region.language, key, &tag);
+                Self::update_in(&mut inner, &scratch, &block.code, 1);
+                inner.scratch.push((key, Instant::now()));
+                let answer = inner
+                    .providers
+                    .iter_mut()
+                    .find(|p| p.handles(region.language))
+                    .map(|p| p.format(&scratch, &block.code));
+                if let Some(answer) = answer {
+                    blocks.push(block);
+                    parts.push(answer);
+                }
+            }
+        }
+        let original = text.to_string();
+        if parts.is_empty() {
+            return Oneshot::ready(Ok(format::edits_between(&original, &page)));
+        }
+        join(parts, self.repaint.clone(), move |results| {
+            let mut out = page;
+            // From the last block, so the places of the others stay right. A block its language
+            // could not format stays as the page put it.
+            for (block, result) in blocks.iter().zip(results).rev() {
+                let Some(Ok(edits)) = result else {
+                    continue;
+                };
+                let code = format::apply(&block.code, &edits);
+                out.replace_range(block.body.clone(), &block.indent(&code));
+            }
+            Ok(format::edits_between(&original, &out))
+        })
     }
 
     pub fn status(&self, language: &str) -> String {

@@ -21,10 +21,6 @@ pub static CONTROL: Mutex<Control> = Mutex::new(Control::new());
 const NAME: &str = "vscode-css-language-server";
 const PACKAGE: &str = "vscode-langservers-extracted";
 
-fn control<R>(f: impl FnOnce(&mut Control) -> R) -> R {
-    with_control(&CONTROL, f)
-}
-
 /// The server: the project's own, then the IDE's, then the one on the PATH.
 pub fn find_server(project: &Path) -> Option<PathBuf> {
     find_in(&project.join("node_modules").join(".bin"), NAME)
@@ -47,11 +43,25 @@ pub fn launch(project: &Path) -> Option<Launch> {
 
 /// Installs the server in the IDE's folder, in the background.
 pub fn install() {
-    let started = control(|c| !std::mem::replace(&mut c.installing, true));
+    install_into(&CONTROL, tr!("css.server_installed"), |e| {
+        trf!("css.cannot_install_server", e = e)
+    });
+}
+
+/// Installs `vscode-langservers-extracted` for the language of `language_control` (CSS,
+/// HTML: the package has the servers of both), telling it `installed` or the error.
+pub fn install_into(
+    language_control: &'static Mutex<Control>,
+    installed: &'static str,
+    failed: fn(String) -> String,
+) {
+    let started = with_control(language_control, |c| {
+        !std::mem::replace(&mut c.installing, true)
+    });
     if !started {
         return;
     }
-    thread::spawn(|| {
+    thread::spawn(move || {
         let dir = managed_dir();
         let result = std::fs::create_dir_all(&dir)
             .map_err(|e| e.to_string())
@@ -78,16 +88,14 @@ pub fn install() {
                     Err(last.into_iter().rev().collect::<Vec<_>>().join(" "))
                 }
             });
-        control(|c| {
+        with_control(language_control, |c| {
             c.installing = false;
             match result {
                 Ok(()) => {
                     c.restart_requested = true;
-                    c.messages.push((tr!("css.server_installed").into(), false));
+                    c.messages.push((installed.into(), false));
                 }
-                Err(e) => c
-                    .messages
-                    .push((trf!("css.cannot_install_server", e = e), true)),
+                Err(e) => c.messages.push((failed(e), true)),
             }
         });
     });
