@@ -69,6 +69,11 @@ gltf = { version = "1", features = [
     "KHR_texture_transform",
 ] }
 glam = "0.30"
+mongodb = { version = "3", features = ["sync"] }
+postgres = "0.19"
+postgres-native-tls = "0.5"
+native-tls = "0.2"
+mysql = { version = "28", default-features = false, features = ["minimal-rust", "native-tls"] }
 
 [target.'cfg(windows)'.dependencies]
 # Placement of the window on the monitor in use, its taskbar button, its rounded corners and
