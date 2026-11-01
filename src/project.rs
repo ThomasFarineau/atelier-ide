@@ -273,7 +273,8 @@ pub fn language(path: &Path) -> &'static str {
         .to_ascii_lowercase()
         .as_str()
     {
-        "html" | "htm" => "html",
+        "html" | "htm" | "xhtml" => "html",
+        "pug" | "jade" => "pug",
         "css" => "css",
         "scss" => "scss",
         "sass" => "sass",

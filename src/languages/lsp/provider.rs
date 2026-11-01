@@ -101,6 +101,11 @@ pub trait Language: Send + Sync + 'static {
         }
         from
     }
+    /// The documentation of what is at `offset` without the server; also when the server has
+    /// none.
+    fn hover_local(&self, _text: &str, _offset: usize) -> Option<Hover> {
+        None
+    }
     /// The characters after which the server is asked for members (`.`, `:`).
     fn triggers(&self) -> &'static [char] {
         &['.']
@@ -495,8 +500,9 @@ impl<L: Language> Provider for LspProvider<L> {
     }
 
     fn hover(&mut self, doc: &DocRef, text: &str, offset: usize) -> Oneshot<Option<Hover>> {
+        let local = self.lang.hover_local(text, offset);
         let Some((client, uri)) = self.target(doc.key) else {
-            return Oneshot::ready(None);
+            return Oneshot::ready(local);
         };
         let (line, character) = to_position(text, offset);
         let answer = Oneshot::pending();
@@ -515,7 +521,7 @@ impl<L: Language> Provider for LspProvider<L> {
                     let range = range_of(&r["range"], &snapshot).unwrap_or(offset..offset);
                     Some(Hover { range, title, body })
                 });
-                slot.fulfill(hover);
+                slot.fulfill(hover.or(local));
             },
         );
         answer

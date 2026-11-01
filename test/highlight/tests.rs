@@ -115,3 +115,50 @@ fn the_code_of_a_template_string_is_colored_as_code() {
         );
     }
 }
+
+#[test]
+fn the_code_of_a_page_takes_the_colors_of_its_language() {
+    let lines = [
+        "<div class=\"a\" onclick=\"go()\">",
+        "<style>",
+        "  .a { color: red; }",
+        "</style>",
+        "<script>",
+        "  const x = 1;",
+        "</script>",
+    ];
+    let mut h = Incremental::new("html", true);
+    assert!(h.advance(
+        |i| lines.get(i).map(|l| l.to_string()),
+        lines.len(),
+        Duration::from_secs(5)
+    ));
+    assert_eq!(color_at(&mut h, 0, lines[0], "div"), rgb(DARK.tag));
+    assert_eq!(color_at(&mut h, 0, lines[0], "class"), rgb(DARK.attribute));
+    assert_eq!(color_at(&mut h, 0, lines[0], "\"a\""), rgb(DARK.string));
+    // The handler is JavaScript: a call, not a string.
+    assert_eq!(color_at(&mut h, 0, lines[0], "go"), rgb(DARK.function));
+    assert_eq!(color_at(&mut h, 2, lines[2], "color"), rgb(DARK.key));
+    assert_eq!(color_at(&mut h, 5, lines[5], "const"), rgb(DARK.keyword));
+    assert_eq!(color_at(&mut h, 5, lines[5], "1"), rgb(DARK.number));
+}
+
+#[test]
+fn the_blocks_of_pug_take_the_colors_of_their_language() {
+    let lines = [
+        "div.box(title='x')",
+        "  script.",
+        "    const y = 2;",
+        "  //- note",
+    ];
+    let mut h = Incremental::new("pug", true);
+    assert!(h.advance(
+        |i| lines.get(i).map(|l| l.to_string()),
+        lines.len(),
+        Duration::from_secs(5)
+    ));
+    assert_eq!(color_at(&mut h, 0, lines[0], "div"), rgb(DARK.tag));
+    assert_eq!(color_at(&mut h, 0, lines[0], "'x'"), rgb(DARK.string));
+    assert_eq!(color_at(&mut h, 2, lines[2], "const"), rgb(DARK.keyword));
+    assert_eq!(color_at(&mut h, 3, lines[3], "//- note"), rgb(DARK.comment));
+}
