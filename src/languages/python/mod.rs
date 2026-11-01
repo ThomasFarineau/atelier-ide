@@ -91,6 +91,9 @@ pub fn provider(root: &Path, repaint: Arc<dyn Fn() + Send + Sync>) -> Python {
 pub struct PythonPlugin;
 
 impl BuiltinPlugin for PythonPlugin {
+    fn language(&self) -> bool {
+        true
+    }
     fn id(&self) -> &'static str {
         "python"
     }

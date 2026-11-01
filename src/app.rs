@@ -12,8 +12,7 @@ use crate::{
 };
 use eframe::egui::{
     self, Align2, Color32, CornerRadius, FontId, Margin, Rect, RichText, Sense, Stroke, StrokeKind,
-    containers::menu::{MenuButton, MenuConfig},
-    pos2, vec2,
+    containers::menu::MenuButton, pos2, vec2,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -45,6 +44,8 @@ use crate::editor::FormatRequest;
 use settings_page::{Draft, Page, RunTool};
 
 const TITLE_HEIGHT: f32 = 40.0;
+/// Least width of the dropdowns of the main menu.
+const MENU_WIDTH: f32 = 240.0;
 /// Size of the window that opens without a project, in points.
 const START_SCREEN_SIZE: [f32; 2] = [980.0, 680.0];
 const STATUS_HEIGHT: f32 = 28.0;
@@ -403,6 +404,10 @@ pub struct Ide {
     last_watch: Instant,
     show_terminal: bool,
     show_project: bool,
+    /// The main menu is spread over the title bar, as when its button is clicked in IntelliJ.
+    main_menu_open: bool,
+    /// One of its menus was open on the previous frame.
+    main_menu_popup: bool,
     show_notifications: bool,
     show_settings: bool,
     /// The Projects page, open, and its search.
@@ -579,6 +584,50 @@ fn ago(at: Instant) -> String {
     }
 }
 
+/// Icon of a main menu item, or an empty space as wide for an item without one, so that the
+/// labels line up.
+fn menu_icon(ui: &egui::Ui, name: &str) -> egui::Image<'static> {
+    if name.is_empty() {
+        ui::icon(ui, "menu").tint(Color32::TRANSPARENT)
+    } else {
+        ui::icon(ui, name)
+    }
+}
+
+/// A title of the spread main menu opens its dropdown as soon as the pointer is on it, without
+/// a click, as in IntelliJ.
+fn open_on_hover(ui: &egui::Ui, title: &egui::Response) {
+    let id = egui::Popup::default_response_id(title);
+    if title.hovered() && !egui::Popup::is_id_open(ui.ctx(), id) {
+        egui::Popup::open_id(ui.ctx(), id);
+        ui.ctx().request_repaint();
+    }
+}
+
+/// Dropdowns of the main menu: a clear hover background, room on the sides of the items.
+fn menu_popup_style(t: ui::Theme) -> impl Fn(&mut egui::Style) + Send + Sync + 'static {
+    move |style: &mut egui::Style| {
+        egui::containers::menu::menu_style(style);
+        // The background of every other popup; only the hover is lighter.
+        let hover = if t.dark {
+            t.popup.lerp_to_gamma(Color32::WHITE, 0.15)
+        } else {
+            t.pressed
+        };
+        style.spacing.menu_margin = Margin::symmetric(4, 6);
+        style.spacing.button_padding = vec2(6.0, 5.0);
+        style.spacing.icon_spacing = 8.0;
+        style.spacing.item_spacing.x = 8.0;
+        let widgets = &mut style.visuals.widgets;
+        for state in [&mut widgets.hovered, &mut widgets.open, &mut widgets.active] {
+            state.weak_bg_fill = hover;
+            state.bg_fill = hover;
+            state.corner_radius = 5.into();
+            state.expansion = 0.0;
+        }
+    }
+}
+
 impl Ide {
     /// Writes what this window changed in the settings, keeping what the other windows wrote.
     pub(super) fn persist_settings(&mut self) -> anyhow::Result<()> {
@@ -634,6 +683,8 @@ impl Ide {
             last_watch: Instant::now(),
             show_terminal: false,
             show_project: true,
+            main_menu_open: false,
+            main_menu_popup: false,
             show_notifications: false,
             show_settings: false,
             show_projects: false,
@@ -1913,7 +1964,8 @@ impl Ide {
                 ui.painter().add(egui::Shape::mesh(mesh));
                 ui.horizontal_centered(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
-                    ui.add_space(8.0);
+                    // The logo lines up with the tool window icons of the stripe below it.
+                    ui.add_space((STRIPE_WIDTH - 20.0) / 2.0);
                     self.main_menu(ui);
                     ui.add_space(2.0);
                     self.project_widget(ui, &name, color);
@@ -1963,186 +2015,346 @@ impl Ide {
             });
     }
 
+    /// The logo, then the main menu button. As in IntelliJ, a click spreads the menus over the
+    /// title bar (File, Edit…); they fold back once a command is chosen, on a click elsewhere
+    /// or on Escape.
     fn main_menu(&mut self, ui: &mut egui::Ui) {
-        let config = MenuConfig::new();
-        MenuButton::from_button(egui::Button::image(ui::icon(ui, "menu")).frame(false))
-            .config(config)
-            .ui(ui, |ui| {
-                ui.set_min_width(220.0);
-                let item = |ui: &mut egui::Ui, label: &str, shortcut: &str| {
-                    ui.add(egui::Button::new(label).shortcut_text(shortcut))
-                        .clicked()
-                };
-                ui.menu_button(tr!("file"), |ui| {
-                    if item(ui, tr!("new_file"), "Alt+Insert") {
-                        self.new_document();
+        let ctx = ui.ctx().clone();
+        let logo = ui
+            .add(
+                egui::Image::new(egui::include_image!("../assets/logo/atelier.svg"))
+                    .fit_to_exact_size(vec2(20.0, 20.0))
+                    .sense(Sense::click()),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        let mut opened = logo.clicked() && !self.main_menu_open;
+        if logo.clicked() && self.main_menu_open {
+            self.main_menu_open = false;
+        }
+        ui.add_space(2.0);
+        if !self.main_menu_open {
+            if ui::icon_button(ui, "menu", tr!("main_menu")).clicked() {
+                opened = true;
+            }
+            if opened {
+                self.main_menu_open = true;
+                self.main_menu_popup = false;
+            }
+            return;
+        }
+        // Menu titles styled like the other title bar controls: the theme's hover background,
+        // rounded, as tall as the icon buttons.
+        let t = self.theme(&ctx);
+        let style = move |style: &mut egui::Style| {
+            egui::containers::menu::menu_style(style);
+            style.spacing.button_padding = vec2(10.0, 4.0);
+            style.spacing.interact_size.y = ui::BUTTON;
+            style.spacing.item_spacing.x = 2.0;
+            let widgets = &mut style.visuals.widgets;
+            // Clearly lighter than the bar in a dark theme: its own hover color barely shows.
+            let (hover, open) = if t.dark {
+                (
+                    t.frame.lerp_to_gamma(Color32::WHITE, 0.12),
+                    t.frame.lerp_to_gamma(Color32::WHITE, 0.17),
+                )
+            } else {
+                (t.pressed, t.pressed)
+            };
+            for (state, fill) in [
+                (&mut widgets.hovered, hover),
+                (&mut widgets.open, open),
+                (&mut widgets.active, open),
+            ] {
+                state.weak_bg_fill = fill;
+                state.bg_fill = fill;
+                state.corner_radius = 5.into();
+                state.expansion = 0.0;
+            }
+        };
+        // The bar takes the whole width it is given: give it the width of its titles, measured
+        // on the previous frame, so that the project widget and the run toolbar stay beside it.
+        let width_id = egui::Id::new("main_menu_width");
+        let width = ctx
+            .data(|d| d.get_temp::<f32>(width_id))
+            .unwrap_or(ui.available_width())
+            .min(ui.available_width());
+        let bar = ui
+            .allocate_ui(vec2(width, ui.available_height()), |ui| {
+                egui::MenuBar::new()
+                    .style(style)
+                    .config(egui::containers::menu::MenuConfig::new().style(menu_popup_style(t)))
+                    .ui(ui, |ui| {
+                        let start = ui.cursor().min.x;
+                        self.main_menu_items(ui);
+                        let used = ui.cursor().min.x - start;
+                        ctx.data_mut(|d| d.insert_temp(width_id, used));
+                    })
+            })
+            .response;
+        let popup = egui::Popup::is_any_open(&ctx);
+        let over_bar = ctx
+            .pointer_hover_pos()
+            .is_some_and(|pos| bar.rect.contains(pos));
+        let clicked_away = !opened && !popup && !over_bar && ctx.input(|i| i.pointer.any_pressed());
+        let closed_menu = self.main_menu_popup && !popup && !over_bar;
+        if clicked_away || closed_menu || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.main_menu_open = false;
+        }
+        self.main_menu_popup = popup;
+    }
+
+    /// The menus of the main menu, laid side by side in the title bar.
+    fn main_menu_items(&mut self, ui: &mut egui::Ui) {
+        // An item: its icon (none for "", the labels still line up), its label, its shortcut.
+        // The shortcut ends a little before the right edge, as the icon starts after the left one.
+        let item = |ui: &mut egui::Ui, icon: &str, label: &str, shortcut: &str| {
+            let button = egui::Button::new((
+                menu_icon(ui, icon),
+                label,
+                egui::Atom::grow(),
+                egui::RichText::new(shortcut).weak(),
+                egui::Atom::custom(egui::Id::NULL, vec2(2.0, 0.0)),
+            ));
+            ui.add(button).clicked()
+        };
+        let menu = ui.menu_button(tr!("file"), |ui| {
+            ui.set_min_width(MENU_WIDTH);
+            if item(ui, "add", tr!("new_file"), "Alt+Insert") {
+                self.new_document();
+                ui.close();
+            }
+            if item(ui, "file", tr!("new_file_project"), "") {
+                self.show_new_file = true;
+                ui.close();
+            }
+            ui.separator();
+            if item(ui, "folder", tr!("open_file_dialog"), "Ctrl+O") {
+                self.choose_file();
+                ui.close();
+            }
+            if item(ui, "project", tr!("open_project_dialog"), "") {
+                self.choose_project(false);
+                ui.close();
+            }
+            if item(ui, "openNewTab", tr!("open_project_new_window"), "") {
+                self.choose_project(true);
+                ui.close();
+            }
+            if item(ui, "project", tr!("projects.all"), "") {
+                self.open_projects_page();
+                ui.close();
+            }
+            ui.menu_button((menu_icon(ui, "undo"), tr!("recent_projects")), |ui| {
+                ui.set_min_width(MENU_WIDTH);
+                for path in self.settings.recent.clone() {
+                    if path != self.root
+                        && item(
+                            ui,
+                            "folder",
+                            &crate::project::simplify(&path).display().to_string(),
+                            "",
+                        )
+                    {
+                        self.open_project(path);
                         ui.close();
                     }
-                    if item(ui, tr!("new_file_project"), "") {
-                        self.show_new_file = true;
-                        ui.close();
-                    }
-                    ui.separator();
-                    if item(ui, tr!("open_file_dialog"), "Ctrl+O") {
-                        self.choose_file();
-                        ui.close();
-                    }
-                    if item(ui, tr!("open_project_dialog"), "") {
-                        self.choose_project(false);
-                        ui.close();
-                    }
-                    if item(ui, tr!("open_project_new_window"), "") {
-                        self.choose_project(true);
-                        ui.close();
-                    }
-                    if item(ui, tr!("projects.all"), "") {
-                        self.open_projects_page();
-                        ui.close();
-                    }
-                    ui.menu_button(tr!("recent_projects"), |ui| {
-                        for path in self.settings.recent.clone() {
-                            if path != self.root && item(ui, &path.display().to_string(), "") {
-                                self.open_project(path);
-                                ui.close();
-                            }
-                        }
-                    });
-                    ui.separator();
-                    if item(ui, tr!("save"), "Ctrl+S") {
-                        self.save_document(self.active, false);
-                        ui.close();
-                    }
-                    if item(ui, tr!("save_as_dialog"), "Ctrl+Shift+S") {
-                        self.save_document(self.active, true);
-                        ui.close();
-                    }
-                    if item(ui, tr!("save_all"), "") {
-                        self.save_all();
-                        ui.close();
-                    }
-                    ui.separator();
-                    if item(ui, tr!("settings_dialog"), "Ctrl+Alt+S") {
-                        self.open_settings(self.settings_page);
-                        ui.close();
-                    }
-                    ui.separator();
-                    if item(ui, tr!("exit"), "") {
-                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-                        ui.close();
-                    }
+                }
+            });
+            ui.separator();
+            if item(ui, "save", tr!("save"), "Ctrl+S") {
+                self.save_document(self.active, false);
+                ui.close();
+            }
+            if item(ui, "", tr!("save_as_dialog"), "Ctrl+Shift+S") {
+                self.save_document(self.active, true);
+                ui.close();
+            }
+            if item(ui, "", tr!("save_all"), "") {
+                self.save_all();
+                ui.close();
+            }
+            ui.separator();
+            if item(ui, "settings", tr!("settings_dialog"), "Ctrl+Alt+S") {
+                self.open_settings(self.settings_page);
+                ui.close();
+            }
+            ui.separator();
+            if item(ui, "close", tr!("exit"), "") {
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                ui.close();
+            }
+        });
+        open_on_hover(ui, &menu.response);
+        let menu = ui.menu_button(tr!("edit"), |ui| {
+            ui.set_min_width(MENU_WIDTH);
+            if item(ui, "search", tr!("find_dialog"), "Ctrl+F") {
+                let selected = self.selected_text();
+                self.find.show(selected, false);
+                ui.close();
+            }
+            if item(
+                ui,
+                "edit",
+                tr!("rename_dialog"),
+                &crate::i18n::shortcut("Shift+F6"),
+            ) {
+                if let Some(doc) = self.documents.get_mut(self.active) {
+                    doc.view.request_rename(&doc.text);
+                }
+                ui.close();
+            }
+            if item(ui, "", tr!("replace_dialog"), "Ctrl+R") {
+                let selected = self.selected_text();
+                self.find.show(selected, true);
+                ui.close();
+            }
+            if item(
+                ui,
+                "search",
+                tr!("search_everywhere_dialog"),
+                tr!("double_shift"),
+            ) {
+                self.open_palette();
+                ui.close();
+            }
+            let core: Vec<_> = self
+                .builtins
+                .iter()
+                .filter(|p| p.core())
+                .flat_map(|p| p.commands().into_iter().map(move |c| (p.id(), c)))
+                .collect();
+            for (plugin, command) in core {
+                let (label, shortcut) = command
+                    .label
+                    .split_once("  ")
+                    .unwrap_or((&command.label, ""));
+                if item(ui, "", label, shortcut) {
+                    self.run_builtin_command(plugin, command.id);
+                    ui.close();
+                }
+            }
+        });
+        open_on_hover(ui, &menu.response);
+        let menu = ui.menu_button(tr!("code"), |ui| {
+            ui.set_min_width(MENU_WIDTH);
+            if item(ui, "", tr!("reformat_code"), "Ctrl+Alt+L") {
+                self.reformat_code();
+                ui.close();
+            }
+            if item(ui, "", tr!("reformat_file"), tr!("ctrl_alt_shift_l")) {
+                self.open_reformat_dialog();
+                ui.close();
+            }
+            if item(ui, "", tr!("optimize_imports"), "Ctrl+Alt+O") {
+                self.reformat(FormatRequest {
+                    imports_only: true,
+                    ..Default::default()
                 });
-                ui.menu_button(tr!("edit"), |ui| {
-                    if item(ui, tr!("find_dialog"), "Ctrl+F") {
-                        let selected = self.selected_text();
-                        self.find.show(selected, false);
+                ui.close();
+            }
+        });
+        open_on_hover(ui, &menu.response);
+        let menu = ui.menu_button(tr!("view"), |ui| {
+            ui.set_min_width(MENU_WIDTH);
+            ui.menu_button((menu_icon(ui, "structure"), tr!("tool_windows")), |ui| {
+                ui.set_min_width(MENU_WIDTH);
+                for tool in self.all_tools() {
+                    if item(
+                        ui,
+                        tool.icon,
+                        tool.title.get(),
+                        &crate::i18n::shortcut(tool.shortcut),
+                    ) {
+                        self.open_tool(tool);
                         ui.close();
                     }
-                    if item(ui, tr!("rename_dialog"), &crate::i18n::shortcut("Shift+F6")) {
-                        if let Some(doc) = self.documents.get_mut(self.active) {
-                            doc.view.request_rename(&doc.text);
-                        }
+                }
+            });
+            ui.menu_button((menu_icon(ui, "show"), tr!("theme")), |ui| {
+                ui.set_min_width(MENU_WIDTH);
+                for (index, name) in ui::THEMES.iter().enumerate() {
+                    if ui.radio(self.settings.theme == index, *name).clicked() {
+                        self.settings.theme = index;
+                        self.apply_theme(ui.ctx());
                         ui.close();
                     }
-                    if item(ui, tr!("replace_dialog"), "Ctrl+R") {
-                        let selected = self.selected_text();
-                        self.find.show(selected, true);
-                        ui.close();
-                    }
-                    if item(ui, tr!("search_everywhere_dialog"), tr!("double_shift")) {
-                        self.open_palette();
-                        ui.close();
-                    }
-                });
-                ui.menu_button(tr!("code"), |ui| {
-                    if item(ui, tr!("reformat_code"), "Ctrl+Alt+L") {
-                        self.reformat_code();
-                        ui.close();
-                    }
-                    if item(ui, tr!("reformat_file"), tr!("ctrl_alt_shift_l")) {
-                        self.open_reformat_dialog();
-                        ui.close();
-                    }
-                    if item(ui, tr!("optimize_imports"), "Ctrl+Alt+O") {
-                        self.reformat(FormatRequest {
-                            imports_only: true,
-                            ..Default::default()
-                        });
-                        ui.close();
-                    }
-                });
-                ui.menu_button(tr!("view"), |ui| {
-                    ui.menu_button(tr!("tool_windows"), |ui| {
-                        for tool in self.all_tools() {
-                            if item(ui, tool.title.get(), &crate::i18n::shortcut(tool.shortcut)) {
-                                self.open_tool(tool);
-                                ui.close();
-                            }
-                        }
-                    });
-                    ui.menu_button(tr!("theme"), |ui| {
-                        for (index, name) in ui::THEMES.iter().enumerate() {
-                            if ui.radio(self.settings.theme == index, *name).clicked() {
-                                self.settings.theme = index;
-                                self.apply_theme(ui.ctx());
-                                ui.close();
-                            }
-                        }
-                    });
-                });
-                ui.menu_button(tr!("run"), |ui| {
-                    if item(ui, tr!("run_current_file"), "Shift+F10") {
-                        self.run_file();
-                        ui.close();
-                    }
-                    self.external_commands_menu(ui);
-                });
-                let menus: Vec<_> = self
-                    .builtins
-                    .iter()
-                    .filter(|p| self.builtin_enabled(p.id()) && p.applies())
-                    .map(|p| (p.id(), p.name(), p.commands()))
-                    .collect();
-                for (plugin, name, commands) in menus {
-                    ui.menu_button(name, |ui| {
+                }
+            });
+        });
+        open_on_hover(ui, &menu.response);
+        let menu = ui.menu_button(tr!("run"), |ui| {
+            ui.set_min_width(MENU_WIDTH);
+            if item(ui, "run", tr!("run_current_file"), "Shift+F10") {
+                self.run_file();
+                ui.close();
+            }
+            self.external_commands_menu(ui);
+        });
+        open_on_hover(ui, &menu.response);
+        // Commands of the built-in plugins, one submenu each, under Languages for the
+        // language plugins and under Plugins for the others.
+        let menus: Vec<_> = self
+            .builtins
+            .iter()
+            .filter(|p| !p.core() && self.builtin_enabled(p.id()) && p.applies())
+            .map(|p| (p.language(), p.id(), p.name(), p.icon(), p.commands()))
+            .filter(|(_, _, _, _, commands)| !commands.is_empty())
+            .collect();
+        for (languages, title) in [(true, tr!("languages_menu")), (false, tr!("plugins"))] {
+            let group: Vec<_> = menus.iter().filter(|m| m.0 == languages).collect();
+            if group.is_empty() {
+                continue;
+            }
+            let menu = ui.menu_button(title, |ui| {
+                ui.set_min_width(MENU_WIDTH);
+                for (_, plugin, name, icon, commands) in group {
+                    ui.menu_button((menu_icon(ui, icon), *name), |ui| {
+                        ui.set_min_width(MENU_WIDTH);
                         for command in commands {
                             let label = command
                                 .label
                                 .split_once(" : ")
                                 .map_or(command.label.as_str(), |(_, l)| l);
                             let (label, shortcut) = label.split_once("  ").unwrap_or((label, ""));
-                            if item(ui, label, shortcut) {
+                            if item(ui, "", label, shortcut) {
                                 self.run_builtin_command(plugin, command.id);
                                 ui.close();
                             }
                         }
                     });
                 }
-                ui.menu_button(tr!("window"), |ui| {
-                    if item(ui, tr!("new_project_window"), "") {
-                        self.choose_project(true);
-                        ui.close();
-                    }
-                    if item(ui, "Notifications", "") {
-                        self.show_notifications = !self.show_notifications;
-                        ui.close();
-                    }
-                });
-                ui.menu_button(tr!("help"), |ui| {
-                    if item(ui, tr!("keymap"), "") {
-                        self.open_settings(Page::Keymap);
-                        ui.close();
-                    }
-                    if item(ui, tr!("about"), "") {
-                        self.push_note(
-                            "Atelier IDE",
-                            format!("Version {}", env!("CARGO_PKG_VERSION")),
-                            false,
-                            true,
-                        );
-                        ui.close();
-                    }
-                });
             });
+            open_on_hover(ui, &menu.response);
+        }
+        let menu = ui.menu_button(tr!("window"), |ui| {
+            ui.set_min_width(MENU_WIDTH);
+            if item(ui, "openNewTab", tr!("new_project_window"), "") {
+                self.choose_project(true);
+                ui.close();
+            }
+            if item(ui, "notifications", "Notifications", "") {
+                self.show_notifications = !self.show_notifications;
+                ui.close();
+            }
+        });
+        open_on_hover(ui, &menu.response);
+        let menu = ui.menu_button(tr!("help"), |ui| {
+            ui.set_min_width(MENU_WIDTH);
+            if item(ui, "", tr!("keymap"), "") {
+                self.open_settings(Page::Keymap);
+                ui.close();
+            }
+            if item(ui, "info", tr!("about"), "") {
+                self.push_note(
+                    "Atelier IDE",
+                    format!("Version {}", env!("CARGO_PKG_VERSION")),
+                    false,
+                    true,
+                );
+                ui.close();
+            }
+        });
+        open_on_hover(ui, &menu.response);
     }
 
     fn external_commands_menu(&mut self, ui: &mut egui::Ui) {
@@ -5150,17 +5362,30 @@ impl Ide {
                     )];
                     if let Some(path) = self.documents.get(self.active).and_then(|d| d.path.clone())
                     {
-                        let relative = path
-                            .strip_prefix(&self.root)
-                            .map(Path::to_path_buf)
-                            .unwrap_or_else(|_| path.clone());
-                        let mut current = self.root.clone();
-                        for part in relative.components() {
-                            current.push(part);
-                            crumbs.push((
-                                part.as_os_str().to_string_lossy().into_owned(),
-                                current.clone(),
-                            ));
+                        if let Ok(relative) = path.strip_prefix(&self.root) {
+                            let mut current = self.root.clone();
+                            for part in relative.components() {
+                                current.push(part);
+                                crumbs.push((
+                                    part.as_os_str().to_string_lossy().into_owned(),
+                                    current.clone(),
+                                ));
+                            }
+                        } else {
+                            // A file outside the project: its own path from the drive (`C:`),
+                            // without the `\\?\` of canonical Windows paths nor a `\` crumb.
+                            crumbs.clear();
+                            let mut current = PathBuf::new();
+                            for part in project::simplify(&path).components() {
+                                current.push(part);
+                                if part == std::path::Component::RootDir {
+                                    continue;
+                                }
+                                crumbs.push((
+                                    part.as_os_str().to_string_lossy().into_owned(),
+                                    current.clone(),
+                                ));
+                            }
                         }
                     }
                     let last = crumbs.len() - 1;
