@@ -1,0 +1,21 @@
+{
+  "gltf.animation": "Animation",
+  "gltf.animation_number": "Animation {n}",
+  "gltf.controls": "Glisser pour tourner · clic droit ou Maj+glisser pour déplacer · molette pour zoomer · double-clic pour recadrer",
+  "gltf.file_too_large": "Modèle trop volumineux (limite : 512 Mo)",
+  "gltf.grid": "Grille au sol",
+  "gltf.loop": "En boucle",
+  "gltf.model_viewer": "Visionneuse de modèles 3D",
+  "gltf.no_animation": "Aucune animation",
+  "gltf.no_framebuffer": "La vue 3D n'a pas pu être créée sur cette carte graphique",
+  "gltf.opengl_too_old": "La vue 3D a besoin d'OpenGL 3",
+  "gltf.pause": "Pause (Espace)",
+  "gltf.play": "Lecture (Espace)",
+  "gltf.reading_failed": "Le modèle n'a pas pu être lu",
+  "gltf.reading_model": "Lecture du modèle…",
+  "gltf.shows_gltf_models": "Affiche les modèles glTF (GLB, glTF) en 3D à la place de l'éditeur de texte, et lit leurs animations.",
+  "gltf.skins": " · {n} squelettes",
+  "gltf.speed": "Vitesse",
+  "gltf.statistics": "{triangles} triangles · {vertices} sommets · {meshes} maillages",
+  "gltf.unreadable_model": "Modèle illisible : {e}"
+}

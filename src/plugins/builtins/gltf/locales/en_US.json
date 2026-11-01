@@ -1,0 +1,21 @@
+{
+  "gltf.animation": "Animation",
+  "gltf.animation_number": "Animation {n}",
+  "gltf.controls": "Drag to turn · right drag or Shift+drag to move · wheel to zoom · double-click to frame",
+  "gltf.file_too_large": "Model too large (limit: 512 MB)",
+  "gltf.grid": "Ground grid",
+  "gltf.loop": "Loop",
+  "gltf.model_viewer": "3D Model Viewer",
+  "gltf.no_animation": "No animation",
+  "gltf.no_framebuffer": "The 3D view could not be created on this graphics card",
+  "gltf.opengl_too_old": "The 3D view needs OpenGL 3",
+  "gltf.pause": "Pause (Space)",
+  "gltf.play": "Play (Space)",
+  "gltf.reading_failed": "The model could not be read",
+  "gltf.reading_model": "Reading the model…",
+  "gltf.shows_gltf_models": "Shows glTF models (GLB, glTF) in 3D instead of the text editor, and plays their animations.",
+  "gltf.skins": " · {n} skins",
+  "gltf.speed": "Speed",
+  "gltf.statistics": "{triangles} triangles · {vertices} vertices · {meshes} meshes",
+  "gltf.unreadable_model": "Unreadable model: {e}"
+}
