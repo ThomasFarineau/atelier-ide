@@ -9,11 +9,16 @@ mod actions;
 mod assist;
 mod color_picker;
 mod context;
+mod easing_editor;
+mod effects_editor;
 mod fold;
+mod gradient_editor;
 mod intel;
 mod intentions;
 mod multi;
+mod radius_editor;
 mod refactor;
+mod shadow_editor;
 mod spell;
 mod templates;
 
@@ -177,11 +182,22 @@ impl Default for EditorState {
     }
 }
 
-/// The color picker of a color of the text.
+/// What a swatch opens: the color picker of a color, or the editor of a gradient, of shadows,
+/// of an easing curve.
+enum ColorTool {
+    Color(color_picker::Picker),
+    Gradient(Box<gradient_editor::GradientEditor>),
+    Shadows(Box<shadow_editor::ShadowEditor>),
+    Easing(Box<easing_editor::EasingEditor>),
+    Radius(Box<radius_editor::RadiusEditor>),
+    Effects(Box<effects_editor::EffectsEditor>),
+}
+
+/// The color picker of a color of the text, or the editor of a gradient.
 struct ColorEdit {
     /// The bytes of the color in the text, as it is now.
     range: Range<usize>,
-    picker: color_picker::Picker,
+    tool: ColorTool,
     /// Where the picker opens, under the swatch.
     at: Pos2,
     /// The pass it opened in: the press that opened it does not close it.
@@ -213,6 +229,136 @@ fn paint_swatch(painter: &egui::Painter, rect: Rect, color: Color32, t: Theme) {
         Stroke::new(1.0_f32, t.border),
         egui::StrokeKind::Outside,
     );
+}
+
+/// A square showing a gradient as it looks, a checkerboard under it.
+fn paint_gradient_swatch(
+    painter: &egui::Painter,
+    rect: Rect,
+    gradient: &crate::languages::css::gradient::Gradient,
+    t: Theme,
+) {
+    color_picker::checkerboard(painter, rect, 2.0);
+    let (w, h) = (rect.width(), rect.height());
+    painter.add(color_picker::gradient(rect, 8, 8, |x, y| {
+        let [r, g, b, a] = gradient.color_at(x * w, y * h, w, h);
+        Color32::from_rgba_unmultiplied(r, g, b, a)
+    }));
+    painter.rect_stroke(
+        rect,
+        2.0,
+        Stroke::new(1.0_f32, t.border),
+        egui::StrokeKind::Outside,
+    );
+}
+
+/// The swatch of a value with an editor of its own.
+fn paint_special_swatch(
+    painter: &egui::Painter,
+    rect: Rect,
+    special: &crate::languages::css::colors::Special,
+    t: Theme,
+) {
+    use crate::languages::css::colors::Special;
+    match special {
+        Special::Gradient(gradient) => paint_gradient_swatch(painter, rect, gradient, t),
+        // A white square and the color of its first shadow under it.
+        Special::Shadows(shadows) => {
+            let [r, g, b, a] = shadows.list[0].rgba();
+            let color = Color32::from_rgba_unmultiplied(r, g, b, a.max(90));
+            painter.rect_filled(rect.translate(vec2(1.5, 1.5)), 2.0, color);
+            painter.rect_filled(
+                rect.shrink(1.0).translate(vec2(-0.5, -0.5)),
+                2.0,
+                Color32::WHITE,
+            );
+            painter.rect_stroke(
+                rect.shrink(1.0).translate(vec2(-0.5, -0.5)),
+                2.0,
+                Stroke::new(1.0_f32, t.border),
+                egui::StrokeKind::Outside,
+            );
+        }
+        // The curve, in a small frame.
+        Special::Easing(easing) => {
+            painter.rect_filled(rect, 2.0, t.field);
+            painter.rect_stroke(
+                rect,
+                2.0,
+                Stroke::new(1.0_f32, t.border),
+                egui::StrokeKind::Outside,
+            );
+            let inner = rect.shrink(2.0);
+            let points: Vec<Pos2> = (0..=16)
+                .map(|i| {
+                    let (x, y) = easing.point(i as f32 / 16.0);
+                    pos2(
+                        inner.left() + x * inner.width(),
+                        inner.bottom() - y.clamp(-0.2, 1.2) * inner.height(),
+                    )
+                })
+                .collect();
+            painter.add(egui::Shape::line(points, Stroke::new(1.5_f32, t.accent)));
+        }
+        // A square with its corners rounded as written.
+        Special::Radius(radius) => {
+            let side = rect.width();
+            let round = |corner: usize| {
+                (radius.pixels(corner, 100.0, 100.0) / 100.0 * side * 2.0).clamp(0.0, side / 2.0)
+            };
+            let corners = egui::CornerRadius {
+                nw: round(0) as u8,
+                ne: round(1) as u8,
+                se: round(2) as u8,
+                sw: round(3) as u8,
+            };
+            painter.rect_filled(rect, corners, t.accent.gamma_multiply(0.35));
+            painter.rect_stroke(
+                rect,
+                corners,
+                Stroke::new(1.5_f32, t.accent),
+                egui::StrokeKind::Inside,
+            );
+        }
+        // A filter on colors, a transform on a square.
+        Special::Effects(effects) => match effects.kind {
+            crate::languages::css::effects::EffectKind::Filter => {
+                painter.add(color_picker::gradient(rect, 6, 1, |x, _| {
+                    let c = Color32::from(egui::ecolor::Hsva::new(x, 0.8, 0.95, 1.0));
+                    let [r, g, b, a] = effects.filter([c.r(), c.g(), c.b(), 255]);
+                    Color32::from_rgba_unmultiplied(r, g, b, a)
+                }));
+                painter.rect_stroke(
+                    rect,
+                    2.0,
+                    Stroke::new(1.0_f32, t.border),
+                    egui::StrokeKind::Outside,
+                );
+            }
+            crate::languages::css::effects::EffectKind::Transform => {
+                painter.rect_filled(rect, 2.0, t.field);
+                let half = rect.width() * 0.3;
+                let points: Vec<Pos2> = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]
+                    .iter()
+                    .map(|(x, y)| {
+                        // Turned and skewed as written, without moving or growing much.
+                        let (tx, ty) = effects.transform(x * 20.0, y * 20.0);
+                        let length = (tx * tx + ty * ty).sqrt().max(1e-3);
+                        let scale = (length / (20.0 * 2f32.sqrt())).clamp(0.5, 1.4);
+                        let (ox, oy) = effects.transform(0.0, 0.0);
+                        let (dx, dy) = (tx - ox, ty - oy);
+                        let norm = (dx * dx + dy * dy).sqrt().max(1e-3);
+                        rect.center() + vec2(dx, dy) / norm * half * 2f32.sqrt() * scale.min(1.0)
+                    })
+                    .collect();
+                painter.add(egui::Shape::convex_polygon(
+                    points,
+                    t.accent.gamma_multiply(0.35),
+                    Stroke::new(1.2_f32, t.accent),
+                ));
+            }
+        },
+    }
 }
 
 /// A hint of the language server on a line, for the layout.
@@ -418,12 +564,109 @@ fn offset_of(line: &str, column: usize) -> usize {
     line.len()
 }
 
+/// The colors written in a document: all of CSS in a style sheet and in the styles of a page
+/// (names included), the hexadecimal and `rgb()`/`hsl()` colors anywhere else.
+pub fn swatches(text: &str, language: &str) -> Vec<crate::languages::css::colors::Swatch> {
+    use crate::languages::{css, html};
+    if css::is_style(language) {
+        let mut found = css::colors::find(text, css::lexer::Dialect::of(language));
+        found.extend(special_swatches(text));
+        found.sort_by_key(|s| s.range.start);
+        return found;
+    }
+    let mut found = Vec::new();
+    if html::is_markup(language) {
+        // The style sheets of the page, read as CSS where they are.
+        let regions = html::embedded::regions(text, language);
+        for style in html::embedded::languages(&regions)
+            .into_iter()
+            .filter(|l| css::is_style(l))
+        {
+            let sheet = html::embedded::document(text, &regions, style);
+            found.extend(css::colors::find(&sheet, css::lexer::Dialect::of(style)));
+        }
+    }
+    for swatch in css::colors::find_in_code(text) {
+        let known = found
+            .iter()
+            .any(|s| s.range.start < swatch.range.end && swatch.range.start < s.range.end);
+        if !known {
+            found.push(swatch);
+        }
+    }
+    // The gradients, shadows and easing curves, wherever they are written: their swatch opens
+    // their editor; the colors inside them keep their own.
+    found.extend(special_swatches(text));
+    found.sort_by_key(|s| s.range.start);
+    found
+}
+
+/// A swatch for each gradient, list of shadows and easing curve of the text.
+fn special_swatches(text: &str) -> Vec<crate::languages::css::colors::Swatch> {
+    use crate::languages::css::{
+        colors::{Notation, Special, Swatch},
+        easing, effects, gradient, radius, shadow,
+    };
+    use std::sync::Arc;
+    if text.len() > 1_000_000 {
+        return Vec::new();
+    }
+    let swatch = |range, rgba, notation, special| Swatch {
+        range,
+        rgba,
+        notation,
+        special: Some(Arc::new(special)),
+    };
+    let mut out = Vec::new();
+    if text.contains("-gradient(") {
+        for (range, g) in gradient::find(text) {
+            let (rgba, notation) = (g.stops[0].color, g.stops[0].notation);
+            out.push(swatch(range, rgba, notation, Special::Gradient(g)));
+        }
+    }
+    if text.contains("hadow") {
+        for (range, shadows) in shadow::find(text) {
+            let rgba = shadows.list[0].rgba();
+            out.push(swatch(
+                range,
+                rgba,
+                Notation::Hex,
+                Special::Shadows(shadows),
+            ));
+        }
+    }
+    if text.contains("cubic-bezier") || text.contains("transition") || text.contains("animation") {
+        for (range, curve) in easing::find(text) {
+            out.push(swatch(
+                range,
+                [0, 0, 0, 0],
+                Notation::Hex,
+                Special::Easing(curve),
+            ));
+        }
+    }
+    let plain = |range, special| swatch(range, [0, 0, 0, 0], Notation::Hex, special);
+    if text.contains("adius") {
+        for (range, radius) in radius::find(text) {
+            out.push(plain(range, Special::Radius(radius)));
+        }
+    }
+    if text.contains("ilter") || text.contains("transform") {
+        for (range, effects) in effects::find(text) {
+            out.push(plain(range, Special::Effects(effects)));
+        }
+    }
+    out
+}
+
 pub fn comment_prefix(language: &str) -> Option<&'static str> {
     match language {
         "rs" | "js" | "ts" | "java" | "c" | "cpp" | "cs" | "go" | "php" | "scss" | "sass"
         | "less" => Some("//"),
         "py" | "sh" | "yaml" | "toml" | "rb" => Some("#"),
         "sql" => Some("--"),
+        // The comment of Pug that does not go into the HTML.
+        "pug" => Some("//-"),
         _ => None,
     }
 }
@@ -1106,23 +1349,36 @@ impl EditorState {
     }
 
     fn toggle_comment(&mut self, text: &mut String, language: &str) {
-        if language == "css" {
-            // CSS has no line comment: each line goes between `/*` and `*/`.
+        // In a page, the code of a `<script>` or a `<style>` is commented in its language.
+        let language = crate::languages::html::embedded::language_at(text, language, self.cursor);
+        let language = language.as_str();
+        let marks = match language {
+            "css" => Some(("/*", "*/")),
+            "html" | "xml" => Some(("<!--", "-->")),
+            _ => None,
+        };
+        if let Some((open, close)) = marks {
+            // No line comment: each line goes between the marks.
             let block = self.selected_lines(text);
             let commented = text[block]
                 .split('\n')
                 .filter(|l| !l.trim().is_empty())
-                .all(|l| l.trim_start().starts_with("/*") && l.trim_end().ends_with("*/"));
+                .all(|l| {
+                    let body = l.trim();
+                    body.len() >= open.len() + close.len()
+                        && body.starts_with(open)
+                        && body.ends_with(close)
+                });
             self.edit_lines(text, |line| {
                 let start = line.len() - line.trim_start().len();
                 let body = line.trim();
                 if body.is_empty() {
                     line.to_string()
                 } else if commented {
-                    let inner = &body[2..body.len() - 2];
+                    let inner = &body[open.len()..body.len() - close.len()];
                     format!("{}{}", &line[..start], inner.trim())
                 } else {
-                    format!("{}/* {body} */", &line[..start])
+                    format!("{}{open} {body} {close}", &line[..start])
                 }
             });
             return;
@@ -1466,6 +1722,18 @@ impl EditorState {
                 return true;
             }
             Key::Tab => {
+                // An Emmet abbreviation before the caret, in HTML: `p#test` and Tab.
+                if self.selection().is_empty()
+                    && crate::languages::html::embedded::language_at(text, language, self.cursor)
+                        == "html"
+                    && let Some((range, html, caret)) =
+                        crate::languages::html::emmet::expand_at(text, self.cursor, INDENT)
+                {
+                    let start = range.start;
+                    self.replace(text, range, &html, false);
+                    self.move_to(start + caret, false);
+                    return true;
+                }
                 if text[self.selection()].contains('\n') {
                     self.edit_lines(text, |l| {
                         if l.is_empty() {
@@ -1841,7 +2109,10 @@ impl EditorState {
                 pos2(text_left + x + char_width, y + row / 2.0),
                 vec2(side, side),
             );
-            paint_swatch(painter, square, self.swatches[swatch].color(), t);
+            match &self.swatches[swatch].special {
+                Some(special) => paint_special_swatch(painter, square, special, t),
+                None => paint_swatch(painter, square, self.swatches[swatch].color(), t),
+            }
             self.swatch_rects.push((square, swatch));
         }
     }
@@ -1895,17 +2166,12 @@ impl EditorState {
         cols
     }
 
-    /// The colors of a style sheet, found again when the text or the language changed.
+    /// The colors of the text, in every language, found again when the text or the language
+    /// changed.
     fn refresh_swatches(&mut self, text: &str, language: &str) {
-        if !crate::languages::css::is_style(language) {
-            self.swatches.clear();
-            self.swatches_of = None;
-            return;
-        }
         let of = (self.rev, language.to_string());
         if self.swatches_of.as_ref() != Some(&of) {
-            let dialect = crate::languages::css::lexer::Dialect::of(language);
-            self.swatches = crate::languages::css::colors::find(text, dialect);
+            self.swatches = swatches(text, language);
             self.swatches_of = Some(of);
         }
     }
@@ -1916,9 +2182,28 @@ impl EditorState {
             return;
         };
         self.next_group += 1;
+        use crate::languages::css::colors::Special;
+        let tool = match swatch.special.as_deref() {
+            Some(Special::Gradient(gradient)) => ColorTool::Gradient(Box::new(
+                gradient_editor::GradientEditor::new(gradient.clone()),
+            )),
+            Some(Special::Shadows(shadows)) => {
+                ColorTool::Shadows(Box::new(shadow_editor::ShadowEditor::new(shadows.clone())))
+            }
+            Some(Special::Easing(easing)) => {
+                ColorTool::Easing(Box::new(easing_editor::EasingEditor::new(*easing)))
+            }
+            Some(Special::Radius(radius)) => {
+                ColorTool::Radius(Box::new(radius_editor::RadiusEditor::new(radius.clone())))
+            }
+            Some(Special::Effects(effects)) => ColorTool::Effects(Box::new(
+                effects_editor::EffectsEditor::new(effects.clone()),
+            )),
+            None => ColorTool::Color(color_picker::Picker::new(swatch.rgba, swatch.notation)),
+        };
         self.color_edit = Some(ColorEdit {
             range: swatch.range.clone(),
-            picker: color_picker::Picker::new(swatch.rgba, swatch.notation),
+            tool,
             at: rect.left_bottom() + vec2(-8.0, 6.0),
             opened: ui.ctx().cumulative_pass_nr(),
             group: self.next_group,
@@ -1946,7 +2231,14 @@ impl EditorState {
                         spread: 0,
                         color: Color32::from_black_alpha(80),
                     })
-                    .show(ui, |ui| color_picker::show(ui, &mut edit.picker, t))
+                    .show(ui, |ui| match &mut edit.tool {
+                        ColorTool::Color(picker) => color_picker::show(ui, picker, t),
+                        ColorTool::Gradient(editor) => gradient_editor::show(ui, editor, t),
+                        ColorTool::Shadows(editor) => shadow_editor::show(ui, editor, t),
+                        ColorTool::Easing(editor) => easing_editor::show(ui, editor, t),
+                        ColorTool::Radius(editor) => radius_editor::show(ui, editor, t),
+                        ColorTool::Effects(editor) => effects_editor::show(ui, editor, t),
+                    })
                     .inner
             });
         let outside = ui.input(|i| {
@@ -1963,8 +2255,16 @@ impl EditorState {
         if !area.inner || edit.range.end > text.len() {
             return false;
         }
-        let written =
-            crate::languages::css::colors::write(edit.picker.rgba(), edit.picker.notation);
+        let written = match &edit.tool {
+            ColorTool::Color(picker) => {
+                crate::languages::css::colors::write(picker.rgba(), picker.notation)
+            }
+            ColorTool::Gradient(editor) => editor.gradient.write(),
+            ColorTool::Shadows(editor) => editor.shadows.write(),
+            ColorTool::Easing(editor) => editor.write(),
+            ColorTool::Radius(editor) => editor.radius.write(),
+            ColorTool::Effects(editor) => editor.effects.write(),
+        };
         if text[edit.range.clone()] == written {
             return false;
         }
@@ -2374,12 +2674,23 @@ impl EditorState {
                     });
                 self.assist_list_mouse(ui, hover_pos);
                 self.assist_hover(ui, text, opt, hover_offset, ctrl);
-                // I-beam over the text, the regular arrow over the gutter.
+                // I-beam over the text, the regular arrow over the gutter, a hand over a color
+                // swatch, which opens the picker.
                 if (response.hovered() || response.dragged())
                     && let Some(pos) = ui.input(|i| i.pointer.latest_pos())
                     && !gutter_rect.contains(pos)
                 {
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+                    let on_swatch = !opt.read_only
+                        && !response.dragged()
+                        && self
+                            .swatch_rects
+                            .iter()
+                            .any(|(r, _)| r.expand(1.0).contains(pos));
+                    ui.ctx().set_cursor_icon(if on_swatch {
+                        egui::CursorIcon::PointingHand
+                    } else {
+                        egui::CursorIcon::Text
+                    });
                 }
                 gutter_response.context_menu(|ui| {
                     crate::ui::menu_begin(ui);

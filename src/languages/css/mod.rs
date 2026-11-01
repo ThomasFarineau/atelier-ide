@@ -12,9 +12,15 @@ pub mod analysis;
 pub mod colors;
 pub mod convert;
 pub mod data;
+pub mod easing;
+pub mod effects;
 pub mod format;
+pub mod gradient;
 pub mod lexer;
-mod server;
+pub mod properties;
+pub mod radius;
+pub(crate) mod server;
+pub mod shadow;
 
 use crate::languages::{
     Completion, Diagnostic, Location, Symbol,
@@ -123,6 +129,9 @@ pub fn provider(root: &Path, repaint: Arc<dyn Fn() + Send + Sync>) -> Css {
 pub struct CssPlugin;
 
 impl BuiltinPlugin for CssPlugin {
+    fn language(&self) -> bool {
+        true
+    }
     fn id(&self) -> &'static str {
         "css"
     }

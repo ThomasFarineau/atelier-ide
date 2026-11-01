@@ -207,3 +207,55 @@ fn f2_goes_to_the_next_error_round_the_end() {
     s.next_problem(true);
     assert_eq!(s.cursor, 2);
 }
+
+#[test]
+fn colors_have_swatches_in_every_language() {
+    let shown = |text: &str, language: &str| -> Vec<String> {
+        swatches(text, language)
+            .iter()
+            .map(|s| text[s.range.clone()].to_string())
+            .collect()
+    };
+    // Code: hexadecimal and functions, in strings or not.
+    assert_eq!(
+        shown(
+            "let c = \"#e34f26\"; let d = rgb(0, 128, 255); // #fff",
+            "rs"
+        ),
+        ["#e34f26", "rgb(0, 128, 255)", "#fff"]
+    );
+    assert_eq!(
+        shown("COLOR = '#123'\nfix #123 and #abc", "py"),
+        ["#123", "#abc"]
+    );
+    // Not a color: an entity, a word that only starts like one, a name outside a sheet.
+    assert!(shown("&#123; #ffz red", "md").is_empty());
+    // A page: its styles as CSS (names included), the rest as code.
+    let page = "<style>p { color: red; }</style><div style=\"background: #00f\" data-c=\"#0f0\">";
+    assert_eq!(shown(page, "html"), ["red", "#00f", "#0f0"]);
+}
+
+#[test]
+fn a_style_sheet_has_the_swatches_of_its_gradients_shadows_and_curves() {
+    use crate::languages::css::colors::Special;
+    let sheet = "a {\n  background: linear-gradient(red, blue);\n  box-shadow: 0 1px 2px #000;\n  \
+                 transition: color 1s ease;\n  border-radius: 4px;\n  transform: rotate(5deg);\n}";
+    for language in ["css", "scss", "less"] {
+        let kinds: Vec<&str> = swatches(sheet, language)
+            .iter()
+            .filter_map(|s| s.special.as_deref())
+            .map(|special| match special {
+                Special::Gradient(_) => "gradient",
+                Special::Shadows(_) => "shadows",
+                Special::Easing(_) => "easing",
+                Special::Radius(_) => "radius",
+                Special::Effects(_) => "effects",
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            ["gradient", "shadows", "easing", "radius", "effects"],
+            "{language}"
+        );
+    }
+}

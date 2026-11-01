@@ -11,7 +11,7 @@ use eframe::egui::{
     ecolor::Hsva, pos2, vec2,
 };
 
-const WIDTH: f32 = 236.0;
+pub(super) const WIDTH: f32 = 236.0;
 const SQUARE_HEIGHT: f32 = 150.0;
 const BAR_HEIGHT: f32 = 14.0;
 /// Cells of the meshes: enough for smooth gradients.
@@ -86,7 +86,7 @@ fn hex(rgba: Rgba) -> String {
 }
 
 /// The square under a color that lets light through.
-fn checkerboard(painter: &egui::Painter, rect: Rect, radius: f32) {
+pub(super) fn checkerboard(painter: &egui::Painter, rect: Rect, radius: f32) {
     painter.rect_filled(rect, radius, Color32::WHITE);
     let cell = 5.0;
     let clip = painter.with_clip_rect(rect.intersect(painter.clip_rect()));
@@ -108,7 +108,12 @@ fn checkerboard(painter: &egui::Painter, rect: Rect, radius: f32) {
 }
 
 /// A grid of colored cells: `color(x, y)` with x and y from 0 to 1.
-fn gradient(rect: Rect, columns: usize, rows: usize, color: impl Fn(f32, f32) -> Color32) -> Shape {
+pub(super) fn gradient(
+    rect: Rect,
+    columns: usize,
+    rows: usize,
+    color: impl Fn(f32, f32) -> Color32,
+) -> Shape {
     let mut mesh = Mesh::default();
     for j in 0..=rows {
         for i in 0..=columns {
@@ -142,7 +147,7 @@ fn ring(painter: &egui::Painter, at: Pos2, color: Color32) {
 }
 
 /// The handle of a bar: a white knob, taller than the bar, filled with `color`.
-fn knob(painter: &egui::Painter, x: f32, bar: Rect, color: Color32) {
+pub(super) fn knob(painter: &egui::Painter, x: f32, bar: Rect, color: Color32) {
     let rect = Rect::from_center_size(pos2(x, bar.center().y), vec2(10.0, bar.height() + 8.0));
     painter.rect_filled(
         rect.translate(vec2(0.0, 1.0)).expand(1.0),
