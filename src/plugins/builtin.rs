@@ -300,6 +300,7 @@ pub fn all() -> Vec<Box<dyn BuiltinPlugin>> {
         Box::new(crate::plugins::builtins::media::MediaPlugin::default()),
         Box::new(crate::plugins::builtins::gltf::GltfPlugin::default()),
         Box::new(crate::plugins::builtins::k8s::K8sPlugin::default()),
+        Box::new(crate::plugins::builtins::database::DatabasePlugin::default()),
         Box::new(crate::plugins::builtins::node::NodePlugin::default()),
         Box::new(crate::plugins::builtins::cargo::CargoPlugin::default()),
         Box::new(crate::plugins::builtins::runtimes::RuntimesPlugin::default()),

@@ -611,8 +611,9 @@ fn git_plugin_windows_render_on_this_repository() {
     let tools = ide.tool_windows();
     assert_eq!(
         tools.len(),
-        7,
-        "Commit, Git, Kubernetes, Search, Problems, AI sessions and Runtimes: no npm, Maven or Gradle here"
+        8,
+        "Commit, Git, Kubernetes, Database, Search, Problems, AI sessions and Runtimes: no npm, \
+         Maven or Gradle here"
     );
     for tool in tools {
         ide.open_tool(tool);
