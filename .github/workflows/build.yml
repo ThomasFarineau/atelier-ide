@@ -38,8 +38,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # The native plugins of `plugins/`.
+          # The native plugins of `plugins/`. A plugin repository may be private: READ_TOKEN
+          # (organization secret) reads them; the token of the run reads only this repository.
           submodules: recursive
+          token: ${{ secrets.READ_TOKEN || github.token }}
           ref: ${{ inputs.ref }}
 
       - name: Install Linux dependencies

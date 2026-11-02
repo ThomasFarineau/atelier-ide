@@ -23,7 +23,7 @@
 | `build.yml` compile et empaquette les plugins, `release.yml` publie dans `releases` (brouillon, puis publication) et dans `app` | En local : `git remote set-url origin git@github.com:atelier-ide-org/app.git` |
 | Base du site corrigée en `/app/` (Pages est déjà à `atelier-ide-org.github.io/app/` depuis le transfert), puis le site déplacé dans `docs` | Étapes 2 à 4 ci-dessous |
 | Changesets : plugins natifs (`minor`), déménagement des téléchargements (`patch`) | |
-| Jeton `RELEASES_TOKEN`, réglage Actions de l'org (fait par toi) | Avant l'étape 4 : un jeton en lecture sur `app` (*Contents: read*), dans les secrets de `docs` sous le nom `APP_READ_TOKEN` |
+| Jeton `RELEASES_TOKEN`, réglage Actions de l'org (fait par toi) | `READ_TOKEN` (*Contents: read* sur `app` et les `plugin-*` privés) : en **secret d'organisation**, visible par `app` et `docs` |
 | `plugin-api` (public, tag `v0.1.0`), `plugin-gltf-viewer` (tag `v0.1.0`), `docs` : historiques extraits avec `git filter-repo` | Pages du dépôt `docs` : Settings → Pages → Source : GitHub Actions |
 | `app` : le plugin en sous-module, l'API par son tag, `docs/` retiré | |
 
@@ -150,7 +150,7 @@ Pour contrôler : les compteurs de téléchargement des archives de la release p
    redirige pas** d'un propriétaire à l'autre : l'ancienne adresse donnera une 404. Un domaine à
    soi (`CNAME`) évite de refaire ce changement la prochaine fois.
 3. Le catalogue des plugins : le workflow de `docs` récupère `app` avec un jeton en lecture seule
-   (`APP_READ_TOKEN`) et `actions/checkout` (`repository: atelier-ide-org/app`, `path: app`,
+   (`READ_TOKEN`) et `actions/checkout` (`repository: atelier-ide-org/app`, `path: app`,
    `submodules: recursive`) : les plugins natifs arrivent avec, en sous-modules. `catalog.ts`
    lit `app/src/...` et `app/plugins/*/doc/` (variable `ATELIER_APP`, sinon `../app`). Le site
    est reconstruit chaque nuit pour suivre le code. On garde ainsi la règle actuelle : la page d'un plugin vit à côté de son
