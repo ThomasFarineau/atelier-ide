@@ -18,14 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-        with:
-          # The native plugins of `plugins/`. A plugin repository may be private: READ_TOKEN
-          # (organization secret) reads them; the token of the run reads only this repository.
-          submodules: recursive
-          token: ${{ secrets.READ_TOKEN || github.token }}
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
+      # The compiler of rust-toolchain.toml.
+      - run: rustup toolchain install
       - run: cargo fmt --all --check
 
   check:
@@ -37,20 +31,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          # The native plugins of `plugins/`. A plugin repository may be private: READ_TOKEN
-          # (organization secret) reads them; the token of the run reads only this repository.
-          submodules: recursive
-          token: ${{ secrets.READ_TOKEN || github.token }}
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libxkbcommon-dev libxcb-render0-dev \
             libxcb-shape0-dev libxcb-xfixes0-dev libssl-dev libasound2-dev
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+      - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace --all-targets --locked
       - run: cargo test --workspace --locked

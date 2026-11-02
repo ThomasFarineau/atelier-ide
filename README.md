@@ -37,10 +37,10 @@ Then `atelier .` opens the current folder. See [Installation](https://atelier-id
 
 ## Build from source
 
-You need stable Rust and a native toolchain (on Windows, the Visual Studio Build Tools with the C++ workload). The native plugins of `plugins/` are git submodules (one repository `plugin-<name>` each), built with the IDE:
+You need stable Rust and a native toolchain (on Windows, the Visual Studio Build Tools with the C++ workload). The compiler is fixed by `rust-toolchain.toml`. The native plugins have repositories of their own (`plugin-<name>`): one cloned into `plugins/` (ignored by git) joins the workspace, built with `--workspace`.
 
 ```bash
-git clone --recursive git@github.com:atelier-ide-org/app.git   # or: git submodule update --init
+git clone git@github.com:atelier-ide-org/plugin-gltf-viewer.git plugins/gltf-viewer   # optional
 cargo run -- examples/demo        # the IDE on the multi-language demo project
 cargo dev                         # hot reload while you work on the IDE
 cargo build --release             # target/release/atelier-ide(.exe)

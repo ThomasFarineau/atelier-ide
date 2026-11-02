@@ -64,7 +64,5 @@ jobs:
     needs: prepare-release
     if: needs.prepare-release.outputs.pending == 'true'
     uses: ./.github/workflows/build.yml
-    # READ_TOKEN, for the submodules of the plugins.
-    secrets: inherit
     with:
       ref: release

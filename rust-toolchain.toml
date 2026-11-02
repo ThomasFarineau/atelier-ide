@@ -1,0 +1,7 @@
+# The compiler of the IDE, fixed: a native plugin loads only in an IDE built by the same compiler,
+# and the CI of each plugin builds it with this file of the tag of the release
+# (see atelier-ide-org/plugin-api).
+[toolchain]
+channel = "1.96.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

@@ -1,7 +1,8 @@
 name: Release
 
 # Merging the "chore: prepare release" pull request (opened by `prepare-release.yml`) builds the
-# IDE, its bootstrap and the native plugins, then publishes them twice:
+# IDE and its bootstrap, then publishes them twice (the native plugins join the release afterwards,
+# from the CI of their repositories):
 # - in `atelier-ide-org/releases`, the public repository of the downloads, where the bootstrap
 #   looks for updates (src/bin/atelier.rs). It needs the secret `RELEASES_TOKEN`, a token that
 #   may write the contents of that repository;
@@ -29,8 +30,6 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event.pull_request.merged == true && github.head_ref == 'release')
     uses: ./.github/workflows/build.yml
-    # READ_TOKEN, for the submodules of the plugins.
-    secrets: inherit
     with:
       ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
 
@@ -51,7 +50,7 @@ jobs:
       - name: Checksums of the archives the bootstrap downloads
         run: |
           cd artifacts
-          sha256sum atelier-ide-* gltf-viewer-* > SHA256SUMS
+          sha256sum atelier-ide-* > SHA256SUMS
           cat SHA256SUMS
 
       - name: Version

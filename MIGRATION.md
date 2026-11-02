@@ -33,7 +33,7 @@ sautées). Conséquences, acceptées :
 | Changesets : plugins natifs (`minor`), déménagement des téléchargements (`patch`) | |
 | Jeton `RELEASES_TOKEN`, réglage Actions de l'org (fait par toi) | `READ_TOKEN` (*Contents: read* sur `app` et les `plugin-*` privés) : en **secret d'organisation**, visible par `app` et `docs` |
 | `plugin-api` (public, tag `v0.1.0`), `plugin-gltf-viewer` (tag `v0.1.0`), `docs` : historiques extraits avec `git filter-repo` | Pages du dépôt `docs` : Settings → Pages → Source : GitHub Actions |
-| `app` : le plugin en sous-module, l'API par son tag, `docs/` retiré | |
+| `app` : sans plugin (`plugins/` ignoré), l'API par son tag, `rust-toolchain.toml`, `docs/` retiré | Secrets d'organisation `READ_TOKEN` et `RELEASES_TOKEN`, visibles par `plugin-gltf-viewer` et `docs` |
 
 ---
 
@@ -158,8 +158,8 @@ Pour contrôler : les compteurs de téléchargement des archives de la release p
    redirige pas** d'un propriétaire à l'autre : l'ancienne adresse donnera une 404. Un domaine à
    soi (`CNAME`) évite de refaire ce changement la prochaine fois.
 3. Le catalogue des plugins : le workflow de `docs` récupère `app` avec un jeton en lecture seule
-   (`READ_TOKEN`) et `actions/checkout` (`repository: atelier-ide-org/app`, `path: app`,
-   `submodules: recursive`) : les plugins natifs arrivent avec, en sous-modules. `catalog.ts`
+   (`READ_TOKEN`) et `actions/checkout` (`repository: atelier-ide-org/app`, `path: app`), puis
+   chaque plugin natif dans `app/plugins/<nom>`. `catalog.ts`
    lit `app/src/...` et `app/plugins/*/doc/` (variable `ATELIER_APP`, sinon `../app`). Le site
    est reconstruit chaque nuit pour suivre le code. On garde ainsi la règle actuelle : la page d'un plugin vit à côté de son
    code.
@@ -169,35 +169,35 @@ Pour contrôler : les compteurs de téléchargement des archives de la release p
 
 ### Étape 6 — Les plugins dans `plugin-<nom>` ✅
 
-1. **`plugin-api`** : sortir `plugins/atelier-plugin-api` dans son dépôt public, avec un tag par
-   version (`v0.1.0`). `app` et les plugins en dépendent par ce tag :
+1. **`plugin-api`** : sorti de `plugins/atelier-plugin-api` dans son dépôt public, avec un tag
+   par version. `app` et les plugins en dépendent par le **même tag** (Cargo n'en fait alors
+   qu'un seul crate, et les `TypeId` sont identiques) :
 
    ```toml
-   atelier-plugin-api = { git = "https://github.com/atelier-ide-org/plugin-api", tag = "v0.1.0" }
+   atelier-plugin-api = { git = "https://github.com/atelier-ide-org/plugin-api", tag = "v0.2.0" }
    ```
 
-   Même URL et même tag : Cargo n'en fait qu'un seul crate. C'est indispensable pour que les
-   `TypeId` soient identiques.
-2. **`plugin-gltf-viewer`** : sortir `plugins/gltf-viewer` avec `git filter-repo
-   --subdirectory-filter plugins/gltf-viewer` (l'historique de l'ancien plugin intégré suit,
-   grâce aux `git mv`). Le dépôt garde une CI de tests (`cargo test`), mais **ne publie pas
-   de DLL** (contrainte 2).
-3. **Dans `app`**, chaque plugin est un **sous-module git** dans `plugins/<nom>`, épinglé sur un
-   tag (`v0.1.0`), et un membre du workspace (`members` et `default-members`). On a préféré les
-   sous-modules au fichier `plugins.toml` et à son script, prévus au départ : ils épinglent aussi
-   une version, mais sans outillage à maintenir, et `Cargo.lock` reste stable. La CI fait
-   `actions/checkout` avec `submodules: recursive`. En local :
-   `git clone --recursive`, ou `git submodule update --init`.
+   Ce crate ne dépend **que d'eframe**. La v0.1.0 dépendait aussi de `serde_json`. Or l'identité
+   d'un crate inclut celle de ses dépendances, et le plugin glTF active une fonctionnalité de
+   `serde_json` (via `gltf`) : la DLL ne se chargeait plus dans l'IDE compilé sans elle.
+   Vérifié : avec la v0.2.0, un plugin compilé avec l'IDE se charge dans l'IDE compilé seul.
+2. **`plugin-gltf-viewer`** : sorti avec `git filter-repo`, avec l'historique de l'ancien plugin
+   intégré.
+3. **La release de `app` ne dépend d'aucun plugin.** `app` ne contient pas les plugins :
+   `members = [".", "plugins/*"]`, `default-members = ["."]`, et `plugins/` est ignoré par git.
+   Un plugin cloné dans `plugins/<nom>` rejoint le workspace (`cargo build --workspace`). Le
+   compilateur est fixé par `rust-toolchain.toml`, puisque l'empreinte en dépend.
 
-   Pour livrer une nouvelle version d'un plugin : la taguer dans `plugin-<nom>`, puis
-   `cd plugins/<nom> && git checkout vX.Y.Z` dans `app`, et commiter le sous-module.
-4. **Le build** : dans `build.yml`, retirer `--bins` de
-   `cargo build --release --locked --bins --target …`, sinon les `cdylib` ne sont pas produites.
-   Garder **une seule commande** pour l'IDE et les plugins : les fonctionnalités des crates sont
-   unifiées, et les empreintes sont identiques.
-5. **La publication** : une archive par plugin et par plateforme dans la release de `releases`
-   (`plugin-gltf-viewer-windows-x86_64.zip`, avec `plugin.json` et la bibliothèque), ajoutée à
-   `SHA256SUMS`.
+   On avait d'abord mis les plugins en sous-modules de `app`. On les a retirés : la CI et les
+   releases de l'IDE dépendaient alors de chaque plugin, et d'un jeton pour lire les plugins
+   privés.
+4. **Le build des plugins** : le workflow **Release** de chaque `plugin-<nom>` (toutes les six
+   heures, ou à la main pour un tag) prend `app` au tag de la dernière release, y place le plugin,
+   lance la même commande que `build.yml` (avec `--workspace`), puis ajoute à la release de
+   `releases` ses archives `<plugin>-<os>-<arch>` et `<plugin>-SHA256SUMS`. Secrets de
+   l'organisation : `READ_TOKEN` (lit `app`) et `RELEASES_TOKEN` (écrit dans `releases`).
+5. **À garder en phase** : la commande de build de `build.yml` dans `app` et celle du workflow
+   Release des plugins (cible, profil, pas de `RUSTFLAGS`).
 6. **Plus tard** : que l'IDE installe lui-même un plugin depuis **sa propre** release (la seule
    compatible), au lieu de le copier à la main dans `.atelier/plugins/`.
 

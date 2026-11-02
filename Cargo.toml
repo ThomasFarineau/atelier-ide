@@ -1,9 +1,10 @@
-# The native plugins of `plugins/` (git submodules, one repository `plugin-<name>` each) are built
-# with the IDE: they share its crates, which must be compiled with the same features for the IDE
-# to load them (see atelier-ide-org/plugin-api).
+# The native plugins (one repository `plugin-<name>` each) are not part of the IDE: its releases are
+# built without them. A plugin cloned into `plugins/` (ignored by git) joins the workspace, to be
+# built like the IDE, as its CI does for each release (see atelier-ide-org/plugin-api). The IDE
+# alone is built by default.
 [workspace]
-members = [".", "plugins/gltf-viewer"]
-default-members = [".", "plugins/gltf-viewer"]
+members = [".", "plugins/*"]
+default-members = ["."]
 # A demo project of its own, opened in the IDE.
 exclude = ["examples/demo"]
 
@@ -65,7 +66,7 @@ lzma-rs = "0.3"
 # Native plugins: the dynamic libraries of `.atelier/plugins`, and the interface they implement.
 libloading = "0.8"
 # The same tag as the plugins: one crate, whose types the IDE and the plugins share.
-atelier-plugin-api = { git = "https://github.com/atelier-ide-org/plugin-api", tag = "v0.1.0" }
+atelier-plugin-api = { git = "https://github.com/atelier-ide-org/plugin-api", tag = "v0.2.0" }
 mongodb = { version = "3", features = ["sync"] }
 postgres = "0.19"
 postgres-native-tls = "0.5"
@@ -109,3 +110,4 @@ debug = "line-tables-only"
 [profile.release]
 lto = "thin"
 strip = true
+

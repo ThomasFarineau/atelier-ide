@@ -22,3 +22,6 @@ desktop.ini
 # Environnement
 .env
 .env.*
+
+# The native plugins, cloned here to be built with the IDE (one repository plugin-<name> each).
+/plugins/
