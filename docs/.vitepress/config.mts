@@ -6,7 +6,7 @@ import { loadCatalog, repoRoot, type Lang, type Section } from './catalog'
 // both languages, at the same path. The pages of the built-in plugins and languages live in the
 // source code, in the `doc` folder of each one (see catalog.ts).
 
-const repo = 'https://github.com/ThomasFarineau/atelier-ide'
+const repo = 'https://github.com/atelier-ide-org/app'
 const catalog = loadCatalog()
 
 /** The pages of the plugins (or languages) that have one, by name. */
@@ -24,7 +24,7 @@ function editLink(text: string): DefaultTheme.EditLink {
   return {
     text,
     pattern: ({ filePath, params }) =>
-      `https://github.com/ThomasFarineau/atelier-ide/edit/main/${params?.source ?? `docs/${filePath}`}`,
+      `https://github.com/atelier-ide-org/app/edit/main/${params?.source ?? `docs/${filePath}`}`,
   }
 }
 
@@ -120,7 +120,7 @@ const fr = {
 
 export default defineConfig({
   title: 'Atelier IDE',
-  base: '/atelier-ide/',
+  base: '/app/',
   cleanUrls: true,
   lastUpdated: true,
   // The date of a page of a plugin is the one of its file in the plugin, not of the route file.
@@ -133,7 +133,7 @@ export default defineConfig({
       if (seconds) page.lastUpdated = seconds * 1000
     } catch {}
   },
-  head: [['link', { rel: 'icon', type: 'image/svg+xml', href: '/atelier-ide/logo.svg' }]],
+  head: [['link', { rel: 'icon', type: 'image/svg+xml', href: '/app/logo.svg' }]],
   themeConfig: {
     logo: '/logo.svg',
     socialLinks: [{ icon: 'github', link: repo }],

@@ -1,6 +1,6 @@
 # Changelog
 
-Every version of Atelier IDE. The entries come from the files of `.changeset/` (see [Versions & releases](https://thomasfarineau.github.io/atelier-ide/contributing/releases)).
+Every version of Atelier IDE. The entries come from the files of `.changeset/` (see [Versions & releases](https://atelier-ide-org.github.io/app/contributing/releases)).
 
 ## 0.1.4 (2026-10-31)
 

@@ -4,7 +4,7 @@
 
 ## Windows
 
-Download **`atelier-setup-windows-x86_64.exe`** from the [latest release](https://github.com/ThomasFarineau/atelier-ide/releases/latest) and run it. It installs Atelier for your user only, without administrator rights, in `%LOCALAPPDATA%\Programs\Atelier`, with:
+Download **`atelier-setup-windows-x86_64.exe`** from the [latest release](https://github.com/atelier-ide-org/releases/releases/latest) and run it. It installs Atelier for your user only, without administrator rights, in `%LOCALAPPDATA%\Programs\Atelier`, with:
 
 - a Start menu shortcut (and a desktop one if you tick it);
 - the `atelier` command on the PATH (see [Command line](./command-line));
@@ -18,7 +18,7 @@ The installer is not signed yet. Windows may show â€œWindows protected your PCâ€
 
 ## Linux and macOS
 
-Download the launcher of your platform from the [latest release](https://github.com/ThomasFarineau/atelier-ide/releases/latest) once (`atelier-linux-x86_64`, `atelier-macos-aarch64` or `atelier-macos-x86_64`), put it in a folder of its own and start it. It downloads the IDE next to itself, then adds the `atelier` command to `~/.local/bin`.
+Download the launcher of your platform from the [latest release](https://github.com/atelier-ide-org/releases/releases/latest) once (`atelier-linux-x86_64`, `atelier-macos-aarch64` or `atelier-macos-x86_64`), put it in a folder of its own and start it. It downloads the IDE next to itself, then adds the `atelier` command to `~/.local/bin`.
 
 On macOS, a file downloaded by the browser is quarantined:
 
@@ -31,7 +31,7 @@ chmod +x atelier-macos-aarch64
 
 You always start the **launcher** (`atelier`), never the IDE itself: the shortcuts and the command do it for you. Like Discord or VS Code, it shows a small window with the logo, the current step and a progress bar, and closes once the IDE is started. At each start it:
 
-1. asks GitHub for the latest release (4 seconds at most; offline, it goes on);
+1. asks GitHub for the latest release, in [`atelier-ide-org/releases`](https://github.com/atelier-ide-org/releases) (4 seconds at most; offline, it goes on);
 2. if it is newer than `app/VERSION` (or the IDE is not there yet), downloads the archive of the platform and checks it against `SHA256SUMS`;
 3. swaps the `app/` folder in one go, then starts the IDE. The IDE is not running at that moment, so nothing is ever locked on Windows. A wrong archive changes nothing: the old version starts.
 

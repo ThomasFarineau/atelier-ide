@@ -1,7 +1,7 @@
 name: Docs
 
 # Builds the documentation (VitePress, `docs/`) on pull requests that touch it, and deploys it to
-# GitHub Pages from `main`: https://thomasfarineau.github.io/atelier-ide/
+# GitHub Pages from `main`: https://atelier-ide-org.github.io/app/
 # The pages and cards of the built-in plugins live in their `doc` folders, their logos next to them.
 
 on:

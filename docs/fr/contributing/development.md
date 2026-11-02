@@ -58,7 +58,7 @@ La documentation est un site [VitePress](https://vitepress.dev) dans `docs/`, co
 ```bash
 cd docs
 bun install
-bun run dev       # http://localhost:5173/atelier-ide/
+bun run dev       # http://localhost:5173/app/
 bun run build     # vérifie aussi les liens
 ```
 

@@ -11,7 +11,7 @@ name = "atelier-ide"
 version = "0.1.4"
 edition = "2024"
 license = "MIT"
-repository = "https://github.com/ThomasFarineau/atelier-ide"
+repository = "https://github.com/atelier-ide-org/app"
 default-run = "atelier-ide"
 
 [dependencies]

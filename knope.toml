@@ -55,5 +55,5 @@ name = "release"
 type = "Release"
 
 [github]
-owner = "ThomasFarineau"
-repo = "atelier-ide"
+owner = "atelier-ide-org"
+repo = "app"

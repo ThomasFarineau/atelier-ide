@@ -10,7 +10,8 @@ defineProps<{ guide?: boolean }>()
 
 type Os = 'windows' | 'mac-arm' | 'mac-intel' | 'linux'
 
-const repo = 'ThomasFarineau/atelier-ide'
+// The public repository of the downloads (the code is in the private `app`).
+const repo = 'atelier-ide-org/releases'
 const base = `https://github.com/${repo}/releases/latest/download/`
 const files: Record<Os, string> = {
   windows: 'atelier-setup-windows-x86_64.exe',

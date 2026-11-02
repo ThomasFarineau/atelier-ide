@@ -45,7 +45,8 @@ use std::{
     time::Duration,
 };
 
-const REPO: &str = "ThomasFarineau/atelier-ide";
+/// The public repository of the downloads: the code is in `atelier-ide-org/app`, which is private.
+const REPO: &str = "atelier-ide-org/releases";
 const APP_DIR: &str = "app";
 const EXE: &str = if cfg!(windows) {
     "atelier-ide.exe"

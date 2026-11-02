@@ -30,7 +30,12 @@ That pull request is pushed by GitHub Actions, so the CI does not run on it: an 
 
 ## 3. When that pull request is merged
 
-The **Release** workflow (`.github/workflows/release.yml`) builds the IDE and its launcher for Windows, Linux and macOS (Intel and Apple Silicon) with `.github/workflows/build.yml`, along with the Windows installer. Then `knope release` creates the `vX.Y.Z` tag and publishes the GitHub release with the notes of the changelog. Thanks to the cache, only the code of Atelier is rebuilt. The release stays a draft until every file is uploaded, so the launcher never sees an incomplete one.
+The **Release** workflow (`.github/workflows/release.yml`) builds the IDE, its launcher and the native plugins of `plugins/` for Windows, Linux and macOS (Intel and Apple Silicon) with `.github/workflows/build.yml`, along with the Windows installer. Thanks to the cache, only the code of Atelier is rebuilt. The release is then published in two places:
+
+- **[`atelier-ide-org/releases`](https://github.com/atelier-ide-org/releases)**, the public repository of the downloads, where the launcher looks for updates. The code lives in `atelier-ide-org/app`, which will become private. This step needs the `RELEASES_TOKEN` secret in `app`: a token allowed to write the contents of `releases` (a fine-grained token limited to that repository, or a GitHub App of the organization). Without it, the workflow stops before publishing anything.
+- **`atelier-ide-org/app`**, where `knope release` creates the `vX.Y.Z` tag and publishes the notes of the changelog. The launchers installed before the move still look there, until they update themselves (see `MIGRATION.md`).
+
+The release of `releases` stays a draft until every file is uploaded and `knope` is done, so the launcher never sees an incomplete one.
 
 ## Files of a release
 
@@ -39,6 +44,9 @@ The **Release** workflow (`.github/workflows/release.yml`) builds the IDE and it
 | `atelier-setup-windows-x86_64.exe` | The Windows installer |
 | `atelier-<os>-<arch>` | The launcher, downloaded once on Linux and macOS |
 | `atelier-ide-<os>-<arch>.zip` / `.tar.gz` | The archive the launcher installs: the IDE and the next launcher |
+| `<plugin>-<os>-<arch>.zip` / `.tar.gz` | A native plugin (`gltf-viewer`): its `plugin.json` and its library, to extract into `.atelier/plugins/<plugin>/` |
 | `SHA256SUMS` | The checksums the launcher verifies |
 
-The **Build** workflow can also be started by hand, to build without publishing. The repository must allow “Allow GitHub Actions to create and approve pull requests” (Settings › Actions › General) for the release pull request to be created.
+A native plugin loads only in the IDE it was built with: the IDE and the plugins come out of one `cargo build`, and each release carries its own plugins.
+
+The **Build** workflow can also be started by hand, to build without publishing. The organization and the repository must allow “Allow GitHub Actions to create and approve pull requests” (Settings › Actions › General) for the release pull request to be created.

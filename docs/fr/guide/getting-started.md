@@ -4,7 +4,7 @@
 
 ## Windows
 
-Téléchargez **`atelier-setup-windows-x86_64.exe`** depuis la [dernière release](https://github.com/ThomasFarineau/atelier-ide/releases/latest) et lancez-le. Il installe Atelier pour votre utilisateur seulement, sans droits administrateur, dans `%LOCALAPPDATA%\Programs\Atelier`, avec :
+Téléchargez **`atelier-setup-windows-x86_64.exe`** depuis la [dernière release](https://github.com/atelier-ide-org/releases/releases/latest) et lancez-le. Il installe Atelier pour votre utilisateur seulement, sans droits administrateur, dans `%LOCALAPPDATA%\Programs\Atelier`, avec :
 
 - un raccourci dans le menu Démarrer (et sur le bureau si vous cochez l'option) ;
 - la commande `atelier` dans le PATH (voir [Ligne de commande](./command-line)) ;
@@ -18,7 +18,7 @@ L'installateur n'est pas encore signé. Windows peut afficher « Windows a prot�
 
 ## Linux et macOS
 
-Téléchargez une fois le lanceur de votre plateforme depuis la [dernière release](https://github.com/ThomasFarineau/atelier-ide/releases/latest) (`atelier-linux-x86_64`, `atelier-macos-aarch64` ou `atelier-macos-x86_64`), mettez-le dans un dossier à part et lancez-le. Il télécharge l'IDE à côté de lui, puis ajoute la commande `atelier` dans `~/.local/bin`.
+Téléchargez une fois le lanceur de votre plateforme depuis la [dernière release](https://github.com/atelier-ide-org/releases/releases/latest) (`atelier-linux-x86_64`, `atelier-macos-aarch64` ou `atelier-macos-x86_64`), mettez-le dans un dossier à part et lancez-le. Il télécharge l'IDE à côté de lui, puis ajoute la commande `atelier` dans `~/.local/bin`.
 
 Sur macOS, un fichier téléchargé par le navigateur est mis en quarantaine :
 
@@ -31,7 +31,7 @@ chmod +x atelier-macos-aarch64
 
 On lance toujours le **lanceur** (`atelier`), jamais l'IDE lui-même : les raccourcis et la commande le font pour vous. Comme Discord ou VS Code, il affiche une petite fenêtre avec le logo, l'étape en cours et une barre de progression, et se ferme une fois l'IDE démarré. À chaque démarrage, il :
 
-1. demande à GitHub la dernière release (4 secondes au plus ; sans réseau, il passe) ;
+1. demande à GitHub la dernière release, dans [`atelier-ide-org/releases`](https://github.com/atelier-ide-org/releases) (4 secondes au plus ; sans réseau, il passe) ;
 2. si elle est plus récente que `app/VERSION` (ou que l'IDE n'est pas encore là), télécharge l'archive de la plateforme et la vérifie avec `SHA256SUMS` ;
 3. remplace le dossier `app/` d'un bloc, puis lance l'IDE. L'IDE n'étant pas démarré à ce moment-là, rien n'est jamais verrouillé sous Windows. Une archive incorrecte ne change rien : l'ancienne version démarre.
 
