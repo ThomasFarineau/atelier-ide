@@ -1128,13 +1128,13 @@ impl BuiltinPlugin for K8sPlugin {
         "k8s"
     }
     fn name(&self) -> &'static str {
-        "Kubernetes"
+        tr!("plugin.k8s.name")
     }
     fn description(&self) -> &'static str {
-        tr!("k8s.resources_kubernetes_cluster_pods_deployments")
+        tr!("plugin.k8s.summary")
     }
     fn icon(&self) -> &'static str {
-        "k8s/icon"
+        crate::plugins::builtin::card_icon("k8s")
     }
     fn extensions_dir(&self) -> Option<&'static str> {
         Some("k8s")

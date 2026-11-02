@@ -3,7 +3,6 @@
   "html.cannot_install_server": "Cannot install the HTML language server: {e}",
   "html.command_install": "HTML: install the language server (npm vscode-langservers-extracted)",
   "html.command_restart": "HTML: restart the language server",
-  "html.description": "HTML and Pug: colors, errors (unclosed or misnested elements, duplicate ids), completion of elements, attributes, values and entities, documentation, structure, tag pairs, ids, classes and mixins, and formatting. The code of <script> and <style> (and the style and onclick attributes) is handled by JavaScript, TypeScript and CSS, with their colors, completion, errors and formatting. With the language server of VS Code for HTML, and by local analysis without it.",
   "html.duplicate_attribute": "Attribute “{name}” is repeated",
   "html.duplicate_id": "The id “{id}” is already used in the page",
   "html.element.a": "A hyperlink to a page, a file, a place in the page or an address.",

@@ -2,13 +2,14 @@ name: Docs
 
 # Builds the documentation (VitePress, `docs/`) on pull requests that touch it, and deploys it to
 # GitHub Pages from `main`: https://thomasfarineau.github.io/atelier-ide/
+# The pages and cards of the built-in plugins live in their `doc` folders, their logos next to them.
 
 on:
   push:
     branches: [main]
-    paths: ["docs/**", ".github/workflows/docs.yml"]
+    paths: ["docs/**", "src/**/doc/**", "src/**/*.svg", "assets/icons/extensions/**", ".github/workflows/docs.yml"]
   pull_request:
-    paths: ["docs/**", ".github/workflows/docs.yml"]
+    paths: ["docs/**", "src/**/doc/**", "src/**/*.svg", "assets/icons/extensions/**", ".github/workflows/docs.yml"]
   workflow_dispatch:
 
 permissions:
@@ -25,7 +26,7 @@ jobs:
       run:
         working-directory: docs
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # The "last updated" date of each page comes from git.
           fetch-depth: 0
@@ -35,7 +36,7 @@ jobs:
       - run: bun install --frozen-lockfile
       # Also fails on a dead link.
       - run: bun run build
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         if: github.event_name != 'pull_request'
         with:
           path: docs/.vitepress/dist
@@ -52,4 +53,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

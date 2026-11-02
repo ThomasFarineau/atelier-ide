@@ -450,6 +450,8 @@ impl Hints {
 /// What the editor needs from the IDE for one frame.
 pub struct Options<'a> {
     pub language: &'a str,
+    /// The syntax of the language is colored: false when the plugin that brings it is off.
+    pub highlight: bool,
     pub font: FontId,
     pub theme: Theme,
     pub marks: &'a [LineMark],
@@ -663,7 +665,7 @@ pub fn comment_prefix(language: &str) -> Option<&'static str> {
     match language {
         "rs" | "js" | "ts" | "java" | "c" | "cpp" | "cs" | "go" | "php" | "scss" | "sass"
         | "less" => Some("//"),
-        "py" | "sh" | "yaml" | "toml" | "rb" => Some("#"),
+        "py" | "sh" | "yaml" | "toml" | "cargo-lock" | "rb" => Some("#"),
         "sql" => Some("--"),
         // The comment of Pug that does not go into the HTML.
         "pug" => Some("//-"),
@@ -2352,12 +2354,13 @@ impl EditorState {
         if self.language != opt.language {
             self.language = opt.language.to_string();
         }
+        let syntax = if opt.highlight { opt.language } else { "txt" };
         if self
             .highlight
             .as_ref()
-            .is_none_or(|h| h.outdated(opt.language, opt.theme.dark))
+            .is_none_or(|h| h.outdated(syntax, opt.theme.dark))
         {
-            self.highlight = Some(Incremental::new(opt.language, opt.theme.dark));
+            self.highlight = Some(Incremental::new(syntax, opt.theme.dark));
         }
         self.refresh_folds(text, opt.language);
         self.refresh_swatches(text, opt.language);

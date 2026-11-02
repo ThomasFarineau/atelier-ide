@@ -11,6 +11,7 @@ pub mod html;
 pub mod inspect;
 pub mod java;
 pub mod javascript;
+pub mod json;
 pub mod lsp;
 pub mod python;
 pub mod rust;
@@ -375,6 +376,8 @@ struct Inner {
     completed_in: HashMap<u64, DocRef>,
     /// The problems of each page with the ones of its code, and what they were made of.
     merged: HashMap<u64, (Vec<usize>, Arc<Vec<Diagnostic>>)>,
+    /// Reformat Code of the languages without a provider, from the plugins that are on.
+    formatters: Vec<(&'static str, format::Formatter)>,
 }
 
 /// The code of other languages in a page.
@@ -390,6 +393,8 @@ pub struct Service {
     inner: Mutex<Inner>,
     /// Tells the interface that a result arrived in the background.
     repaint: Option<Arc<dyn Fn() + Send + Sync>>,
+    /// The JSON schemas of the plugins that are on.
+    schemas: json::Registry,
 }
 
 /// The key of the document of `language` made from the page `key`.
@@ -465,7 +470,13 @@ impl Service {
         service.add(Box::new(html::provider(root, repaint.clone())));
         service.add(Box::new(html::pug_provider(root, repaint.clone())));
         service.add(Box::new(python::provider(root, repaint)));
+        service.add(Box::new(json::Json::new(service.schemas.clone())));
         service
+    }
+
+    /// The JSON schemas of the plugins that are on; set again when a plugin is turned on or off.
+    pub fn set_json_schemas(&self, schemas: Vec<&'static json::Schema>) {
+        self.schemas.set(schemas);
     }
 
     pub fn add(&self, provider: Box<dyn Provider>) {
@@ -478,6 +489,22 @@ impl Service {
         let mut inner = self.inner.lock().ok()?;
         let index = inner.providers.iter().position(|p| p.handles(language))?;
         Some(f(inner.providers[index].as_mut(), index))
+    }
+
+    /// The formatters of the plugins that are on; set again when a plugin is turned on or off.
+    pub fn set_formatters(&self, formatters: Vec<(&'static str, format::Formatter)>) {
+        if let Ok(mut inner) = self.inner.lock() {
+            inner.formatters = formatters;
+        }
+    }
+
+    fn formatter(&self, language: &str) -> Option<format::Formatter> {
+        let inner = self.inner.lock().ok()?;
+        inner
+            .formatters
+            .iter()
+            .find(|(l, _)| *l == language)
+            .map(|(_, f)| *f)
     }
 
     pub fn handles(&self, language: &str) -> bool {
@@ -931,13 +958,19 @@ impl Service {
         self.locate(doc, text, offset, |p, d, t| p.references(d, t, offset))
     }
 
-    /// Whether Reformat Code works for a language: with its provider, or by the IDE itself.
+    /// Whether Reformat Code works for a language, or its schemas: with its provider, a plugin, or
+    /// by the IDE itself.
     pub fn formats(&self, language: &str) -> bool {
-        self.handles(language) || language == "json"
+        self.handles(language) || language == "json" || self.formatter(language).is_some()
     }
 
-    /// The edits that reformat the document: its provider's, else the IDE's own for JSON.
+    /// The edits that reformat the document: its provider's, else a plugin's, else the IDE's own
+    /// for JSON.
     pub fn format(&self, doc: &DocRef, text: &str) -> Oneshot<Result<Vec<TextEdit>, String>> {
+        // A plugin's first: the provider of YAML only reads schemas.
+        if let Some(formatter) = self.formatter(&doc.language) {
+            return Oneshot::ready(formatter(text).map(|new| format::edits_between(text, &new)));
+        }
         if html::is_markup(&doc.language) {
             return self.format_page(doc, text);
         }

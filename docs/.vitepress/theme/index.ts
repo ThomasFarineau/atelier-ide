@@ -2,6 +2,7 @@ import { h } from 'vue'
 import DefaultTheme from 'vitepress/theme'
 import type { Theme } from 'vitepress'
 import DownloadButton from './DownloadButton.vue'
+import PluginMarketplace from './PluginMarketplace.vue'
 import './style.css'
 
 export default {
@@ -14,5 +15,6 @@ export default {
     }),
   enhanceApp({ app }) {
     app.component('DownloadButton', DownloadButton)
+    app.component('PluginMarketplace', PluginMarketplace)
   },
 } satisfies Theme

@@ -186,13 +186,13 @@ impl BuiltinPlugin for HtmlPlugin {
         "html"
     }
     fn name(&self) -> &'static str {
-        "HTML / Pug"
+        tr!("plugin.html.name")
     }
     fn description(&self) -> &'static str {
-        tr!("html.description")
+        tr!("plugin.html.summary")
     }
     fn icon(&self) -> &'static str {
-        "languages/html/extensions/html+htm+xhtml"
+        crate::plugins::builtin::card_icon("html")
     }
 
     fn update(&mut self, _ctx: &eframe::egui::Context, host: &mut dyn Host) {

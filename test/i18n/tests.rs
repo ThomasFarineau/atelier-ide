@@ -64,6 +64,14 @@ fn the_code_uses_known_keys() {
         let text = std::fs::read_to_string(file).unwrap();
         for start in ["tr!(\"", "trf!(\""] {
             for (at, _) in text.match_indices(start) {
+                // `include_str!("…")` ends the same way.
+                if text[..at]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|c| c.is_alphanumeric() || c == '_')
+                {
+                    continue;
+                }
                 let key = &text[at + start.len()..];
                 let key = &key[..key.find('"').unwrap()];
                 if !default.texts.contains_key(key) {

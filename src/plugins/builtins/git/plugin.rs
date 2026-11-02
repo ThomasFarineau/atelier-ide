@@ -1446,16 +1446,16 @@ impl BuiltinPlugin for GitPlugin {
         "git"
     }
     fn name(&self) -> &'static str {
-        "Git"
+        tr!("plugin.git.name")
     }
     fn description(&self) -> &'static str {
-        tr!("git.commit_branches_history_diff_push")
+        tr!("plugin.git.summary")
     }
     fn tool_windows(&self) -> &'static [ToolWindow] {
         &TOOL_WINDOWS
     }
     fn icon(&self) -> &'static str {
-        "git"
+        crate::plugins::builtin::card_icon("git")
     }
     fn extensions_dir(&self) -> Option<&'static str> {
         Some("git")

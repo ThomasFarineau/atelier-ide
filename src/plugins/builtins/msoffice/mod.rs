@@ -1195,13 +1195,13 @@ impl BuiltinPlugin for MsOfficeViewerPlugin {
         "msofficeviewer"
     }
     fn name(&self) -> &'static str {
-        "MSOfficeViewer"
+        tr!("plugin.msoffice.name")
     }
     fn description(&self) -> &'static str {
-        tr!("msoffice.read_only_viewer_microsoft_office")
+        tr!("plugin.msoffice.summary")
     }
     fn icon(&self) -> &'static str {
-        "msoffice/icon"
+        crate::plugins::builtin::card_icon("msoffice")
     }
     fn extensions_dir(&self) -> Option<&'static str> {
         Some("msoffice")

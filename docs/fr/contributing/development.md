@@ -62,4 +62,32 @@ bun run dev       # http://localhost:5173/atelier-ide/
 bun run build     # vérifie aussi les liens
 ```
 
+### Pages des plugins intégrés
+
+Les pages et le catalogue des plugins intégrés (`/plugins/`, `/languages/`) ne sont pas dans `docs/` : chaque plugin les porte dans un dossier `doc`, à côté de son code, et le site les lit au build (`docs/.vitepress/catalog.ts`).
+
+```
+src/plugins/builtins/<plugin>/doc/     (src/languages/<langage>/doc/ pour un langage)
+  en-US.md   la page, à /plugins/<plugin>
+  fr-FR.md   la page en français, à /fr/plugins/<plugin>
+```
+
+Le front matter de chaque page est la fiche du plugin dans le catalogue :
+
+```md
+---
+name: Cargo
+category: build        # vcs, build, viewers, data, ai ou tools ; pas pour un langage
+icon: icon.svg         # depuis le dossier du plugin ; icon.svg (et icon.dark.svg) par défaut
+summary: "Packages, workspaces and targets of Cargo.toml: run, build, test, Clippy…"
+tags: [rust, clippy]   # des mots de plus pour la recherche
+see: git#github        # sans page : la page où mène la fiche
+---
+
+# Cargo
+…
+```
+
+`fr-FR.md` ne donne que `name` et `summary` (et éventuellement des `tags` en plus) ; les autres champs sont dans `en-US.md`. Un fichier qui n'a qu'un front matter est une fiche sans page. L'IDE lit aussi le `name`, le `summary` et l'`icon`, pour sa page **Plugins** et ses menus (`build.rs` en fait les textes `plugin.<plugin>.name` et `plugin.<plugin>.summary`, et l'icône `card_icon("<plugin>")`) : un seul texte et un seul logo pour les deux. L'icône doit être une icône de l'IDE (un `.svg` que son build collecte). Le nom du dossier est l'adresse de la page, et un dossier de plugin dans un autre (`git/github`) est un sous-plugin, affiché dans la fiche de son parent. La barre latérale liste les pages d'elle-même ; une erreur dans une fiche arrête le build.
+
 Elle est déployée sur GitHub Pages par `.github/workflows/docs.yml` à chaque push sur `main` qui touche `docs/`.

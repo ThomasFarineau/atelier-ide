@@ -3,7 +3,6 @@
   "html.cannot_install_server": "Installation du serveur de langage HTML impossible : {e}",
   "html.command_install": "HTML : installer le serveur de langage (npm vscode-langservers-extracted)",
   "html.command_restart": "HTML : redémarrer le serveur de langage",
-  "html.description": "HTML et Pug : couleurs, erreurs (éléments non fermés ou mal imbriqués, ids en double), complétion des éléments, attributs, valeurs et entités, documentation, structure, paires de balises, ids, classes et mixins, et formatage. Le code des <script> et <style> (et des attributs style et onclick) est pris en charge par JavaScript, TypeScript et CSS, avec leurs couleurs, leur complétion, leurs erreurs et leur formatage. Avec le serveur de langage HTML de VS Code, et par analyse locale sans lui.",
   "html.duplicate_attribute": "L'attribut « {name} » est répété",
   "html.duplicate_id": "L'id « {id} » est déjà utilisé dans la page",
   "html.element.a": "Un lien vers une page, un fichier, un endroit de la page ou une adresse.",

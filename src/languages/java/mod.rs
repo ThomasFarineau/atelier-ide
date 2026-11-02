@@ -90,14 +90,17 @@ impl BuiltinPlugin for JavaPlugin {
     fn id(&self) -> &'static str {
         "java"
     }
+    fn languages(&self) -> &'static [&'static str] {
+        &["java"]
+    }
     fn name(&self) -> &'static str {
-        "Java"
+        tr!("plugin.java.name")
     }
     fn description(&self) -> &'static str {
-        tr!("java.description")
+        tr!("plugin.java.summary")
     }
     fn icon(&self) -> &'static str {
-        "settings"
+        crate::plugins::builtin::card_icon("java")
     }
 
     fn update(&mut self, _ctx: &eframe::egui::Context, host: &mut dyn Host) {

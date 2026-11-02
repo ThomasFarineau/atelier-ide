@@ -379,13 +379,13 @@ impl BuiltinPlugin for MermaidPlugin {
         "mermaid"
     }
     fn name(&self) -> &'static str {
-        "Mermaid"
+        tr!("plugin.mermaid.name")
     }
     fn description(&self) -> &'static str {
-        tr!("mermaid.mermaid_diagrams_mmd_files_editor")
+        tr!("plugin.mermaid.summary")
     }
     fn icon(&self) -> &'static str {
-        "editorPreview"
+        crate::plugins::builtin::card_icon("mermaid")
     }
     fn extensions_dir(&self) -> Option<&'static str> {
         Some("mermaid")

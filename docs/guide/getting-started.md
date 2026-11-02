@@ -56,7 +56,7 @@ cargo build --release             # target/release/atelier-ide(.exe)
 
 ## Where Atelier keeps its data
 
-Language, theme, font size, recent projects and enabled plugins are saved in `settings.json`, in the data folder of Atelier:
+Language, theme, font size and recent projects are saved in `settings.json`, in the data folder of Atelier:
 
 | OS | Folder |
 | --- | --- |
@@ -64,4 +64,4 @@ Language, theme, font size, recent projects and enabled plugins are saved in `se
 | macOS | `~/Library/Application Support/Atelier` |
 | Linux | `$XDG_DATA_HOME/Atelier` (`~/.local/share/Atelier` by default) |
 
-Settings of a project (run configurations, translations source, AI sessions, context graph) live in its `.atelier/` folder.
+Settings of a project (the plugins that are on, run configurations, translations source, AI sessions, context graph) live in its `.atelier/` folder.

@@ -14,7 +14,6 @@
   "translations.command_window": "Translations: Window",
   "translations.copy_key": "Copy the Key",
   "translations.delete_key": "Delete the Key in Every Language",
-  "translations.description": "The translation (i18n) files of the project, from one file chosen as the source: every key in every language, the keys that are missing, empty or extra and the placeholders that differ from the source; edit in place, add a language or a key. JSON files (flat or nested) and .properties. The MCP tool 'i18n' lets an AI check the languages or add one.",
   "translations.filter": "Filter keys and texts",
   "translations.folder_empty": "no .json or .properties file in this folder",
   "translations.folder_not_language": "the folder must be named after a language (e.g. locales/fr)",

@@ -92,14 +92,17 @@ impl BuiltinPlugin for RustPlugin {
     fn id(&self) -> &'static str {
         "rust"
     }
+    fn languages(&self) -> &'static [&'static str] {
+        &["rs"]
+    }
     fn name(&self) -> &'static str {
-        "Rust"
+        tr!("plugin.rust.name")
     }
     fn description(&self) -> &'static str {
-        tr!("rust.description")
+        tr!("plugin.rust.summary")
     }
     fn icon(&self) -> &'static str {
-        "settings"
+        crate::plugins::builtin::card_icon("rust")
     }
 
     fn update(&mut self, _ctx: &eframe::egui::Context, host: &mut dyn Host) {

@@ -397,13 +397,13 @@ impl BuiltinPlugin for MavenPlugin {
         "maven"
     }
     fn name(&self) -> &'static str {
-        "Maven"
+        tr!("plugin.maven.name")
     }
     fn description(&self) -> &'static str {
-        tr!("maven.description")
+        tr!("plugin.maven.summary")
     }
     fn icon(&self) -> &'static str {
-        "maven/icon"
+        crate::plugins::builtin::card_icon("maven")
     }
     fn tool_windows(&self) -> &'static [ToolWindow] {
         &TOOL_WINDOWS

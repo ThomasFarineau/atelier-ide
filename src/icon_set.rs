@@ -45,6 +45,16 @@ pub fn find(name: &str) -> Option<&'static Icon> {
     })
 }
 
+/// The key of the icon of a built-in plugin, by the name of its folder (`cargo`, `github`): the
+/// `icon` of the front matter of its documentation (`doc/en-US.md`), else its `icon.svg`. The
+/// catalog of the documentation shows the same one.
+pub fn plugin_icon(plugin: &str) -> Option<&'static str> {
+    PLUGIN_ICONS
+        .binary_search_by(|(p, _)| (*p).cmp(plugin))
+        .ok()
+        .map(|i| PLUGIN_ICONS[i].1)
+}
+
 pub fn source(name: &str, dark: bool) -> Option<ImageSource<'static>> {
     let variant = find(name)?.variant(dark)?;
     Some(ImageSource::Bytes {

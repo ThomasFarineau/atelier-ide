@@ -875,14 +875,17 @@ impl BuiltinPlugin for JavaScriptPlugin {
     fn id(&self) -> &'static str {
         "javascript"
     }
+    fn languages(&self) -> &'static [&'static str] {
+        &["js", "ts"]
+    }
     fn name(&self) -> &'static str {
-        "JavaScript"
+        tr!("plugin.javascript.name")
     }
     fn description(&self) -> &'static str {
-        tr!("javascript.completion_tooltips_syntax_errors_javascript")
+        tr!("plugin.javascript.summary")
     }
     fn icon(&self) -> &'static str {
-        "settings"
+        crate::plugins::builtin::card_icon("javascript")
     }
 
     fn update(&mut self, _ctx: &eframe::egui::Context, host: &mut dyn Host) {

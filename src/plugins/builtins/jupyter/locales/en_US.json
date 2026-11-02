@@ -6,7 +6,6 @@
   "jupyter.command_jupyterlab": "Jupyter: Open JupyterLab",
   "jupyter.command_new_notebook": "Jupyter: New Notebook",
   "jupyter.delete_cell": "Delete Cell",
-  "jupyter.description": "Jupyter notebooks (.ipynb) edited and run in the IDE, in a kernel of the project Python (its .venv, else its Python runtime, else the one of the system); JupyterLab one click away.",
   "jupyter.done_editing": "Done",
   "jupyter.double_click_edit": "Double-click to edit",
   "jupyter.empty_markdown": "Empty Markdown cell",

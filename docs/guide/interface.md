@@ -30,7 +30,7 @@ Collapsible folders, file creation, a context menu (copy the path, show in the f
 - **Find in project**: **Ctrl+Shift+F** opens the **Find** window: searches the whole project except dependencies, with the same options, a file mask (`*.js, src/*`), results grouped by file and highlighted (a click opens the place), and “Replace All” in the project after confirmation.
 - **Code folding**: chevrons in the gutter (braces, brackets, parentheses, block comments, import groups). **Ctrl+-** folds, **Ctrl+=** unfolds, **Ctrl+Shift+-** / **Ctrl+Shift+=** fold / unfold all, **Ctrl+.** toggles. Clicking the `...` unfolds, and reaching a hidden line (search, navigation) unfolds what hides it.
 - **Problems** (**Alt+6**): errors and warnings of the open documents, grouped by file, with filters and a direct jump to the line; a click on the counter of the status bar opens it. Colored marks along the right edge of the editor show where the problems of the file are, and lead there in one click.
-- Files are limited to 4 MB, and binary files are refused (except those a [viewer](../tools/viewers) opens).
+- Files are limited to 4 MB, and binary files are refused (except those a [viewer](../plugins/) opens).
 
 ## Terminal
 

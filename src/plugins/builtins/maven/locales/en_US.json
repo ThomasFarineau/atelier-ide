@@ -2,7 +2,6 @@
   "maven.command_reload": "Maven: Reload Projects",
   "maven.command_window": "Maven: Maven Window",
   "maven.dependencies": "Dependencies",
-  "maven.description": "The Maven projects (pom.xml and modules) as in IntelliJ's Maven window: lifecycle phases, plugins and their goals, profiles, dependencies. A double click runs the phase or the goal with the mvnw wrapper of the project, or mvn; offline and skip-tests modes, and a typed goal to run.",
   "maven.execute_goal": "Execute Maven Goal",
   "maven.goal_hint": "clean install, dependency:tree… then Enter",
   "maven.lifecycle": "Lifecycle",

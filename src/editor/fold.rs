@@ -63,7 +63,7 @@ pub fn regions(text: &str, lines: &[usize], language: &str) -> Vec<Region> {
     let line_comment: Option<&str> = match language {
         "css" => None,
         _ if c_like => Some("//"),
-        "py" | "sh" | "yaml" | "yml" | "toml" | "rb" => Some("#"),
+        "py" | "sh" | "yaml" | "yml" | "toml" | "cargo-lock" | "rb" => Some("#"),
         "sql" => Some("--"),
         _ => None,
     };

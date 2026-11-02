@@ -182,6 +182,11 @@ pub trait BuiltinPlugin {
     }
     fn name(&self) -> &'static str;
     fn description(&self) -> &'static str;
+    /// The plugin this one is a part of (`git` for GitHub): it is on only while its parent is,
+    /// and the Plugins page shows it under it. It is still turned on and off by itself.
+    fn parent(&self) -> Option<&'static str> {
+        None
+    }
     /// Whether the plugin has something to do in the open project (a `pom.xml` for Maven…).
     /// When it has not, its tool windows and its commands are hidden, as in IntelliJ; it still
     /// gets `update`, to notice when the project changes.
@@ -255,7 +260,28 @@ pub trait BuiltinPlugin {
     fn gutter_commands(&self, path: &Path) -> Vec<Command> {
         Vec::new()
     }
-    /// Icon of the plugin in the settings, from the IntelliJ set.
+    /// Entries of the project tree menu of a file, under the name of the plugin.
+    fn file_commands(&self, path: &Path) -> Vec<Command> {
+        Vec::new()
+    }
+    fn run_file_command(&mut self, id: &str, path: &Path, host: &mut dyn Host) {}
+    /// The languages (as `project::language` names them) whose syntax coloring this plugin
+    /// brings: the editor colors them only while the plugin is on. A language no plugin brings is
+    /// colored by the IDE itself.
+    fn languages(&self) -> &'static [&'static str] {
+        &[]
+    }
+    /// Reformat Code (Ctrl+Alt+L) of languages that have no language server: each language with
+    /// the function that gives the new text of a document.
+    fn formatters(&self) -> &'static [(&'static str, crate::languages::format::Formatter)] {
+        &[]
+    }
+    /// The schemas of the JSON files this plugin knows (`package.json` for Node.js): they check
+    /// the values of those files, complete their keys and describe them under the mouse.
+    fn json_schemas(&self) -> &'static [crate::languages::json::Schema] {
+        &[]
+    }
+    /// Icon of the plugin in the settings: [`card_icon`] for a plugin with a documentation card.
     fn icon(&self) -> &'static str {
         "settings"
     }
@@ -279,14 +305,23 @@ pub trait BuiltinPlugin {
     fn preview(&mut self, ui: &mut egui::Ui, path: &Path, text: &mut String, scroll: Option<f32>) {}
 }
 
+/// The icon of a plugin, by the name of its folder: the one of the front matter of its
+/// documentation (`doc/en-US.md`), which the catalog of the documentation shows too; the gear
+/// without one.
+pub fn card_icon(plugin: &str) -> &'static str {
+    crate::icon_set::plugin_icon(plugin).unwrap_or("settings")
+}
+
 pub fn all() -> Vec<Box<dyn BuiltinPlugin>> {
     vec![
         Box::new(crate::plugins::builtins::git::GitPlugin::default()),
+        Box::new(crate::plugins::builtins::git::github::GitHubPlugin::default()),
         Box::new(crate::plugins::builtins::markdown::MarkdownPlugin::default()),
         Box::new(crate::plugins::builtins::mermaid::MermaidPlugin::default()),
         Box::new(crate::plugins::builtins::mcp::McpPlugin::default()),
         Box::new(crate::plugins::builtins::svg::SvgPlugin::default()),
         Box::new(crate::plugins::builtins::csv::CsvPlugin::default()),
+        Box::new(crate::plugins::builtins::yaml::YamlPlugin),
         Box::new(crate::languages::javascript::JavaScriptPlugin),
         Box::new(crate::languages::rust::RustPlugin),
         Box::new(crate::languages::java::JavaPlugin),

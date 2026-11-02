@@ -21,7 +21,6 @@
   "database.delete_row": "Delete the row",
   "database.delete_row_question": "Delete this row from the table? This cannot be undone.",
   "database.deleted": "Document deleted",
-  "database.description": "Browse databases from a tool window on the right: saved connections, their databases, schemas, collections and tables. MongoDB: the documents of a collection with a filter, a sort and pages, as colored JSON, to copy, edit, add and delete. PostgreSQL and MySQL: the rows of a table in a grid with WHERE, ORDER BY and pages, and a console for any statement.",
   "database.document_gone": "The document is no longer in the collection",
   "database.drop_collection": "Drop the collection",
   "database.drop_database": "Drop the database",

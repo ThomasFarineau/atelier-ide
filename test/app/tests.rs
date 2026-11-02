@@ -4,6 +4,10 @@ fn ide() -> Ide {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .canonicalize()
         .unwrap();
+    ide_in(root)
+}
+
+fn ide_in(root: PathBuf) -> Ide {
     Ide::blank(
         root,
         Settings {
@@ -12,6 +16,14 @@ fn ide() -> Ide {
         },
         None,
     )
+}
+
+/// A new empty folder for a test.
+fn temp_project(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("atelier-{name}-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    dir.canonicalize().unwrap()
 }
 
 /// Ctrl+Alt+L reformats the active document, here a JSON file the IDE formats itself, and
@@ -54,7 +66,9 @@ fn reformat_code_formats_the_active_document() {
 #[test]
 fn settings_change_only_when_applied() {
     let ctx = egui::Context::default();
-    let mut ide = ide();
+    // Applying writes the plugins of the project in its `.atelier`: not in this repository.
+    let dir = temp_project("settings-apply");
+    let mut ide = ide_in(dir.clone());
     let theme = ide.settings.theme;
     let other = (theme + 1) % ui::THEMES.len();
     ide.open_settings(Page::Appearance);
@@ -75,6 +89,129 @@ fn settings_change_only_when_applied() {
     ide.settings_draft.disabled_builtins.insert("git".into());
     ide.apply_settings(&ctx);
     assert!(!ide.builtin_enabled("git"));
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// Git is left to the IDE (`"auto"`): on in a project that has a `.git`, off in one that has
+/// none; the state of every plugin is written in the project, in `.atelier/config.json`.
+#[test]
+fn git_is_on_only_in_a_repository_and_the_plugins_are_written_in_the_project() {
+    use crate::atelier::PluginState;
+    let plain = temp_project("plugins-plain");
+    let mut ide = ide_in(plain.clone());
+    ide.load_project_plugins(true);
+    assert!(!ide.builtin_enabled("git"));
+    assert!(ide.builtin_enabled("markdown"));
+    let states = crate::atelier::plugin_states(&plain);
+    assert_eq!(states.builtin.get("git"), Some(&PluginState::AUTO));
+    assert_eq!(
+        states.builtin.get("markdown"),
+        Some(&PluginState::Set(true))
+    );
+    // Every plugin of the Plugins page is listed, the IDE's own windows are not.
+    let listed = ide.builtins.iter().filter(|p| !p.core()).count();
+    assert_eq!(states.builtin.len(), listed);
+    let text = fs::read_to_string(plain.join(".atelier/config.json")).unwrap();
+    assert!(text.contains("\"git\": \"auto\""), "{text}");
+
+    let repository = temp_project("plugins-repository");
+    fs::create_dir(repository.join(".git")).unwrap();
+    let mut ide = ide_in(repository.clone());
+    ide.load_project_plugins(true);
+    assert!(ide.builtin_enabled("git"));
+
+    // A worktree or a submodule has a `.git` file.
+    let worktree = temp_project("plugins-worktree");
+    fs::write(
+        worktree.join(".git"),
+        "gitdir: ../repository/.git
+",
+    )
+    .unwrap();
+    let mut ide = ide_in(worktree.clone());
+    ide.load_project_plugins(true);
+    assert!(ide.builtin_enabled("git"));
+    for dir in [plain, repository, worktree] {
+        let _ = fs::remove_dir_all(dir);
+    }
+}
+
+/// While Git is `"auto"`, it follows the `.git` of the open project: `git init` turns it on,
+/// removing the repository turns it off.
+#[test]
+fn git_follows_a_git_folder_that_appears_or_goes_away() {
+    let dir = temp_project("plugins-follow");
+    let mut ide = ide_in(dir.clone());
+    ide.load_project_plugins(true);
+    assert!(!ide.builtin_enabled("git"));
+    let past = || Instant::now().checked_sub(Duration::from_secs(5)).unwrap();
+
+    fs::create_dir(dir.join(".git")).unwrap();
+    ide.auto_checked = past();
+    ide.follow_auto_plugins();
+    assert!(ide.builtin_enabled("git"), "a .git appeared");
+    assert!(!ide.settings_draft.disabled_builtins.contains("git"));
+
+    fs::remove_dir(dir.join(".git")).unwrap();
+    ide.auto_checked = past();
+    ide.follow_auto_plugins();
+    assert!(!ide.builtin_enabled("git"), "the .git went away");
+    // Still left to the IDE: the project file was not touched.
+    assert_eq!(
+        crate::atelier::plugin_states(&dir).builtin.get("git"),
+        Some(&crate::atelier::PluginState::AUTO)
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// What the project says wins over the rule of Git, and a change applied in the Plugins page is
+/// written in the project (no longer `"auto"`) and read again when it opens.
+#[test]
+fn the_plugins_of_a_project_are_kept_in_it() {
+    use crate::atelier::PluginState;
+    let ctx = egui::Context::default();
+    let dir = temp_project("plugins-kept");
+    fs::create_dir(dir.join(".git")).unwrap();
+    let mut states = crate::atelier::PluginStates::default();
+    states.builtin.insert("git".into(), PluginState::Set(false));
+    crate::atelier::set_plugin_states(&dir, &states);
+    let mut ide = ide_in(dir.clone());
+    ide.load_project_plugins(true);
+    assert!(!ide.builtin_enabled("git"), "the project turned it off");
+    ide.auto_checked = Instant::now().checked_sub(Duration::from_secs(5)).unwrap();
+    ide.follow_auto_plugins();
+    assert!(!ide.builtin_enabled("git"), "not automatic");
+
+    ide.open_settings(Page::Plugins);
+    ide.settings_draft.disabled_builtins.remove("git");
+    ide.settings_draft.disabled_builtins.insert("k8s".into());
+    ide.apply_settings(&ctx);
+    let states = crate::atelier::plugin_states(&dir);
+    assert_eq!(states.builtin.get("git"), Some(&PluginState::Set(true)));
+    assert_eq!(states.builtin.get("k8s"), Some(&PluginState::Set(false)));
+
+    let mut again = ide_in(dir.clone());
+    again.load_project_plugins(true);
+    assert!(again.builtin_enabled("git"));
+    assert!(!again.builtin_enabled("k8s"));
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// Applying the Plugins page without touching Git keeps it automatic.
+#[test]
+fn applying_other_changes_keeps_git_automatic() {
+    let ctx = egui::Context::default();
+    let dir = temp_project("plugins-auto-kept");
+    let mut ide = ide_in(dir.clone());
+    ide.load_project_plugins(true);
+    ide.open_settings(Page::Plugins);
+    ide.settings_draft.disabled_builtins.insert("k8s".into());
+    ide.apply_settings(&ctx);
+    assert_eq!(
+        crate::atelier::plugin_states(&dir).builtin.get("git"),
+        Some(&crate::atelier::PluginState::AUTO)
+    );
+    let _ = fs::remove_dir_all(&dir);
 }
 
 fn frame_with(ctx: &egui::Context, ide: &mut Ide, time: f64, events: Vec<egui::Event>) {
