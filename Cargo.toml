@@ -40,7 +40,7 @@ regex = "1"
 # The bootstrap (`src/bin/atelier.rs`): downloads and updates the IDE.
 ureq = "3"
 sha2 = "0.10"
-toml_edit = "0.22"
+toml_edit = "0.25"
 # Memory and processor use of the IDE, in the status bar.
 sysinfo = { version = "0.37", default-features = false, features = ["system"] }
 tar = { version = "0.4", default-features = false }
