@@ -325,6 +325,9 @@ impl Ide {
                 if ui::icon_button(ui, "refresh", tr!("reload_project_extensions")).clicked() {
                     (self.plugins, self.plugin_errors) = plugins::load(&self.root);
                 }
+                if ui::icon_button(ui, "add", tr!("install_plugin_file")).clicked() {
+                    self.install_plugin_file();
+                }
             });
         });
         let (line, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
@@ -439,7 +442,11 @@ impl Ide {
                                 .settings_draft
                                 .enabled_plugins
                                 .contains(&self.plugin_key(&plugin.id));
-                            let subtitle = trf!("project_2", version = plugin.version);
+                            let subtitle = if plugin.installed {
+                                trf!("installed_plugin_version", version = plugin.version)
+                            } else {
+                                trf!("project_2", version = plugin.version)
+                            };
                             let (clicked, toggle) = list_row(
                                 ui,
                                 &t,
@@ -486,11 +493,67 @@ impl Ide {
             self.plugin_selected = Some(key);
         }
         if let Some(key) = toggled {
-            self.toggle_plugin(&key);
+            match key.strip_prefix("u:") {
+                Some(id) => self.uninstall_plugin(id),
+                None => self.toggle_plugin(&key),
+            }
         }
         for error in &self.plugin_errors {
             ui.colored_label(t.error, error);
         }
+    }
+
+    /// Installs a plugin from its file (`.atelier-plugin`), chosen in a dialog, and turns it on.
+    fn install_plugin_file(&mut self) {
+        let Some(file) = rfd::FileDialog::new()
+            .add_filter(tr!("plugin_file_filter"), &[plugins::PACKAGE_EXTENSION])
+            .pick_file()
+        else {
+            return;
+        };
+        let title = tr!("plugins").to_string();
+        match plugins::install(&file) {
+            Ok(installed) => {
+                let text = match installed {
+                    plugins::Installed::Now(name) => trf!("plugin_installed", name = name),
+                    plugins::Installed::AtNextStart(name) => {
+                        trf!("plugin_installed_restart", name = name)
+                    }
+                };
+                self.reload_plugins();
+                crate::plugins::builtin::Host::balloon(self, &title, text, false);
+            }
+            Err(e) => crate::plugins::builtin::Host::balloon(self, &title, e, true),
+        }
+    }
+
+    /// Uninstalls a plugin of the IDE (not one of the project).
+    fn uninstall_plugin(&mut self, id: &str) {
+        let Some(name) = (self.plugins.iter())
+            .find(|p| p.id == id && p.installed)
+            .map(|p| p.name.clone())
+        else {
+            return;
+        };
+        let title = tr!("plugins").to_string();
+        match plugins::uninstall(id) {
+            Ok(gone) => {
+                let text = match gone {
+                    true => trf!("plugin_uninstalled", name = name),
+                    false => trf!("plugin_uninstalled_restart", name = name),
+                };
+                self.reload_plugins();
+                crate::plugins::builtin::Host::balloon(self, &title, text, false);
+            }
+            Err(e) => crate::plugins::builtin::Host::balloon(self, &title, e, true),
+        }
+    }
+
+    /// Reads the manifests again, and the state of the plugins in the project: a plugin just
+    /// installed is turned on, one uninstalled goes (`sync_native_plugins`).
+    fn reload_plugins(&mut self) {
+        (self.plugins, self.plugin_errors) = plugins::load(&self.root);
+        self.load_project_plugins(!self.start_screen);
     }
 
     fn toggle_plugin(&mut self, key: &str) {
@@ -635,6 +698,21 @@ impl Ide {
                 if tabs(ui) == 0 {
                     ui.add(egui::Label::new(&plugin.description).wrap());
                     ui.add_space(10.0);
+                    if let Some(version) = &plugin.atelier {
+                        ui.label(
+                            RichText::new(trf!("installed_plugin_built_for", version = version))
+                                .small()
+                                .color(t.text_secondary),
+                        );
+                        ui.add_space(4.0);
+                    }
+                    if plugin.installed && ui::button(ui, tr!("plugin_uninstall")).clicked() {
+                        // Handled with the toggles, once the page is drawn.
+                        *toggled = Some(format!("u:{id}"));
+                    }
+                    if plugin.installed {
+                        ui.add_space(8.0);
+                    }
                     let warning = match plugin.library_path() {
                         Some(library) => {
                             ui.add(

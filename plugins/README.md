@@ -7,4 +7,8 @@ git clone git@github.com:atelier-ide-org/plugin-gltf-viewer.git plugins/gltf-vie
 cargo build --workspace
 ```
 
-The IDE is built and released without its plugins. The CI of each plugin builds it for each release of the IDE, from the IDE at the tag of that release, and publishes it in `atelier-ide-org/releases` under the tag `plugins/<name>/vX.Y.Z` (the version of the IDE).
+Its `package` script builds it with the IDE and makes the file the IDE installs (Plugins, the + button): `target/<profile>/<name>.atelier-plugin`.
+
+The IDE is built and released without its plugins. The CI of each plugin builds it for each release of the IDE, from the IDE at the tag of that release, and publishes its `<name>.atelier-plugin` in `atelier-ide-org/releases` under the tag `plugins/<name>/vX.Y.Z` (the version of the IDE).
+
+Building with a plugin here changes `Cargo.lock` (its dependencies): do not commit that change, the lockfile of the IDE is the one of the IDE alone.

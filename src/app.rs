@@ -6307,7 +6307,8 @@ impl Ide {
             states
                 .external
                 .entry(plugin.id.clone())
-                .or_insert_with(|| legacy_enabled.contains(&key));
+                // A plugin installed in the IDE is on in every project until turned off there.
+                .or_insert_with(|| plugin.installed || legacy_enabled.contains(&key));
         }
         self.auto_plugins = (states.builtin.iter())
             .filter(|(_, state)| **state == PluginState::AUTO)
