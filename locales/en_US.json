@@ -469,6 +469,7 @@
   "path_leaves_project": "The path leaves the project",
   "path_relative_project": "Path relative to the project",
   "path_relative_project_missing_folders": "Path relative to the project · missing folders will be created",
+  "plugin_auto_git": "Automatic: on while the project has a .git. Turning it on or off here decides for this project.",
   "plugin_contributes_no_window_no": "This plugin contributes no window and no action.",
   "plugin_disabled": "This plugin is disabled.",
   "plugin_parent_off": "It runs only while {parent} is on.",

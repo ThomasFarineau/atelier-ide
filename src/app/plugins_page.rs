@@ -588,6 +588,12 @@ impl Ide {
                             ui.label(RichText::new(off).color(t.text_secondary));
                         }
                     }
+                    if self.auto_plugins.contains(id) {
+                        // Git while the project leaves it to the IDE (`"auto"`).
+                        ui.add_space(10.0);
+                        let auto = RichText::new(tr!("plugin_auto_git")).color(t.text_secondary);
+                        ui.add(egui::Label::new(auto).wrap());
+                    }
                     if !enabled {
                         ui.add_space(10.0);
                         ui.label(RichText::new(tr!("plugin_disabled")).color(t.text_secondary));

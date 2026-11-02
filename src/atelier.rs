@@ -2,8 +2,10 @@
 //! has its own `.gitignore`: what is generated (sessions, the context graph) stays out of version
 //! control, the way to version it being to remove its line there.
 
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -52,6 +54,48 @@ pub fn graph_setting(root: &Path) -> Option<bool> {
 
 pub fn set_graph_setting(root: &Path, enabled: bool) {
     set_setting(root, "graph", json!({"enabled": enabled}));
+}
+
+/// The plugins that are on (`true`) and off (`false`) in the project, in the `plugins` section of
+/// `.atelier/config.json`: the built-in ones by their id, the external ones by the id of their
+/// manifest. A plugin it does not list has not been decided yet; `"auto"` leaves it to the IDE
+/// (Git: on while the project has a `.git`).
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct PluginStates {
+    pub builtin: BTreeMap<String, PluginState>,
+    pub external: BTreeMap<String, bool>,
+}
+
+/// The state of a built-in plugin in a project: `true`, `false` or `"auto"`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum PluginState {
+    /// Turned on or off for this project, in the Plugins window or by hand.
+    Set(bool),
+    /// Decided by the IDE, while nobody turns it on or off.
+    Auto(Auto),
+}
+
+/// The word `"auto"`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Auto {
+    Auto,
+}
+
+impl PluginState {
+    pub const AUTO: Self = Self::Auto(Auto::Auto);
+}
+
+pub fn plugin_states(root: &Path) -> PluginStates {
+    serde_json::from_value(setting(root, "plugins")).unwrap_or_default()
+}
+
+pub fn set_plugin_states(root: &Path, states: &PluginStates) {
+    if let Ok(value) = serde_json::to_value(states) {
+        set_setting(root, "plugins", value);
+    }
 }
 
 /// A section of `.atelier/config.json` (`runtimes`), `Null` when it is not there.

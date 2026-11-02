@@ -1,7 +1,7 @@
 //! Export and import of the settings, and the sync folder. A bundle is one JSON file with the
 //! options that follow the user from a machine to another (theme, fonts, language, the options of
-//! the editor, the plugins that are on), their live templates and their dictionary. What belongs
-//! to a machine (recent projects, answers about the MCP server…) stays out of it.
+//! the editor), their live templates and their dictionary. What belongs to a machine (recent
+//! projects, answers about the MCP server…) or to a project (its plugins) stays out of it.
 //!
 //! The sync folder is any folder that something else carries around (OneDrive, Dropbox, a Git
 //! repository): the bundle is written there when the settings change, and read at the start when
@@ -13,12 +13,11 @@ use eframe::egui;
 use serde_json::{Value, json};
 use std::{fs, path::Path, time::SystemTime};
 
-/// The options that go in a bundle.
-pub const KEYS: [&str; 13] = [
+/// The options that go in a bundle. Which plugins are on is not one of them: each project keeps
+/// it, in `.atelier/config.json`.
+pub const KEYS: [&str; 11] = [
     "theme",
     "font_size",
-    "enabled_plugins",
-    "disabled_builtins",
     "wheel_zoom_off",
     "inlay_hints_off",
     "sticky_lines_off",

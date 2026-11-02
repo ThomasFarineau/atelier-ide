@@ -386,10 +386,14 @@ impl Ide {
             let enabled = !draft.disabled_builtins.contains(id);
             // Its own switch: a sub-plugin keeps it while its parent is off.
             if enabled == self.settings.disabled_builtins.contains(id) {
+                // Turned on or off by hand: no longer left to the IDE.
+                self.auto_plugins.remove(id);
                 self.set_builtin_enabled(id, enabled);
             }
         }
         self.settings.enabled_plugins = draft.enabled_plugins.clone();
+        // In the project, not in the settings of the IDE.
+        self.save_project_plugins();
         self.settings_original = draft;
         // At once: a window opened now reads the file.
         if let Err(e) = self.persist_settings() {
