@@ -279,7 +279,7 @@ impl Ide {
         let mut builtins: Vec<Builtin> = self
             .builtins
             .iter()
-            .filter(|p| !p.core())
+            .filter(|p| !p.core() && !p.external())
             .map(|p| Builtin {
                 id: p.id(),
                 parent: p.parent(),
@@ -635,13 +635,27 @@ impl Ide {
                 if tabs(ui) == 0 {
                     ui.add(egui::Label::new(&plugin.description).wrap());
                     ui.add_space(10.0);
+                    let warning = match plugin.library_path() {
+                        Some(library) => {
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(trf!(
+                                        "native_plugin_library",
+                                        path = library.display()
+                                    ))
+                                    .small()
+                                    .monospace(),
+                                )
+                                .wrap(),
+                            );
+                            ui.add_space(4.0);
+                            tr!("native_plugin_warning")
+                        }
+                        None => tr!("these_commands_run_your_local"),
+                    };
                     ui.add(
-                        egui::Label::new(
-                            RichText::new(tr!("these_commands_run_your_local"))
-                                .small()
-                                .color(t.text_secondary),
-                        )
-                        .wrap(),
+                        egui::Label::new(RichText::new(warning).small().color(t.text_secondary))
+                            .wrap(),
                     );
                 } else {
                     ui::section(ui, tr!("commands"));

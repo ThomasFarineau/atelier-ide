@@ -6,7 +6,7 @@
 //! first time it is drawn, and freed at the next frame once its tab is closed.
 
 use super::scene::{Alpha, Draw, Scene, Wrap};
-use eframe::{egui, egui_glow, glow, glow::HasContext};
+use atelier_plugin_api::{egui, egui_glow, glow, glow::HasContext};
 use glam::{Mat4, Vec3};
 use std::{
     collections::HashMap,
@@ -193,7 +193,7 @@ unsafe fn compile(gl: &glow::Context) -> Result<Program, String> {
     unsafe {
         let version = egui_glow::ShaderVersion::get(gl);
         if !version.is_new_shader_interface() {
-            return Err(tr!("gltf.opengl_too_old").into());
+            return Err(tr!("gltf.opengl_too_old"));
         }
         let program = gl.create_program()?;
         let mut shaders = Vec::new();
@@ -447,7 +447,7 @@ unsafe fn target(gl: &glow::Context, size: [i32; 2]) -> Result<Target, String> {
             || gl.check_framebuffer_status(glow::FRAMEBUFFER) != glow::FRAMEBUFFER_COMPLETE
         {
             free_target(gl, target);
-            return Err(tr!("gltf.no_framebuffer").into());
+            return Err(tr!("gltf.no_framebuffer"));
         }
         Ok(target)
     }

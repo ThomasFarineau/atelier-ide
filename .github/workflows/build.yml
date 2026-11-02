@@ -1,6 +1,7 @@
 name: Build
 
-# Builds the IDE and its bootstrap for Windows, Linux and macOS and keeps the files as artifacts.
+# Builds the IDE, its bootstrap and the native plugins of `plugins/` for Windows, Linux and macOS
+# and keeps the files as artifacts.
 # `prepare-release.yml` calls it on the release branch (a preview, and the cache of the release),
 # `release.yml` before publishing a release; started by hand, it only builds.
 
@@ -58,8 +59,10 @@ jobs:
           key: ${{ matrix.target }}
           save-if: ${{ github.event_name != 'pull_request' }}
 
+      # One command for the IDE and the plugins (the default members of the workspace): a native
+      # plugin loads only in an IDE built with the same features of the crates they share.
       - name: Build
-        run: cargo build --release --locked --bins --target ${{ matrix.target }}
+        run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Package
         run: |
@@ -77,6 +80,26 @@ jobs:
           fi
           # The program users download once.
           cp "$out/atelier$ext" "dist/atelier-${{ matrix.os_name }}-${{ matrix.arch }}$ext"
+          # The native plugins: the manifest and the library, extracted into
+          # `<project>/.atelier/plugins/<plugin>/`. They load only in the IDE of this build.
+          case "${{ matrix.os_name }}" in
+            windows) prefix=""; suffix=".dll" ;;
+            macos) prefix="lib"; suffix=".dylib" ;;
+            *) prefix="lib"; suffix=".so" ;;
+          esac
+          for plugin in plugins/*/plugin.json; do
+            dir="$(dirname "$plugin")"
+            library="$(sed -n 's/.*"library": *"\([^"]*\)".*/\1/p' "$plugin")"
+            name="$(basename "$dir")-${{ matrix.os_name }}-${{ matrix.arch }}"
+            mkdir -p "dist/plugin"
+            cp "$plugin" "$out/$prefix$library$suffix" dist/plugin/
+            if [ "${{ matrix.os_name }}" = "windows" ]; then
+              (cd dist/plugin && 7z a -tzip "../$name.zip" ./*)
+            else
+              tar -czf "dist/$name.tar.gz" -C dist/plugin .
+            fi
+            rm -r dist/plugin
+          done
 
       - name: Windows installer
         if: matrix.os_name == 'windows'

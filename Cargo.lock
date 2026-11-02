@@ -401,14 +401,14 @@ name = "atelier-ide"
 version = "0.1.4"
 dependencies = [
  "anyhow",
+ "atelier-plugin-api",
  "base64 0.23.1",
  "eframe",
  "egui_commonmark",
  "egui_extras",
  "flate2",
- "glam",
- "gltf",
  "image",
+ "libloading",
  "lzma-rs",
  "mermaid-rs-renderer",
  "mongodb",
@@ -448,6 +448,14 @@ dependencies = [
  "winresource",
  "yaml-rust2",
  "zip",
+]
+
+[[package]]
+name = "atelier-plugin-api"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "serde_json",
 ]
 
 [[package]]
@@ -2068,6 +2076,16 @@ dependencies = [
  "gltf-derive",
  "serde",
  "serde_derive",
+ "serde_json",
+]
+
+[[package]]
+name = "gltf-viewer"
+version = "0.1.0"
+dependencies = [
+ "atelier-plugin-api",
+ "glam",
+ "gltf",
  "serde_json",
 ]
 

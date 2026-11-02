@@ -1,0 +1,33 @@
+[package]
+name = "gltf-viewer"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "3D model viewer for Atelier: glTF and GLB files, with their animations"
+publish = false
+
+[lib]
+# A dynamic library the IDE loads (`gltf_viewer.dll`, `libgltf_viewer.so`…), and an ordinary
+# one for the tests.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+atelier-plugin-api = { path = "../atelier-plugin-api" }
+# The extensions a file may require: without them in the parser, a model that lists one as
+# required cannot be read at all. The viewer draws such models without their effect.
+gltf = { version = "1", features = [
+    "KHR_lights_punctual",
+    "KHR_materials_emissive_strength",
+    "KHR_materials_ior",
+    "KHR_materials_pbrSpecularGlossiness",
+    "KHR_materials_specular",
+    "KHR_materials_transmission",
+    "KHR_materials_unlit",
+    "KHR_materials_variants",
+    "KHR_materials_volume",
+    "KHR_texture_transform",
+] }
+glam = "0.30"
+
+[dev-dependencies]
+serde_json = "1"

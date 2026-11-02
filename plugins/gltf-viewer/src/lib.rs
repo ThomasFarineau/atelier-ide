@@ -1,20 +1,21 @@
-//! 3D model viewer built-in plugin: glTF files (`.glb`, `.gltf`) open in a viewer instead of the
-//! text editor, with an orbit camera and a player for their animations.
+//! 3D model viewer, a native plugin of Atelier: glTF files (`.glb`, `.gltf`) open in a viewer
+//! instead of the text editor, with an orbit camera and a player for their animations.
 //!
 //! The file is read in the background (`scene.rs`), then drawn with OpenGL (`render.rs`).
 //! Dragging turns around the model, a right or middle drag (or Shift and drag) moves it, the
 //! wheel zooms and a double click frames it again. Space plays or pauses the animation.
 
+#[macro_use]
+mod i18n;
 pub mod render;
 pub mod scene;
 
-use crate::{
-    plugins::builtin::{BuiltinPlugin, EditorLayout},
-    ui,
-};
-use eframe::egui::{
-    self, Align, Key, Layout, Modifiers, PointerButton, Rect, RichText, Sense, Stroke, UiBuilder,
-    pos2, vec2,
+use atelier_plugin_api::{
+    FileIcon, Host, Layout as EditorLayout, Plugin,
+    egui::{
+        self, Align, Key, Layout, Modifiers, PointerButton, Rect, RichText, Sense, Stroke,
+        UiBuilder, pos2, vec2,
+    },
 };
 use glam::{Mat4, Vec3};
 use render::Gpu;
@@ -254,8 +255,8 @@ impl GltfPlugin {
         }
     }
 
-    fn viewer(&mut self, ui: &mut egui::Ui, path: &Path) {
-        let t = ui::theme(ui.ctx());
+    fn viewer(&mut self, ui: &mut egui::Ui, path: &Path, host: &dyn Host) {
+        let t = host.theme();
         let gpu_error = self.gpu.lock().unwrap().error().map(str::to_string);
         let Some(Entry {
             state: State::Ready(model),
@@ -381,7 +382,7 @@ impl GltfPlugin {
             } else {
                 ("run", tr!("gltf.play"))
             };
-            toggle |= ui::icon_button(&mut bar_ui, icon, tip).clicked();
+            toggle |= host.icon_button(&mut bar_ui, icon, &tip).clicked();
             bar_ui.add_space(6.0);
             let position = model.dragging.unwrap_or(model.player.time);
             bar_ui.label(
@@ -422,13 +423,19 @@ impl GltfPlugin {
         let show_grid = &mut model.show_grid;
         let animations = &scene.animations;
         bar_ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if ui::icon_toggle(ui, "showAsTree", *show_grid, tr!("gltf.grid")).clicked() {
+            if host
+                .icon_toggle(ui, "showAsTree", *show_grid, &tr!("gltf.grid"))
+                .clicked()
+            {
                 *show_grid = !*show_grid;
             }
             if !has_animation {
                 return;
             }
-            if ui::icon_toggle(ui, "refresh", player.looping, tr!("gltf.loop")).clicked() {
+            if host
+                .icon_toggle(ui, "refresh", player.looping, &tr!("gltf.loop"))
+                .clicked()
+            {
                 player.looping = !player.looping;
             }
             egui::ComboBox::from_id_salt("gltf_speed")
@@ -488,23 +495,15 @@ impl GltfPlugin {
     }
 }
 
-impl BuiltinPlugin for GltfPlugin {
-    fn id(&self) -> &'static str {
-        "gltf"
-    }
-    fn name(&self) -> &'static str {
-        tr!("plugin.gltf.name")
-    }
-    fn description(&self) -> &'static str {
-        tr!("plugin.gltf.summary")
-    }
-    fn icon(&self) -> &'static str {
-        crate::plugins::builtin::card_icon("gltf")
-    }
-    fn extensions_dir(&self) -> Option<&'static str> {
-        Some("gltf")
-    }
+/// The icon of `.glb` and `.gltf` files.
+const MODEL_ICON: FileIcon = FileIcon {
+    uri: "bytes://gltf-viewer/model.svg",
+    svg: include_bytes!("../model.svg"),
+};
 
+atelier_plugin_api::declare_plugin!(GltfPlugin::default);
+
+impl Plugin for GltfPlugin {
     fn opens_binary(&self, path: &Path) -> bool {
         is_model(path)
     }
@@ -514,6 +513,9 @@ impl BuiltinPlugin for GltfPlugin {
     fn layout_switch(&self, _path: &Path) -> bool {
         false
     }
+    fn file_icon(&self, path: &Path) -> Option<FileIcon> {
+        is_model(path).then_some(MODEL_ICON)
+    }
 
     fn file_closed(&mut self, _ctx: &egui::Context, path: &Path) {
         if let Some(entry) = self.entries.remove(path) {
@@ -521,14 +523,9 @@ impl BuiltinPlugin for GltfPlugin {
         }
     }
 
-    fn preview(
-        &mut self,
-        ui: &mut egui::Ui,
-        path: &Path,
-        _text: &mut String,
-        _scroll: Option<f32>,
-    ) {
-        let t = ui::theme(ui.ctx());
+    fn preview(&mut self, ui: &mut egui::Ui, path: &Path, _text: &mut String, host: &dyn Host) {
+        i18n::set_language(host.language());
+        let t = host.theme();
         let modified = fs::metadata(path).and_then(|m| m.modified()).ok();
         if self
             .entries
@@ -566,11 +563,11 @@ impl BuiltinPlugin for GltfPlugin {
                     );
                     return;
                 }
-                Err(TryRecvError::Disconnected) => State::Failed(tr!("gltf.reading_failed").into()),
+                Err(TryRecvError::Disconnected) => State::Failed(tr!("gltf.reading_failed")),
             };
         }
         match &self.entries[path].state {
-            State::Ready(_) => self.viewer(ui, path),
+            State::Ready(_) => self.viewer(ui, path, host),
             State::Failed(e) => {
                 let rect = ui.available_rect_before_wrap();
                 ui.painter().text(
@@ -587,5 +584,5 @@ impl BuiltinPlugin for GltfPlugin {
 }
 
 #[cfg(test)]
-#[path = "../../../../test/plugins/builtins/gltf/mod/tests.rs"]
+#[path = "tests/lib.rs"]
 mod tests;

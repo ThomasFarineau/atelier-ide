@@ -171,7 +171,7 @@ pub const MAX_SIZE: u64 = 512 * 1024 * 1024;
 pub fn load(path: &Path) -> Result<Scene, String> {
     let size = std::fs::metadata(path).map_err(|e| e.to_string())?.len();
     if size > MAX_SIZE {
-        return Err(tr!("gltf.file_too_large").into());
+        return Err(tr!("gltf.file_too_large"));
     }
     let (document, buffers, images) = gltf::import(path).map_err(|e| e.to_string())?;
     Scene::new(&document, &buffers, &images)
@@ -800,5 +800,5 @@ impl Channel {
 }
 
 #[cfg(test)]
-#[path = "../../../../test/plugins/builtins/gltf/scene/tests.rs"]
+#[path = "tests/scene.rs"]
 mod tests;

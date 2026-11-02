@@ -1,8 +1,9 @@
 //! Built-in plugins: compiled into the IDE, available in every project, enabled by default and
 //! switchable in the Plugins window.
 //!
-//! External plugins (`external.rs`) are JSON manifests stored in a project that can only run shell
-//! commands. A built-in plugin extends the interface itself through the hooks of
+//! External plugins (`external.rs`) are JSON manifests stored in a project that run shell
+//! commands, or bring a dynamic library (`native.rs`) whose plugin then takes part as a built-in
+//! one, through a narrower interface (`atelier-plugin-api`). A built-in plugin extends the interface itself through the hooks of
 //! [`BuiltinPlugin`]: tool windows, toolbar and status bar widgets, editor gutter, project tree
 //! colors, shortcuts and palette commands. It talks back to the IDE through [`Host`].
 
@@ -180,6 +181,11 @@ pub trait BuiltinPlugin {
     fn language(&self) -> bool {
         false
     }
+    /// A native plugin of the project (`native.rs`): it is turned on and off with the external
+    /// plugins, and is present only while it is on.
+    fn external(&self) -> bool {
+        false
+    }
     fn name(&self) -> &'static str;
     fn description(&self) -> &'static str;
     /// The plugin this one is a part of (`git` for GitHub): it is on only while its parent is,
@@ -235,6 +241,11 @@ pub trait BuiltinPlugin {
     /// Icon of the files this plugin handles, in the project tree and the tabs: the key of an
     /// icon of the plugin (`icon_set`), e.g. `"mermaid/icon"`.
     fn file_icon(&self, path: &Path) -> Option<&'static str> {
+        None
+    }
+    /// Icon of the files this plugin handles, when it brings the picture itself rather than the
+    /// key of an icon of the IDE (a native plugin). It wins over `file_icon`.
+    fn file_image(&self, path: &Path, dark: bool) -> Option<egui::ImageSource<'static>> {
         None
     }
     /// The icon of a file for this plugin: `file_icon`, else the one of its extension.
@@ -333,7 +344,6 @@ pub fn all() -> Vec<Box<dyn BuiltinPlugin>> {
         Box::new(crate::plugins::builtins::msoffice::MsOfficeViewerPlugin::default()),
         Box::new(crate::plugins::builtins::image::ImagePlugin::default()),
         Box::new(crate::plugins::builtins::media::MediaPlugin::default()),
-        Box::new(crate::plugins::builtins::gltf::GltfPlugin::default()),
         Box::new(crate::plugins::builtins::k8s::K8sPlugin::default()),
         Box::new(crate::plugins::builtins::database::DatabasePlugin::default()),
         Box::new(crate::plugins::builtins::node::NodePlugin::default()),

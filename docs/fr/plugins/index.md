@@ -29,7 +29,7 @@ La coloration d'un langage vient de son plugin (JavaScript, Rust, Java, Markdown
 
 ## Plugins externes
 
-Les plugins externes sont des manifestes JSON propres à un projet, limités à des commandes. Ils s'activent projet par projet, et aucun plugin externe ne s'exécute à son chargement.
+Les plugins externes sont des manifestes JSON propres à un projet, qui apportent des commandes ou une bibliothèque native. Ils s'activent projet par projet, et aucun plugin externe ne s'exécute à son chargement.
 
 Pour en essayer un, copiez `examples/plugins/rust-tools.json` dans `.atelier/plugins/rust-tools.json` de votre projet, cliquez sur **Plugins**, puis **Recharger**, et activez l'extension.
 
@@ -46,4 +46,30 @@ Pour en essayer un, copiez `examples/plugins/rust-tools.json` dans `.atelier/plu
 }
 ```
 
-Les arguments sont transmis comme des valeurs littérales, échappées pour le shell. Les commandes s'exécutent avec les droits de l'utilisateur : n'activez que des manifestes de confiance. Cette API fournit des commandes externes, pas des bibliothèques natives.
+Les arguments sont transmis comme des valeurs littérales, échappées pour le shell. Les commandes s'exécutent avec les droits de l'utilisateur : n'activez que des manifestes de confiance.
+
+### Plugins natifs
+
+Un manifeste peut aussi apporter une bibliothèque dynamique, qui dessine dans l'IDE comme un plugin intégré : elle ouvre des fichiers dans un onglet de l'éditeur (la visionneuse de modèles 3D de `plugins/gltf-viewer`). Un tel plugin se range dans un dossier à lui, avec son manifeste nommé `plugin.json` et sa bibliothèque à côté :
+
+```
+.atelier/plugins/gltf-viewer/
+  plugin.json
+  gltf_viewer.dll        (libgltf_viewer.so sous Linux, libgltf_viewer.dylib sous macOS)
+```
+
+```json
+{
+  "id": "gltf-viewer",
+  "name": "3D Model Viewer",
+  "version": "0.1.0",
+  "description": "glTF and GLB models shown in 3D, with their animations.",
+  "library": "gltf_viewer"
+}
+```
+
+Chaque release d'Atelier apporte ses plugins natifs, dans le [dépôt des téléchargements](https://github.com/atelier-ide-org/releases/releases) : prenez `gltf-viewer-<os>-<arch>` dans **la release de l'IDE que vous utilisez**, extrayez-le dans `.atelier/plugins/gltf-viewer/` de votre projet, puis cliquez sur **Plugins**, **Recharger**, et activez-le. Depuis les sources, `plugins/gltf-viewer/install.ps1` (ou `install.sh`) le compile et l'installe.
+
+`library` est le nom de la bibliothèque, sans le préfixe ni l'extension du système. Elle n'est chargée qu'une fois le plugin activé, jamais avant, et s'exécute dans l'IDE avec les droits de l'utilisateur : n'activez que des bibliothèques de confiance.
+
+Un plugin natif implémente le trait `Plugin` du crate `atelier-plugin-api` (`plugins/atelier-plugin-api`) et l'exporte avec `declare_plugin!`. Rust n'a pas d'ABI stable : la bibliothèque et l'IDE partagent egui, la bibliothèque doit donc être compilée par le même compilateur, pour la même cible et le même profil, avec les mêmes versions et fonctionnalités de leurs crates. Atelier le vérifie avant d'appeler la bibliothèque, et refuse celle qui a été compilée autrement. Les plugins de `plugins/` sont membres du workspace de l'IDE et se compilent avec lui : `cargo build --release` produit `target/release/gltf_viewer.dll` à côté d'`atelier-ide`.

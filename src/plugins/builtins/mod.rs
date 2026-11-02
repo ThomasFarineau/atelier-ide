@@ -4,7 +4,6 @@ pub mod cargo;
 pub mod csv;
 pub mod database;
 pub mod git;
-pub mod gltf;
 pub mod gradle;
 pub mod image;
 pub mod jupyter;

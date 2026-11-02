@@ -1,3 +1,11 @@
+# The native plugins of `plugins/` are built with the IDE: they share its crates, which must be
+# compiled with the same features for the IDE to load them (see `plugins/atelier-plugin-api`).
+[workspace]
+members = [".", "plugins/atelier-plugin-api", "plugins/gltf-viewer"]
+default-members = [".", "plugins/gltf-viewer"]
+# A demo project of its own, opened in the IDE.
+exclude = ["examples/demo"]
+
 [package]
 name = "atelier-ide"
 version = "0.1.4"
@@ -53,22 +61,9 @@ raw-window-handle = "0.6"
 tree-sitter-python = "0.25"
 rodio = { version = "0.23", default-features = false, features = ["playback", "mp3", "wav", "flac", "vorbis", "mp4"] }
 lzma-rs = "0.3"
-# The 3D model viewer: glTF and GLB files, and the matrices of their scenes and animations.
-# The extensions a file may require: without them in the parser, a model that lists one as
-# required cannot be read at all. The viewer draws such models without their effect.
-gltf = { version = "1", features = [
-    "KHR_lights_punctual",
-    "KHR_materials_emissive_strength",
-    "KHR_materials_ior",
-    "KHR_materials_pbrSpecularGlossiness",
-    "KHR_materials_specular",
-    "KHR_materials_transmission",
-    "KHR_materials_unlit",
-    "KHR_materials_variants",
-    "KHR_materials_volume",
-    "KHR_texture_transform",
-] }
-glam = "0.30"
+# Native plugins: the dynamic libraries of `.atelier/plugins`, and the interface they implement.
+libloading = "0.8"
+atelier-plugin-api = { path = "plugins/atelier-plugin-api" }
 mongodb = { version = "3", features = ["sync"] }
 postgres = "0.19"
 postgres-native-tls = "0.5"

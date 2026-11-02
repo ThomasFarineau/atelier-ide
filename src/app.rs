@@ -6253,8 +6253,12 @@ impl Ide {
         self.builtins
             .iter()
             .filter(|p| self.builtin_enabled(p.id()))
-            .find_map(|p| p.file_icon_for(path))
-            .and_then(|key| crate::icon_set::source(key, dark))
+            .find_map(|p| {
+                p.file_image(path, dark).or_else(|| {
+                    p.file_icon_for(path)
+                        .and_then(|key| crate::icon_set::source(key, dark))
+                })
+            })
             .unwrap_or_else(|| icons::file(path, dark))
     }
 
@@ -6288,7 +6292,7 @@ impl Ide {
         let read = crate::atelier::plugin_states(&self.root);
         let mut states = read.clone();
         let (legacy_enabled, legacy_disabled) = &self.legacy_plugins;
-        for plugin in self.builtins.iter().filter(|p| !p.core()) {
+        for plugin in self.builtins.iter().filter(|p| !p.core() && !p.external()) {
             let id = plugin.id();
             states.builtin.entry(id.to_string()).or_insert_with(|| {
                 if id == "git" && !legacy_disabled.contains(id) {
@@ -6329,6 +6333,49 @@ impl Ide {
         if write && states != read {
             crate::atelier::set_plugin_states(&self.root, &states);
         }
+        self.sync_native_plugins();
+    }
+
+    /// Loads the native plugins turned on in the project, and lets go of those turned off or
+    /// whose manifest went away. Every frame: the Plugins window turns them on and off. A library
+    /// that could not be loaded is tried again once the manifests are read again.
+    fn sync_native_plugins(&mut self) {
+        let wanted: Vec<usize> = (0..self.plugins.len())
+            .filter(|&i| {
+                let plugin = &self.plugins[i];
+                plugin.library.is_some()
+                    && !plugin.load_failed
+                    && (self.settings.enabled_plugins).contains(&self.plugin_key(&plugin.id))
+            })
+            .collect();
+        let before = self.builtins.len();
+        let plugins = &self.plugins;
+        self.builtins
+            .retain(|p| !p.external() || wanted.iter().any(|&i| plugins[i].id == p.id()));
+        let mut changed = self.builtins.len() != before;
+        for i in wanted {
+            let plugin = &self.plugins[i];
+            let loaded = match self.builtins.iter().find(|p| p.id() == plugin.id) {
+                Some(p) if p.external() => continue,
+                Some(_) => Err(trf!("native_id_taken", id = plugin.id)),
+                None => plugins::native::load(plugin),
+            };
+            match loaded {
+                Ok(native) => {
+                    self.builtins.push(Box::new(native));
+                    changed = true;
+                }
+                Err(e) => {
+                    self.plugins[i].load_failed = true;
+                    let name = self.plugins[i].name.clone();
+                    self.plugin_errors.push(e.clone());
+                    builtin::Host::balloon(self, &name, e, true);
+                }
+            }
+        }
+        if changed {
+            self.sync_plugin_languages();
+        }
     }
 
     /// Writes which plugins are on in the project to `.atelier/config.json`, keeping the
@@ -6340,7 +6387,7 @@ impl Ide {
             return;
         }
         let mut states = crate::atelier::plugin_states(&self.root);
-        for plugin in self.builtins.iter().filter(|p| !p.core()) {
+        for plugin in self.builtins.iter().filter(|p| !p.core() && !p.external()) {
             let id = plugin.id();
             let state = if self.auto_plugins.contains(id) {
                 PluginState::AUTO
@@ -7056,6 +7103,7 @@ impl eframe::App for Ide {
         self.update_window_title(ctx);
         self.serve_command_line(ctx);
         self.follow_auto_plugins();
+        self.sync_native_plugins();
         if let Some(project) = self.pending_start.take() {
             self.leave_start_screen(ctx, project);
         }
