@@ -120,6 +120,7 @@ fn frame(state: &mut EditorState, service: &Service, doc: &DocRef, text: &str) {
     let ctx = egui::Context::default();
     let options = Options {
         language: "js",
+        highlight: true,
         font: FontId::monospace(14.0),
         theme: crate::ui::theme_by_index(0),
         marks: &[],

@@ -16,6 +16,5 @@
   "csv.semicolon": "point-virgule",
   "csv.semicolon_2": "Point-virgule ;",
   "csv.tab": "tabulation",
-  "csv.tab_2": "Tabulation",
-  "csv.table_preview_csv_tsv_psv": "Aperçu en tableau des fichiers CSV, TSV et PSV : séparateur détecté, première ligne en en-tête, tri des colonnes, éditeur seul, côte à côte ou tableau seul."
+  "csv.tab_2": "Tabulation"
 }

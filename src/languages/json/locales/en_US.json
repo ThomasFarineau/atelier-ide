@@ -1,0 +1,12 @@
+{
+  "json.from_schema": "Schema: {schema}",
+  "json.incompatible_type": "Incompatible type: {expected} expected, {actual} found",
+  "json.length_out_of_range": "Length out of range: from {low} to {high}",
+  "json.missing_properties": "Missing properties: {keys}",
+  "json.out_of_range": "Value out of range: from {low} to {high}",
+  "json.pattern_mismatch": "The text does not match the pattern {pattern}",
+  "json.property_not_allowed": "Property \"{key}\" is not allowed",
+  "json.value_must_be": "The value must be {value}",
+  "json.value_not_allowed": "No value is allowed here",
+  "json.value_one_of": "The value must be one of: {values}"
+}

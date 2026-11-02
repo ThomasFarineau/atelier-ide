@@ -59,7 +59,6 @@
   "git.close": "Fermer",
   "git.collapse_all": "Tout replier",
   "git.commit": "Commit",
-  "git.commit_branches_history_diff_push": "Commit, branches, historique, diff, push/pull, stash, conflits et annotations, avec la commande git installée.",
   "git.commit_dialog": "Commit…",
   "git.commit_message": "Message du commit",
   "git.commit_options": "Options du commit",

@@ -521,6 +521,8 @@ pub struct Ide {
     /// Raised by the dev supervisor (`cargo dev`) to swap this process for a new build.
     reload: Option<Arc<AtomicBool>>,
     builtins: Vec<Box<dyn BuiltinPlugin>>,
+    /// The parent of each sub-plugin, kept apart: `builtins` is taken out while a plugin runs.
+    builtin_parents: std::collections::HashMap<&'static str, &'static str>,
     /// Built-in tool window shown instead of the project view.
     left_tool: Option<&'static ToolWindow>,
     /// A plugin's tool window on the right (npm, Maven, Gradle), in the place of the notifications.
@@ -650,6 +652,7 @@ impl Ide {
     }
 
     fn blank(root: PathBuf, settings: Settings, reload: Option<Arc<AtomicBool>>) -> Self {
+        let builtins = builtin::all();
         let (plugins, plugin_errors) = plugins::load(&root);
         let draft = Draft::of(&settings);
         let repaint: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
@@ -750,7 +753,11 @@ impl Ide {
             can_quit: false,
             cursor: (1, 1),
             reload,
-            builtins: builtin::all(),
+            builtin_parents: builtins
+                .iter()
+                .filter_map(|p| Some((p.id(), p.parent()?)))
+                .collect(),
+            builtins,
             left_tool: None,
             right_tool: None,
             bottom_tool: None,
@@ -1025,7 +1032,7 @@ impl Ide {
         let binary = self
             .builtins
             .iter()
-            .filter(|p| !self.settings.disabled_builtins.contains(p.id()))
+            .filter(|p| self.builtin_enabled(p.id()))
             .any(|p| p.opens_binary(&path));
         let opened = if binary {
             Ok(Document::binary(path))
@@ -3163,6 +3170,25 @@ impl Ide {
                 ui.close();
             }
             tree_menu_commands(self, ui);
+            if !is_dir {
+                let plugins: Vec<_> = self
+                    .builtins
+                    .iter()
+                    .filter(|p| self.builtin_enabled(p.id()))
+                    .map(|p| (p.id(), p.name(), p.file_commands(path)))
+                    .filter(|(_, _, commands)| !commands.is_empty())
+                    .collect();
+                for (plugin, name, commands) in plugins {
+                    ui::menu_separator(ui);
+                    ui::menu_title(ui, name);
+                    for command in commands {
+                        if ui::menu_item(ui, None, &command.label, None, false).clicked() {
+                            self.run_file_command(plugin, command.id, path);
+                            ui.close();
+                        }
+                    }
+                }
+            }
         });
     }
 
@@ -4602,6 +4628,12 @@ impl Ide {
                     return;
                 }
                 self.tabs(ui);
+                let uncolored = self.uncolored_languages();
+                let enabled_builtins: Vec<bool> = self
+                    .builtins
+                    .iter()
+                    .map(|p| self.builtin_enabled(p.id()))
+                    .collect();
                 let split_other = self.split_other();
                 let (doc, mut other_doc) = match split_other {
                     Some(other) => match self.documents.get_disjoint_mut([self.active, other]) {
@@ -4647,7 +4679,7 @@ impl Ide {
                     self.builtins
                         .iter()
                         .enumerate()
-                        .filter(|(_, p)| !self.settings.disabled_builtins.contains(p.id()))
+                        .filter(|(i, _)| enabled_builtins[*i])
                         .find_map(|(i, p)| {
                             p.editor_layout(&path)
                                 .map(|layout| (i, path.clone(), layout))
@@ -4796,6 +4828,7 @@ impl Ide {
                             pane,
                             target,
                             separate.then_some(&self.languages),
+                            !uncolored.contains(&target.language.as_str()),
                             &self.settings,
                             t,
                             font.clone(),
@@ -4845,6 +4878,7 @@ impl Ide {
                 );
                 let options = crate::editor::Options {
                     language: &doc.language,
+                    highlight: !uncolored.contains(&doc.language.as_str()),
                     font,
                     theme: t,
                     marks: &gutter.marks,
@@ -6195,10 +6229,24 @@ impl Ide {
             .unwrap_or_else(|| icons::file(path, dark))
     }
 
+    /// Whether a built-in plugin runs: it is on, and so is its parent when it is a sub-plugin.
     fn builtin_enabled(&self, id: &str) -> bool {
         // The IDE's own tool windows cannot be turned off.
-        self.builtins.iter().any(|p| p.id() == id && p.core())
-            || !self.settings.disabled_builtins.contains(id)
+        let on = self.builtins.iter().any(|p| p.id() == id && p.core())
+            || !self.settings.disabled_builtins.contains(id);
+        on && self
+            .builtin_parents
+            .get(id)
+            .is_none_or(|parent| self.builtin_enabled(parent))
+    }
+
+    /// Whether `id` is `ancestor` or one of its sub-plugins.
+    fn builtin_within(&self, id: &str, ancestor: &str) -> bool {
+        id == ancestor
+            || self
+                .builtin_parents
+                .get(id)
+                .is_some_and(|parent| self.builtin_within(parent, ancestor))
     }
 
     fn set_builtin_enabled(&mut self, id: &str, enabled: bool) {
@@ -6207,20 +6255,26 @@ impl Ide {
             return;
         }
         self.settings.disabled_builtins.insert(id.to_string());
+        // The windows of its sub-plugins close with it.
         let owned = |tool: Option<&ToolWindow>| {
             tool.is_some_and(|t| {
-                self.builtins
-                    .iter()
-                    .any(|p| p.id() == id && p.tool_windows().iter().any(|w| w.id == t.id))
+                self.builtins.iter().any(|p| {
+                    self.builtin_within(p.id(), id) && p.tool_windows().iter().any(|w| w.id == t.id)
+                })
             })
         };
-        if owned(self.left_tool) {
+        let closed = [
+            owned(self.left_tool),
+            owned(self.right_tool),
+            owned(self.bottom_tool),
+        ];
+        if closed[0] {
             self.left_tool = None;
         }
-        if owned(self.right_tool) {
+        if closed[1] {
             self.right_tool = None;
         }
-        if owned(self.bottom_tool) {
+        if closed[2] {
             self.bottom_tool = None;
         }
     }
@@ -6321,8 +6375,13 @@ impl Ide {
         else {
             return gutter;
         };
-        for plugin in &mut self.builtins {
-            if self.settings.disabled_builtins.contains(plugin.id()) {
+        let enabled: Vec<bool> = self
+            .builtins
+            .iter()
+            .map(|p| self.builtin_enabled(p.id()))
+            .collect();
+        for (plugin, enabled) in self.builtins.iter_mut().zip(enabled) {
+            if !enabled {
                 continue;
             }
             let text = &self.documents[self.active].text;
@@ -6353,6 +6412,41 @@ impl Ide {
                 p.run_command(command, ide);
             }
         });
+    }
+
+    fn run_file_command(&mut self, plugin: &str, command: &str, path: &Path) {
+        self.each_builtin(|p, ide| {
+            if p.id() == plugin {
+                p.run_file_command(command, path, ide);
+            }
+        });
+    }
+
+    /// The languages the editor leaves uncolored: those every plugin that brings them is off
+    /// for. A language no plugin brings is colored by the IDE itself.
+    fn uncolored_languages(&self) -> Vec<&'static str> {
+        let (on, off): (Vec<_>, Vec<_>) = self
+            .builtins
+            .iter()
+            .partition(|p| self.builtin_enabled(p.id()));
+        off.iter()
+            .flat_map(|p| p.languages())
+            .filter(|language| !on.iter().any(|p| p.languages().contains(language)))
+            .copied()
+            .collect()
+    }
+
+    /// Gives the language service the formatters and the JSON schemas of the plugins that are on.
+    fn sync_plugin_languages(&self) {
+        let on = || {
+            self.builtins
+                .iter()
+                .filter(|p| self.builtin_enabled(p.id()))
+        };
+        self.languages
+            .set_formatters(on().flat_map(|p| p.formatters().iter().copied()).collect());
+        self.languages
+            .set_json_schemas(on().flat_map(|p| p.json_schemas()).collect());
     }
 
     fn dropped_files(&mut self, ctx: &egui::Context) {
@@ -6843,6 +6937,7 @@ impl eframe::App for Ide {
             }
         }
         self.each_builtin(|plugin, ide| plugin.update(ctx, ide));
+        self.sync_plugin_languages();
         if ctx.input(|i| i.viewport().close_requested()) && !self.can_quit {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.request(Pending::Quit);

@@ -98,13 +98,13 @@ impl BuiltinPlugin for PythonPlugin {
         "python"
     }
     fn name(&self) -> &'static str {
-        "Python"
+        tr!("plugin.python.name")
     }
     fn description(&self) -> &'static str {
-        tr!("python.description")
+        tr!("plugin.python.summary")
     }
     fn icon(&self) -> &'static str {
-        "settings"
+        crate::plugins::builtin::card_icon("python")
     }
 
     fn update(&mut self, _ctx: &eframe::egui::Context, host: &mut dyn Host) {

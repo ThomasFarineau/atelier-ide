@@ -1,0 +1,93 @@
+%YAML 1.2
+---
+# TOML, which the syntaxes of syntect do not have. The scopes are the ones the IntelliJ theme of
+# `highlight.rs` colors: keys as YAML keys, tables as tags.
+name: TOML
+file_extensions: [toml]
+scope: source.toml
+
+variables:
+  bare_key: '[A-Za-z0-9_-]+'
+  quoted_key: '"(?:[^"\\]|\\.)*"|''[^'']*'''
+  key: '(?:{{bare_key}}|{{quoted_key}})(?:\s*\.\s*(?:{{bare_key}}|{{quoted_key}}))*'
+
+contexts:
+  main:
+    - include: comments
+    - match: '^\s*(\[\[?)([^\]#]*)(\]\]?)'
+      captures:
+        1: punctuation.definition.table.toml
+        2: entity.name.tag.table.toml
+        3: punctuation.definition.table.toml
+    - match: '^\s*({{key}})\s*(=)'
+      captures:
+        1: support.type.property-name.toml
+        2: keyword.operator.assignment.toml
+    - include: values
+
+  values:
+    - include: comments
+    # A key of an inline table: `{ name = "x", version = "1" }`.
+    - match: '(?<=[{,])\s*({{key}})\s*(=)'
+      captures:
+        1: support.type.property-name.toml
+        2: keyword.operator.assignment.toml
+    - match: '"""'
+      scope: punctuation.definition.string.begin.toml
+      push: basic_multi
+    - match: "'''"
+      scope: punctuation.definition.string.begin.toml
+      push: literal_multi
+    - match: '"'
+      scope: punctuation.definition.string.begin.toml
+      push: basic
+    - match: "'"
+      scope: punctuation.definition.string.begin.toml
+      push: literal
+    - match: '(?<![\w.:-])\d{4}-\d{2}-\d{2}(?:[Tt ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:[Zz]|[+-]\d{2}:\d{2})?)?(?![\w.:-])'
+      scope: constant.other.datetime.toml
+    - match: '(?<![\w.:-])\d{2}:\d{2}:\d{2}(?:\.\d+)?(?![\w.:-])'
+      scope: constant.other.time.toml
+    - match: '(?<![\w.-])[+-]?(?:0x[0-9A-Fa-f_]+|0o[0-7_]+|0b[01_]+|(?:inf|nan)|\d[\d_]*(?:\.\d[\d_]*)?(?:[eE][+-]?\d[\d_]*)?)(?![\w.-])'
+      scope: constant.numeric.toml
+    - match: '\b(?:true|false)\b'
+      scope: constant.language.boolean.toml
+
+  comments:
+    - match: '#'
+      scope: punctuation.definition.comment.toml
+      push:
+        - meta_scope: comment.line.number-sign.toml
+        - match: '$\n?'
+          pop: true
+
+  escapes:
+    - match: '\\(?:[btnfre"\\]|x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})'
+      scope: constant.character.escape.toml
+
+  basic:
+    - meta_scope: string.quoted.double.toml
+    - include: escapes
+    - match: '"|$\n?'
+      scope: punctuation.definition.string.end.toml
+      pop: true
+
+  literal:
+    - meta_scope: string.quoted.single.toml
+    - match: "'|$\\n?"
+      scope: punctuation.definition.string.end.toml
+      pop: true
+
+  basic_multi:
+    - meta_scope: string.quoted.triple.toml
+    - include: escapes
+    # Up to two quotes of the text may come right before the closing ones.
+    - match: '"{3,5}'
+      scope: punctuation.definition.string.end.toml
+      pop: true
+
+  literal_multi:
+    - meta_scope: string.quoted.triple.toml
+    - match: "'{3,5}"
+      scope: punctuation.definition.string.end.toml
+      pop: true

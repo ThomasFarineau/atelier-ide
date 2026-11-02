@@ -162,3 +162,40 @@ fn the_blocks_of_pug_take_the_colors_of_their_language() {
     assert_eq!(color_at(&mut h, 2, lines[2], "const"), rgb(DARK.keyword));
     assert_eq!(color_at(&mut h, 3, lines[3], "//- note"), rgb(DARK.comment));
 }
+
+#[test]
+fn toml_comes_from_its_plugin_syntax() {
+    let lines = [
+        "[package] # the crate",
+        "name = \"x\"",
+        "deps = { serde = 1.5, on = true }",
+        "when = 1979-05-27",
+    ];
+    let mut h = Incremental::new("toml", true);
+    assert!(h.advance(
+        |i| lines.get(i).map(|l| l.to_string()),
+        4,
+        Duration::from_secs(5)
+    ));
+    assert_eq!(color_at(&mut h, 0, lines[0], "package"), rgb(DARK.tag));
+    assert_eq!(color_at(&mut h, 0, lines[0], "# the"), rgb(DARK.comment));
+    assert_eq!(color_at(&mut h, 1, lines[1], "name"), rgb(DARK.key));
+    assert_eq!(color_at(&mut h, 1, lines[1], "\"x\""), rgb(DARK.string));
+    assert_eq!(color_at(&mut h, 2, lines[2], "serde"), rgb(DARK.key));
+    assert_eq!(color_at(&mut h, 2, lines[2], "1.5"), rgb(DARK.number));
+    assert_eq!(color_at(&mut h, 2, lines[2], "true"), rgb(DARK.keyword));
+    assert_eq!(color_at(&mut h, 3, lines[3], "1979"), rgb(DARK.constant));
+}
+
+#[test]
+fn cargo_lock_is_colored_as_toml() {
+    let lines = ["[[package]]", "name = \"serde\""];
+    let mut h = Incremental::new("cargo-lock", true);
+    assert!(h.advance(
+        |i| lines.get(i).map(|l| l.to_string()),
+        2,
+        Duration::from_secs(5)
+    ));
+    assert_eq!(color_at(&mut h, 0, lines[0], "package"), rgb(DARK.tag));
+    assert_eq!(color_at(&mut h, 1, lines[1], "name"), rgb(DARK.key));
+}

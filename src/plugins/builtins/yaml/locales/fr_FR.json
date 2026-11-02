@@ -1,0 +1,6 @@
+{
+  "yaml.convert_to_json": "Convertir en JSON",
+  "yaml.format_changes_data": "Non reformaté : la nouvelle mise en page changerait les données du fichier",
+  "yaml.json_exists": "{file} existe déjà",
+  "yaml.unknown_alias": "Un alias (*nom) renvoie à une ancre qui n'existe pas"
+}

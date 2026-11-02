@@ -520,13 +520,13 @@ impl BuiltinPlugin for GradlePlugin {
         "gradle"
     }
     fn name(&self) -> &'static str {
-        "Gradle"
+        tr!("plugin.gradle.name")
     }
     fn description(&self) -> &'static str {
-        tr!("gradle.description")
+        tr!("plugin.gradle.summary")
     }
     fn icon(&self) -> &'static str {
-        "gradle/icon"
+        crate::plugins::builtin::card_icon("gradle")
     }
     fn tool_windows(&self) -> &'static [ToolWindow] {
         &TOOL_WINDOWS

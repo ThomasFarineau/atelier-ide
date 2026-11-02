@@ -28,7 +28,6 @@
   "k8s.new_key": "Nouvelle clé",
   "k8s.no_resources": "Aucune ressource",
   "k8s.refresh": "Actualiser",
-  "k8s.resources_kubernetes_cluster_pods_deployments": "Ressources d'un cluster Kubernetes : pods, deployments, services… describe, YAML, logs, redémarrage et suppression, avec kubectl.",
   "k8s.restart": "Redémarrer",
   "k8s.restart_pod_deleted_then_created": "Redémarrer le pod {name} ? Il est supprimé puis recréé par son contrôleur ; un pod sans contrôleur ne reviendra pas.",
   "k8s.restart_rollout_restart": "Redémarrer {resource}/{name} (rollout restart) ?",

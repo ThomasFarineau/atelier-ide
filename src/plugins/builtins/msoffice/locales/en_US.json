@@ -51,7 +51,6 @@
   "msoffice.presentation_too_large_limit_128": "Presentation too large (limit: 128 MB)",
   "msoffice.read_only_sheet_cells": "Read-only · {count} sheet{plural} · {book} cells",
   "msoffice.read_only_slide_words": "Read-only · {count} slide{plural} · {words} words",
-  "msoffice.read_only_viewer_microsoft_office": "Read-only viewer of Microsoft Office documents, without an office suite installed: Word (.docx) with headings, formatting, lists, links, tables and images; Excel (.xlsx) with a tab per sheet, number and date formats, colors; PowerPoint (.pptx) with shapes, texts, images and tables. Every document exports to PDF.",
   "msoffice.read_only_words": "Read-only · {words} words",
   "msoffice.relations_document": "relations of the document",
   "msoffice.relations_workbook": "relations of the workbook",

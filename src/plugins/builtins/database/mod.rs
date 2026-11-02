@@ -1958,13 +1958,13 @@ impl BuiltinPlugin for DatabasePlugin {
         "database"
     }
     fn name(&self) -> &'static str {
-        tr!("database.title")
+        tr!("plugin.database.name")
     }
     fn description(&self) -> &'static str {
-        tr!("database.description")
+        tr!("plugin.database.summary")
     }
     fn icon(&self) -> &'static str {
-        "database/icon"
+        crate::plugins::builtin::card_icon("database")
     }
     fn tool_windows(&self) -> &'static [ToolWindow] {
         &TOOL_WINDOWS

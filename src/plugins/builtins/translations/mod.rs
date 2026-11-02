@@ -600,13 +600,13 @@ impl BuiltinPlugin for TranslationsPlugin {
         "translations"
     }
     fn name(&self) -> &'static str {
-        tr!("translations.title")
+        tr!("plugin.translations.name")
     }
     fn description(&self) -> &'static str {
-        tr!("translations.description")
+        tr!("plugin.translations.summary")
     }
     fn icon(&self) -> &'static str {
-        "translations/icon"
+        crate::plugins::builtin::card_icon("translations")
     }
     fn tool_windows(&self) -> &'static [ToolWindow] {
         &TOOL_WINDOWS

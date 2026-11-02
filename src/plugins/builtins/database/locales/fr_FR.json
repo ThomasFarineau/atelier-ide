@@ -21,7 +21,6 @@
   "database.delete_row": "Supprimer la ligne",
   "database.delete_row_question": "Supprimer cette ligne de la table ? C'est irréversible.",
   "database.deleted": "Document supprimé",
-  "database.description": "Parcourez des bases de données depuis une fenêtre d'outil à droite : connexions enregistrées, leurs bases, schémas, collections et tables. MongoDB : les documents d'une collection avec un filtre, un tri et des pages, en JSON coloré, à copier, modifier, ajouter et supprimer. PostgreSQL et MySQL : les lignes d'une table dans une grille avec WHERE, ORDER BY et des pages, et une console pour toute requête.",
   "database.document_gone": "Le document n'est plus dans la collection",
   "database.drop_collection": "Supprimer la collection",
   "database.drop_database": "Supprimer la base",

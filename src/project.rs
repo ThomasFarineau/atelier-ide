@@ -266,6 +266,10 @@ fn read_chunked(path: &Path, progress: &AtomicU64) -> Result<String> {
 }
 
 pub fn language(path: &Path) -> &'static str {
+    // TOML, but made by Cargo: colored by the Cargo plugin, and not reformatted.
+    if path.file_name().is_some_and(|n| n == "Cargo.lock") {
+        return "cargo-lock";
+    }
     match path
         .extension()
         .and_then(|s| s.to_str())

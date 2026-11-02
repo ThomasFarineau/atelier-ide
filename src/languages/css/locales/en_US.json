@@ -14,7 +14,6 @@
   "css.command_restart": "CSS: restart the language server",
   "css.convert_needs_style": "Open a .css, .scss, .sass or .less file to convert it",
   "css.converted": "{name} written",
-  "css.description": "CSS, SCSS, Sass and Less: colors, errors, completion of properties and values, navigation to variables, mixins and selectors, occurrences, structure and formatting, with the language server of VS Code (CSS, SCSS, Less) and by local analysis without it.",
   "css.empty_value": "Declaration without a value",
   "css.installing_server": "Installing the CSS language server…",
   "css.minified": "{name} written: {from} KiB → {to} KiB",

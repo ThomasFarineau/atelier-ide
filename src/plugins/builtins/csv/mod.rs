@@ -251,13 +251,13 @@ impl BuiltinPlugin for CsvPlugin {
         "csv"
     }
     fn name(&self) -> &'static str {
-        "CSV / TSV"
+        tr!("plugin.csv.name")
     }
     fn description(&self) -> &'static str {
-        tr!("csv.table_preview_csv_tsv_psv")
+        tr!("plugin.csv.summary")
     }
     fn icon(&self) -> &'static str {
-        "editorPreview"
+        crate::plugins::builtin::card_icon("csv")
     }
     fn extensions_dir(&self) -> Option<&'static str> {
         Some("csv")

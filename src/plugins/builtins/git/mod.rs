@@ -2,6 +2,7 @@
 
 mod conflict;
 mod diff;
+pub mod github;
 mod graph;
 mod plugin;
 pub(crate) mod repo;

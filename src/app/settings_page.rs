@@ -384,7 +384,8 @@ impl Ide {
         let ids: Vec<&'static str> = self.builtins.iter().map(|p| p.id()).collect();
         for id in ids {
             let enabled = !draft.disabled_builtins.contains(id);
-            if enabled != self.builtin_enabled(id) {
+            // Its own switch: a sub-plugin keeps it while its parent is off.
+            if enabled == self.settings.disabled_builtins.contains(id) {
                 self.set_builtin_enabled(id, enabled);
             }
         }

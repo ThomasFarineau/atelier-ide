@@ -136,13 +136,13 @@ impl BuiltinPlugin for CssPlugin {
         "css"
     }
     fn name(&self) -> &'static str {
-        "CSS / SCSS / Sass / Less"
+        tr!("plugin.css.name")
     }
     fn description(&self) -> &'static str {
-        tr!("css.description")
+        tr!("plugin.css.summary")
     }
     fn icon(&self) -> &'static str {
-        "settings"
+        crate::plugins::builtin::card_icon("css")
     }
 
     fn update(&mut self, _ctx: &eframe::egui::Context, host: &mut dyn Host) {

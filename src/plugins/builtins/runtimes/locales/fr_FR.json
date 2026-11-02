@@ -5,7 +5,6 @@
   "runtimes.command_venv": "Python : créer un environnement virtuel (.venv)",
   "runtimes.command_window": "Runtimes : afficher les environnements du projet",
   "runtimes.create_venv": "Créer .venv",
-  "runtimes.description": "Un Python, des JDK et des versions de Node.js installés dans le projet lui-même (.atelier/runtimes), en tête du PATH de ses terminaux, avec les versions demandées par .python-version, .java-version ou .nvmrc ; et le .venv du projet.",
   "runtimes.extracting": "Extraction…",
   "runtimes.install": "Installer",
   "runtimes.install_other": "Installer une version…",

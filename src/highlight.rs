@@ -18,7 +18,7 @@ use syntect::{
         Color, FontStyle, HighlightState, Highlighter, RangedHighlightIterator, ScopeSelectors,
         StyleModifier, Theme, ThemeItem, ThemeSettings,
     },
-    parsing::{ParseState, ScopeStack, SyntaxReference},
+    parsing::{ParseState, ScopeStack, SyntaxDefinition, SyntaxReference},
 };
 
 const DARK_KEY: &str = "intellij-dark";
@@ -172,10 +172,22 @@ fn theme(scheme: &Scheme) -> Theme {
     }
 }
 
+/// Syntaxes that syntect does not have, brought by plugins. The editor colors them only while
+/// their plugin is on, as the others.
+const PLUGIN_SYNTAXES: &[&str] = &[crate::plugins::builtins::yaml::TOML_SYNTAX];
+
 fn settings() -> &'static SyntectSettings {
     static SETTINGS: OnceLock<SyntectSettings> = OnceLock::new();
     SETTINGS.get_or_init(|| {
         let mut settings = SyntectSettings::default();
+        let mut syntaxes = settings.ps.clone().into_builder();
+        for source in PLUGIN_SYNTAXES {
+            match SyntaxDefinition::load_from_str(source, true, None) {
+                Ok(syntax) => syntaxes.add(syntax),
+                Err(error) => eprintln!("syntax of a plugin: {error}"),
+            }
+        }
+        settings.ps = syntaxes.build();
         settings.ts.themes.insert(DARK_KEY.into(), theme(&DARK));
         settings.ts.themes.insert(LIGHT_KEY.into(), theme(&LIGHT));
         settings
@@ -186,6 +198,7 @@ fn settings() -> &'static SyntectSettings {
 fn syntax(language: &str) -> &str {
     match language {
         "ts" => "js",
+        "cargo-lock" => "toml",
         "txt" => "",
         other => other,
     }

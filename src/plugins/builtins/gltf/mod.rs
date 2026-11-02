@@ -493,13 +493,13 @@ impl BuiltinPlugin for GltfPlugin {
         "gltf"
     }
     fn name(&self) -> &'static str {
-        tr!("gltf.model_viewer")
+        tr!("plugin.gltf.name")
     }
     fn description(&self) -> &'static str {
-        tr!("gltf.shows_gltf_models")
+        tr!("plugin.gltf.summary")
     }
     fn icon(&self) -> &'static str {
-        "gltf/icon"
+        crate::plugins::builtin::card_icon("gltf")
     }
     fn extensions_dir(&self) -> Option<&'static str> {
         Some("gltf")
