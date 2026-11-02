@@ -44,7 +44,7 @@ Des marqueurs pour les lignes ajoutées, modifiées ou supprimées depuis HEAD, 
 - Créer un dépôt ou en cloner un, depuis le widget ou Rechercher partout.
 - Les opérations tournent en arrière-plan, et le statut se rafraîchit toutes les 5 secondes ou quand on revient dans la fenêtre.
 - Les fichiers ouverts sont enregistrés avant un commit, un checkout ou une mise à jour, puis rechargés s'ils ont changé sur le disque.
-- Le plugin se désactive dans la fenêtre Plugins.
+- Le plugin est automatique (`"git": "auto"` dans `.atelier/config.json`) : activé tant que le projet a un `.git` (un dossier, ou le fichier d'un worktree ou d'un sous-module), il s'active donc de lui-même après un `git init`, et désactivé sans. L'activer ou le désactiver dans la fenêtre Plugins en décide pour le projet.
 
 | Raccourci | Action |
 | --- | --- |

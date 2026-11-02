@@ -47,7 +47,7 @@ Markers for the lines added, changed or deleted since HEAD, and **Git Blame** an
 - Create a repository or clone one, from the widget or Search Everywhere.
 - Operations run in the background, and the status refreshes every 5 seconds or when you come back to the window.
 - Open files are saved before a commit, a checkout or an update, then reloaded if they changed on disk.
-- The plugin can be turned off in the Plugins window.
+- The plugin is automatic (`"git": "auto"` in `.atelier/config.json`): on while the project has a `.git` (a folder, or the file of a worktree or a submodule), so it comes on by itself after a `git init`, and off without one. Turning it on or off in the Plugins window decides for the project.
 
 | Shortcut | Action |
 | --- | --- |

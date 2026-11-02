@@ -4,13 +4,24 @@ aside: false
 
 # Plugins
 
-Atelier est livré avec un catalogue de plugins intégrés : compilés dans l'IDE, disponibles dans tous les projets et **activés par défaut**. Recherchez-les ci-dessous par nom, extension de fichier ou outil (`docx`, `kubectl`, `pnpm`…), ou filtrez par catégorie.
+Atelier est livré avec un catalogue de plugins intégrés : compilés dans l'IDE, disponibles dans tous les projets et **activés par défaut**, sauf Git, activé tant que le projet a un `.git` : il s'active de lui-même après un `git init`. Recherchez-les ci-dessous par nom, extension de fichier ou outil (`docx`, `kubectl`, `pnpm`…), ou filtrez par catégorie.
 
 <PluginMarketplace />
 
 ## Fonctionnement des plugins intégrés
 
-Chaque plugin se désactive dans la fenêtre **Plugins**. Les plugins étendent l'interface elle-même : fenêtres d'outils, widgets de la barre de titre et de la barre d'état, gouttière de l'éditeur, couleurs de l'arborescence, raccourcis et commandes de Rechercher partout. Un plugin sans rien à faire dans le projet ouvert (Maven sans `pom.xml`…) masque ses fenêtres et ses commandes.
+Chaque plugin s'active ou se désactive dans la fenêtre **Plugins**, pour le projet ouvert : l'état de chaque plugin est écrit dans le projet, dans la section `plugins` de `.atelier/config.json`, et peut se partager avec lui. `"auto"` laisse un plugin à l'IDE (Git, tant qu'on ne l'active ou ne le désactive pas à la main) :
+
+```json
+{
+  "plugins": {
+    "builtin": { "git": "auto", "k8s": false, "markdown": true },
+    "external": { "rust-tools": true }
+  }
+}
+```
+
+Les plugins étendent l'interface elle-même : fenêtres d'outils, widgets de la barre de titre et de la barre d'état, gouttière de l'éditeur, couleurs de l'arborescence, raccourcis et commandes de Rechercher partout. Un plugin sans rien à faire dans le projet ouvert (Maven sans `pom.xml`…) masque ses fenêtres et ses commandes.
 
 Un plugin peut avoir des **sous-plugins**, affichés sous lui dans la fenêtre **Plugins** : un sous-plugin ne fonctionne que quand son parent est activé, et se désactive à part (GitHub, sous Git).
 

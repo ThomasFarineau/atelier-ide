@@ -4,13 +4,24 @@ aside: false
 
 # Plugins
 
-Atelier ships with a catalog of built-in plugins: compiled into the IDE, available in every project and **enabled by default**. Search them below by name, file extension or tool (`docx`, `kubectl`, `pnpm`…), or filter by category.
+Atelier ships with a catalog of built-in plugins: compiled into the IDE, available in every project and **enabled by default**, except Git, which is on while the project has a `.git`: it comes on by itself after a `git init`. Search them below by name, file extension or tool (`docx`, `kubectl`, `pnpm`…), or filter by category.
 
 <PluginMarketplace />
 
 ## How built-in plugins work
 
-Each plugin can be turned off in the **Plugins** window. Plugins extend the interface itself: tool windows, title bar and status bar widgets, editor gutter, project tree colors, shortcuts and Search Everywhere commands. A plugin with nothing to do in the open project (Maven without a `pom.xml`…) hides its windows and commands.
+Each plugin is turned on or off in the **Plugins** window, for the open project: the state of every plugin is written in the project, in the `plugins` section of `.atelier/config.json`, and can be shared with it. `"auto"` leaves a plugin to the IDE (Git, until it is turned on or off by hand):
+
+```json
+{
+  "plugins": {
+    "builtin": { "git": "auto", "k8s": false, "markdown": true },
+    "external": { "rust-tools": true }
+  }
+}
+```
+
+Plugins extend the interface itself: tool windows, title bar and status bar widgets, editor gutter, project tree colors, shortcuts and Search Everywhere commands. A plugin with nothing to do in the open project (Maven without a `pom.xml`…) hides its windows and commands.
 
 A plugin can have **sub-plugins**, shown under it in the **Plugins** window: a sub-plugin runs only while its parent is on, and can be turned off by itself (GitHub, under Git).
 

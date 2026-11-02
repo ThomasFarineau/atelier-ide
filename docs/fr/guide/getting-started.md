@@ -56,7 +56,7 @@ cargo build --release             # target/release/atelier-ide(.exe)
 
 ## Où Atelier range ses données
 
-La langue, le thème, la taille de police, les projets récents et les plugins activés sont enregistrés dans `settings.json`, dans le dossier de données d'Atelier :
+La langue, le thème, la taille de police et les projets récents sont enregistrés dans `settings.json`, dans le dossier de données d'Atelier :
 
 | Système | Dossier |
 | --- | --- |
@@ -64,4 +64,4 @@ La langue, le thème, la taille de police, les projets récents et les plugins a
 | macOS | `~/Library/Application Support/Atelier` |
 | Linux | `$XDG_DATA_HOME/Atelier` (par défaut `~/.local/share/Atelier`) |
 
-Les réglages d'un projet (configurations d'exécution, source des traductions, sessions d'IA, graphe de contexte) sont dans son dossier `.atelier/`.
+Les réglages d'un projet (plugins activés, configurations d'exécution, source des traductions, sessions d'IA, graphe de contexte) sont dans son dossier `.atelier/`.
