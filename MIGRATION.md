@@ -193,8 +193,14 @@ Pour contrôler : les compteurs de téléchargement des archives de la release p
    privés.
 4. **Le build des plugins** : le workflow **Release** de chaque `plugin-<nom>` (toutes les six
    heures, ou à la main pour un tag) prend `app` au tag de la dernière release, y place le plugin,
-   lance la même commande que `build.yml` (avec `--workspace`), puis ajoute à la release de
-   `releases` ses archives `<plugin>-<os>-<arch>` et `<plugin>-SHA256SUMS`. Secrets de
+   lance la même commande que `build.yml` (avec `--workspace`), puis publie dans `releases` la
+   release `plugins/<plugin>/vX.Y.Z` (ses archives `<plugin>-<os>-<arch>` et
+   `<plugin>-SHA256SUMS`), jamais marquée comme la dernière.
+
+   Dans `releases`, l'IDE est publié sous `app/vX.Y.Z` et chaque plugin sous
+   `plugins/<nom>/vX.Y.Z` (X.Y.Z : la version de l'IDE). Le lanceur ne lit plus
+   `releases/latest`, qui pourrait être un plugin : il prend la plus haute release dont le tag
+   commence par `app/` (ou sans préfixe, comme l'ancien `v0.1.4`, renommé `app/v0.1.4`). Secrets de
    l'organisation : `READ_TOKEN` (lit `app`) et `RELEASES_TOKEN` (écrit dans `releases`).
 5. **À garder en phase** : la commande de build de `build.yml` dans `app` et celle du workflow
    Release des plugins (cible, profil, pas de `RUSTFLAGS`).

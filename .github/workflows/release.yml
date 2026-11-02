@@ -55,23 +55,29 @@ jobs:
 
       - name: Version
         id: version
-        run: echo "tag=v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)" >> "$GITHUB_OUTPUT"
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          # In the repository of the downloads, the releases of the IDE are `app/vX.Y.Z`, those of
+          # the plugins `plugins/<name>/vX.Y.Z` (src/bin/atelier.rs looks for the first ones).
+          echo "download_tag=app/v$version" >> "$GITHUB_OUTPUT"
 
       # The notes of the version in CHANGELOG.md: from its title to the next one.
       - name: Draft in the repository of the downloads
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
-          TAG: ${{ steps.version.outputs.tag }}
+          TAG: ${{ steps.version.outputs.download_tag }}
+          VERSION: ${{ steps.version.outputs.tag }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
             echo "::error::The secret RELEASES_TOKEN is missing: nothing was published."
             exit 1
           fi
-          awk -v v="${TAG#v}" '$0 ~ "^## " v "( |$)" {on=1; next} /^## / && on {exit} on' CHANGELOG.md > notes.md
+          awk -v v="${VERSION#v}" '$0 ~ "^## " v "( |$)" {on=1; next} /^## / && on {exit} on' CHANGELOG.md > notes.md
           if gh release view "$TAG" --repo atelier-ide-org/releases > /dev/null 2>&1; then
             gh release upload "$TAG" artifacts/* --clobber --repo atelier-ide-org/releases
           else
-            gh release create "$TAG" artifacts/* --draft --title "$TAG" --notes-file notes.md \
+            gh release create "$TAG" artifacts/* --draft --title "Atelier ${VERSION#v}" --notes-file notes.md \
               --repo atelier-ide-org/releases
           fi
 
@@ -87,4 +93,4 @@ jobs:
       - name: Publish in the repository of the downloads
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
-        run: gh release edit "${{ steps.version.outputs.tag }}" --draft=false --latest --repo atelier-ide-org/releases
+        run: gh release edit "${{ steps.version.outputs.download_tag }}" --draft=false --latest --repo atelier-ide-org/releases
