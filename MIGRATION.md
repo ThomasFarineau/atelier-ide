@@ -21,8 +21,11 @@
 | Dépôt public `atelier-ide-org/releases` créé, avec son README | Créer le jeton `RELEASES_TOKEN` (fine-grained, *Contents: read and write* sur `releases` seulement) et l'ajouter aux secrets de `app` |
 | Lanceur (`REPO`), README, doc, installeur, `knope.toml`, `Cargo.toml` pointent vers l'org | Org → Settings → Actions → General : cocher « Allow GitHub Actions to create and approve pull requests » |
 | `build.yml` compile et empaquette les plugins, `release.yml` publie dans `releases` (brouillon, puis publication) et dans `app` | En local : `git remote set-url origin git@github.com:atelier-ide-org/app.git` |
-| Base du site corrigée en `/app/` (Pages est déjà à `atelier-ide-org.github.io/app/` depuis le transfert) | Étapes 2 à 6 ci-dessous |
+| Base du site corrigée en `/app/` (Pages est déjà à `atelier-ide-org.github.io/app/` depuis le transfert), puis le site déplacé dans `docs` | Étapes 2 à 4 ci-dessous |
 | Changesets : plugins natifs (`minor`), déménagement des téléchargements (`patch`) | |
+| Jeton `RELEASES_TOKEN`, réglage Actions de l'org (fait par toi) | Avant l'étape 4 : un jeton en lecture sur `app` (*Contents: read*), dans les secrets de `docs` sous le nom `APP_READ_TOKEN` |
+| `plugin-api` (public, tag `v0.1.0`), `plugin-gltf-viewer` (tag `v0.1.0`), `docs` : historiques extraits avec `git filter-repo` | Pages du dépôt `docs` : Settings → Pages → Source : GitHub Actions |
+| `app` : le plugin en sous-module, l'API par son tag, `docs/` retiré | |
 
 ---
 
@@ -138,24 +141,25 @@ Pour contrôler : les compteurs de téléchargement des archives de la release p
 - Ne **jamais** recréer de dépôt `ThomasFarineau/atelier-ide` : cela casserait la redirection
   dont dépendent les retardataires.
 
-### Étape 5 — Sortir la doc dans `docs`
+### Étape 5 — Sortir la doc dans `docs` ✅
 
 1. Déplacer `docs/` de `app` vers la racine du dépôt `docs` (avec `git filter-repo
-   --subdirectory-filter docs` pour garder l'historique).
+   --subdirectory-filter docs` pour garder l'historique). VitePress exclut `app/**` des pages.
 2. Le site passe de `atelier-ide-org.github.io/app/` (son adresse depuis le transfert) à
    `atelier-ide-org.github.io/docs/`. Dans `config.mts`, changer `base: '/app/'` en `base: '/docs/'`. GitHub Pages **ne
    redirige pas** d'un propriétaire à l'autre : l'ancienne adresse donnera une 404. Un domaine à
    soi (`CNAME`) évite de refaire ce changement la prochaine fois.
 3. Le catalogue des plugins : le workflow de `docs` récupère `app` avec un jeton en lecture seule
-   (`APP_READ_TOKEN`) et `actions/checkout` (`repository: atelier-ide-org/app`, `path: app`), et
-   récupère les dépôts `plugin-*` publics de la même façon. `catalog.ts` lit alors `app/src/...`
-   et `plugin-*/doc/`. On garde ainsi la règle actuelle : la page d'un plugin vit à côté de son
+   (`APP_READ_TOKEN`) et `actions/checkout` (`repository: atelier-ide-org/app`, `path: app`,
+   `submodules: recursive`) : les plugins natifs arrivent avec, en sous-modules. `catalog.ts`
+   lit `app/src/...` et `app/plugins/*/doc/` (variable `ATELIER_APP`, sinon `../app`). Le site
+   est reconstruit chaque nuit pour suivre le code. On garde ainsi la règle actuelle : la page d'un plugin vit à côté de son
    code.
 4. Le lien « Edit this page » de `config.mts` ne peut plus viser `app`, qui est privé. Le faire
    pointer vers `docs` pour les pages du site, et le retirer pour les pages qui viennent du code.
 5. Retirer `docs/` et `.github/workflows/docs.yml` de `app`.
 
-### Étape 6 — Les plugins dans `plugin-<nom>`
+### Étape 6 — Les plugins dans `plugin-<nom>` ✅
 
 1. **`plugin-api`** : sortir `plugins/atelier-plugin-api` dans son dépôt public, avec un tag par
    version (`v0.1.0`). `app` et les plugins en dépendent par ce tag :
@@ -170,18 +174,15 @@ Pour contrôler : les compteurs de téléchargement des archives de la release p
    --subdirectory-filter plugins/gltf-viewer` (l'historique de l'ancien plugin intégré suit,
    grâce aux `git mv`). Le dépôt garde une CI de tests (`cargo test`), mais **ne publie pas
    de DLL** (contrainte 2).
-3. **Dans `app`**, les plugins redeviennent des membres du workspace au moment du build :
-   - `members = [".", "plugins/*"]` et `default-members = [".", "plugins/*"]` ;
-   - `plugins/` est ignoré par git, et un fichier `plugins.toml` liste les plugins livrés avec
-     chaque version, avec leur tag :
+3. **Dans `app`**, chaque plugin est un **sous-module git** dans `plugins/<nom>`, épinglé sur un
+   tag (`v0.1.0`), et un membre du workspace (`members` et `default-members`). On a préféré les
+   sous-modules au fichier `plugins.toml` et à son script, prévus au départ : ils épinglent aussi
+   une version, mais sans outillage à maintenir, et `Cargo.lock` reste stable. La CI fait
+   `actions/checkout` avec `submodules: recursive`. En local :
+   `git clone --recursive`, ou `git submodule update --init`.
 
-     ```toml
-     [plugins]
-     gltf-viewer = { repo = "atelier-ide-org/plugin-gltf-viewer", tag = "v0.1.0" }
-     ```
-
-   - un script (`scripts/fetch-plugins`) clone chaque plugin dans `plugins/<nom>` au bon tag.
-     La CI l'appelle avant `cargo build`, et le développeur aussi, une fois.
+   Pour livrer une nouvelle version d'un plugin : la taguer dans `plugin-<nom>`, puis
+   `cd plugins/<nom> && git checkout vX.Y.Z` dans `app`, et commiter le sous-module.
 4. **Le build** : dans `build.yml`, retirer `--bins` de
    `cargo build --release --locked --bins --target …`, sinon les `cdylib` ne sont pas produites.
    Garder **une seule commande** pour l'IDE et les plugins : les fonctionnalités des crates sont
@@ -208,8 +209,8 @@ Pour contrôler : les compteurs de téléchargement des archives de la release p
 | 2 | Release pont, publiée dans `app` et dans `releases` | public | `0.2.0` |
 | 3 | Attendre la diffusion | public | — |
 | 4 | `app` passe en privé | **privé** | — |
-| 5 | Dépôt `docs`, nouvelle adresse du site | privé | — |
-| 6 | `plugin-api`, `plugin-gltf-viewer`, build des plugins dans la CI de `app` | privé | `0.3.0` |
+| 5 | Dépôt `docs` ✅, nouvelle adresse du site ✅ | public | — |
+| 6 | `plugin-api` ✅, `plugin-gltf-viewer` ✅, build des plugins dans la CI de `app` ✅ | public | `0.2.0` |
 
 Les étapes 5 et 6 ne dépendent pas l'une de l'autre et peuvent être faites dans l'ordre inverse.
 L'étape 6 peut aussi commencer avant l'étape 4, tant que `plugin-api` est public.

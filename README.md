@@ -13,8 +13,8 @@
 
 <p align="center">
   A fast, modern desktop IDE written in Rust.<br>
-  <a href="https://atelier-ide-org.github.io/app/"><b>Documentation</b></a> ·
-  <a href="https://atelier-ide-org.github.io/app/fr/">Documentation en français</a> ·
+  <a href="https://atelier-ide-org.github.io/docs/"><b>Documentation</b></a> ·
+  <a href="https://atelier-ide-org.github.io/docs/fr/">Documentation en français</a> ·
   <a href="https://github.com/atelier-ide-org/releases/releases/latest">Download</a> ·
   <a href="CHANGELOG.md">Changelog</a>
 </p>
@@ -33,13 +33,14 @@
 - **Windows**: run `atelier-setup-windows-x86_64.exe` from the [latest release](https://github.com/atelier-ide-org/releases/releases/latest).
 - **Linux and macOS**: download the launcher of your platform (`atelier-<os>-<arch>`) from the latest release and start it; it installs and updates the IDE next to itself.
 
-Then `atelier .` opens the current folder. See [Installation](https://atelier-ide-org.github.io/app/guide/getting-started).
+Then `atelier .` opens the current folder. See [Installation](https://atelier-ide-org.github.io/docs/guide/getting-started).
 
 ## Build from source
 
-You need stable Rust and a native toolchain (on Windows, the Visual Studio Build Tools with the C++ workload).
+You need stable Rust and a native toolchain (on Windows, the Visual Studio Build Tools with the C++ workload). The native plugins of `plugins/` are git submodules (one repository `plugin-<name>` each), built with the IDE:
 
 ```bash
+git clone --recursive git@github.com:atelier-ide-org/app.git   # or: git submodule update --init
 cargo run -- examples/demo        # the IDE on the multi-language demo project
 cargo dev                         # hot reload while you work on the IDE
 cargo build --release             # target/release/atelier-ide(.exe)
@@ -53,15 +54,11 @@ cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
 ```
 
-A change worth a line in the changelog comes with a file in `.changeset/` (see [Versions & releases](https://atelier-ide-org.github.io/app/contributing/releases)). The architecture and the development tools are described in [Development](https://atelier-ide-org.github.io/app/contributing/development).
+A change worth a line in the changelog comes with a file in `.changeset/` (see [Versions & releases](https://atelier-ide-org.github.io/docs/contributing/releases)). The architecture and the development tools are described in [Development](https://atelier-ide-org.github.io/docs/contributing/development).
 
 ## Documentation
 
-The documentation lives in [`docs/`](docs) (VitePress, with [Bun](https://bun.sh)), in English and French, and is published to GitHub Pages from `main`:
-
-```bash
-cd docs && bun install && bun run dev
-```
+The documentation has a repository of its own, [atelier-ide-org/docs](https://github.com/atelier-ide-org/docs) (VitePress, with [Bun](https://bun.sh)), in English and French, published at <https://atelier-ide-org.github.io/docs/>. The pages of the plugins and languages stay here, next to their code, in the `doc` folder of each one.
 
 ## License
 

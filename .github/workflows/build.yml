@@ -38,6 +38,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          # The native plugins of `plugins/`.
+          submodules: recursive
           ref: ${{ inputs.ref }}
 
       - name: Install Linux dependencies

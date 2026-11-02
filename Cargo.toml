@@ -1,7 +1,8 @@
-# The native plugins of `plugins/` are built with the IDE: they share its crates, which must be
-# compiled with the same features for the IDE to load them (see `plugins/atelier-plugin-api`).
+# The native plugins of `plugins/` (git submodules, one repository `plugin-<name>` each) are built
+# with the IDE: they share its crates, which must be compiled with the same features for the IDE
+# to load them (see atelier-ide-org/plugin-api).
 [workspace]
-members = [".", "plugins/atelier-plugin-api", "plugins/gltf-viewer"]
+members = [".", "plugins/gltf-viewer"]
 default-members = [".", "plugins/gltf-viewer"]
 # A demo project of its own, opened in the IDE.
 exclude = ["examples/demo"]
@@ -63,7 +64,8 @@ rodio = { version = "0.23", default-features = false, features = ["playback", "m
 lzma-rs = "0.3"
 # Native plugins: the dynamic libraries of `.atelier/plugins`, and the interface they implement.
 libloading = "0.8"
-atelier-plugin-api = { path = "plugins/atelier-plugin-api" }
+# The same tag as the plugins: one crate, whose types the IDE and the plugins share.
+atelier-plugin-api = { git = "https://github.com/atelier-ide-org/plugin-api", tag = "v0.1.0" }
 mongodb = { version = "3", features = ["sync"] }
 postgres = "0.19"
 postgres-native-tls = "0.5"
