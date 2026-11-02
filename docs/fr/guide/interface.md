@@ -30,7 +30,7 @@ Dossiers pliables, création de fichiers, menu contextuel (copier le chemin, aff
 - **Rechercher dans le projet** : **Ctrl+Maj+F** ouvre la fenêtre **Rechercher** : recherche dans tout le projet hors dépendances, avec les mêmes options, un masque de fichiers (`*.js, src/*`), les résultats groupés par fichier et surlignés (un clic ouvre l'endroit), et « Tout remplacer » dans le projet après confirmation.
 - **Repli du code** : chevrons dans la gouttière (accolades, crochets, parenthèses, commentaires de bloc, groupes d'imports). **Ctrl+-** replie, **Ctrl+=** déplie, **Ctrl+Maj+-** / **Ctrl+Maj+=** replient / déplient tout, **Ctrl+.** bascule. Un clic sur le `...` déplie, et atteindre une ligne cachée (recherche, navigation) déplie ce qui la cache.
 - **Problèmes** (**Alt+6**) : les erreurs et avertissements des documents ouverts, groupés par fichier, avec filtres et accès direct à la ligne ; un clic sur le compteur de la barre d'état ouvre la fenêtre. Des marques colorées, le long du bord droit de l'éditeur, montrent où sont les problèmes du fichier et y mènent d'un clic.
-- Les fichiers sont limités à 4 Mo, et les fichiers binaires sont refusés (sauf ceux qu'ouvre une [visionneuse](../tools/viewers)).
+- Les fichiers sont limités à 4 Mo, et les fichiers binaires sont refusés (sauf ceux qu'ouvre une [visionneuse](../plugins/)).
 
 ## Terminal
 

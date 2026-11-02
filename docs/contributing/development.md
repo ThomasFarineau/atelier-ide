@@ -62,4 +62,32 @@ bun run dev       # http://localhost:5173/atelier-ide/
 bun run build     # checks the links too
 ```
 
+### Pages of the built-in plugins
+
+The pages and the catalog of the built-in plugins (`/plugins/`, `/languages/`) are not in `docs/`: each plugin carries them in a `doc` folder, next to its code, and the site reads them at build time (`docs/.vitepress/catalog.ts`).
+
+```
+src/plugins/builtins/<plugin>/doc/     (src/languages/<language>/doc/ for a language)
+  en-US.md   the page, at /plugins/<plugin>
+  fr-FR.md   the French page, at /fr/plugins/<plugin>
+```
+
+The front matter of each page is the card of the plugin in the catalog:
+
+```md
+---
+name: Cargo
+category: build        # vcs, build, viewers, data, ai or tools; not for a language
+icon: icon.svg         # from the plugin folder; icon.svg (and icon.dark.svg) by default
+summary: "Packages, workspaces and targets of Cargo.toml: run, build, test, Clippy…"
+tags: [rust, clippy]   # more words for the search
+see: git#github        # without a page: the page the card leads to
+---
+
+# Cargo
+…
+```
+
+`fr-FR.md` gives only `name` and `summary` (and possibly more `tags`); the other fields are in `en-US.md`. A file with only a front matter is a card without a page. The IDE reads the `name`, `summary` and `icon` too, for its **Plugins** page and its menus (`build.rs` makes them the texts `plugin.<plugin>.name` and `plugin.<plugin>.summary`, and the icon `card_icon("<plugin>")`): one text and one logo for both. The icon must be an icon of the IDE (an `.svg` its build collects). The folder name is the address of the page, and a plugin folder inside another one (`git/github`) is a sub-plugin, shown in the card of its parent. The sidebar lists the pages by themselves; a mistake in a card stops the build.
+
 It is deployed to GitHub Pages by `.github/workflows/docs.yml` on every push to `main` that touches `docs/`.

@@ -15,4 +15,5 @@ La barre d'état indique combien de lignes ont changé, ou que le code était d�
 | Rust | rustfmt, par rust-analyzer quand il tourne, sinon directement, avec l'édition de la crate et le `rustfmt.toml` du projet. Les fins de ligne du fichier sont gardées. |
 | JavaScript, TypeScript | Le formateur de tsserver (serveur de langage), avec l'indentation du fichier. L'optimisation des imports les trie et retire ceux qui ne servent pas. |
 | Java | jdtls |
-| JSON | Atelier lui-même, avec l'indentation du fichier et l'ordre des clés |
+| JSON | [Atelier lui-même](./json), avec l'indentation du fichier et l'ordre des clés |
+| YAML, TOML | Le [plugin YAML / TOML](../plugins/yaml), commentaires gardés |

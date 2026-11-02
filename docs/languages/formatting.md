@@ -15,4 +15,5 @@ The status bar says how many lines changed, or that the code was already well fo
 | Rust | rustfmt, through rust-analyzer when it runs, otherwise directly, with the edition of the crate and the project's `rustfmt.toml`. The line endings of the file are kept. |
 | JavaScript, TypeScript | The formatter of tsserver (language server), with the indentation of the file. Optimizing the imports sorts them and removes the unused ones. |
 | Java | jdtls |
-| JSON | Atelier itself, with the indentation of the file and the order of the keys |
+| JSON | [Atelier itself](./json), with the indentation of the file and the order of the keys |
+| YAML, TOML | The [YAML / TOML plugin](../plugins/yaml), comments kept |
