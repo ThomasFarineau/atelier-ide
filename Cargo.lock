@@ -453,7 +453,7 @@ dependencies = [
 [[package]]
 name = "atelier-plugin-api"
 version = "0.2.0"
-source = "git+https://github.com/atelier-ide-org/plugin-api?tag=v0.2.0#7e4e91136b35fb07d4e5fb996717e13c61aeecca"
+source = "git+https://github.com/atelier-ide-org/api?tag=v0.2.0#7e4e91136b35fb07d4e5fb996717e13c61aeecca"
 dependencies = [
  "eframe",
 ]

@@ -1,39 +1,46 @@
 # Migration vers l'organisation `atelier-ide-org`
 
-## La cible
+## État au 2 novembre 2026
 
-| Dépôt | Visibilité | Contenu |
-| --- | --- | --- |
-| `app` | **privé** | Le code de l'IDE et du lanceur, le workspace Cargo, `CHANGELOG.md`, `.changeset/`, la CI de build |
-| `releases` *(nom à choisir)* | public | Les exécutables seulement : releases GitHub avec les archives, les installeurs, les plugins compilés et `SHA256SUMS`. Un README, pas de code |
-| `plugin-<nom>` | public ou privé | Le code d'un plugin natif (`plugin-gltf-viewer`), avec son `plugin.json`, ses `locales/` et son `doc/` |
-| `plugin-api` | public | `atelier-plugin-api`, l'interface que les plugins implémentent |
-| `docs` | public | Le site VitePress (aujourd'hui `docs/` de `app`), publié sur GitHub Pages |
-| `.github` | public | Optionnel : le profil de l'organisation (`profile/README.md`) |
+Tous les dépôts de l'organisation sont **publics**.
 
-État au 2 novembre 2026 : `ThomasFarineau/atelier-ide` a été transféré vers
-`atelier-ide-org/app`, **passé en privé le jour même, avant la release pont** (étapes 2 et 3
-sautées). Conséquences, acceptées :
-
-- les lanceurs installés (≤ `0.1.4`) reçoivent une 404 et ne se mettront plus à jour seuls :
-  leurs utilisateurs doivent réinstaller depuis `releases` ;
-- la release `v0.1.4` a été copiée telle quelle dans `releases`, pour que le téléchargement
-  marche. Son lanceur pointe encore vers l'ancien dépôt : un utilisateur qui l'installe devra
-  réinstaller la version suivante à la main, une fois. C'est la **première release publiée par
-  la CI** (`0.2.0`) qui rétablit les mises à jour automatiques ; la publier vite.
-
-### Où on en est
-
-| Fait | Reste à faire, par toi (droits que Claude n'a pas) |
+| Dépôt | Contenu |
 | --- | --- |
-| Dépôt public `atelier-ide-org/releases` créé, avec son README | Créer le jeton `RELEASES_TOKEN` (fine-grained, *Contents: read and write* sur `releases` seulement) et l'ajouter aux secrets de `app` |
-| Lanceur (`REPO`), README, doc, installeur, `knope.toml`, `Cargo.toml` pointent vers l'org | Org → Settings → Actions → General : cocher « Allow GitHub Actions to create and approve pull requests » |
-| `build.yml` compile et empaquette les plugins, `release.yml` publie dans `releases` (brouillon, puis publication) et dans `app` | En local : `git remote set-url origin git@github.com:atelier-ide-org/app.git` |
-| Base du site corrigée en `/app/` (Pages est déjà à `atelier-ide-org.github.io/app/` depuis le transfert), puis le site déplacé dans `docs` | Étapes 2 à 4 ci-dessous |
-| Changesets : plugins natifs (`minor`), déménagement des téléchargements (`patch`) | |
-| Jeton `RELEASES_TOKEN`, réglage Actions de l'org (fait par toi) | `READ_TOKEN` (*Contents: read* sur `app` et les `plugin-*` privés) : en **secret d'organisation**, visible par `app` et `docs` |
-| `plugin-api` (public, tag `v0.1.0`), `plugin-gltf-viewer` (tag `v0.1.0`), `docs` : historiques extraits avec `git filter-repo` | Pages du dépôt `docs` : Settings → Pages → Source : GitHub Actions |
-| `app` : sans plugin (`plugins/` ignoré), l'API par son tag, `rust-toolchain.toml`, `docs/` retiré | Secrets d'organisation `READ_TOKEN` et `RELEASES_TOKEN`, visibles par `plugin-gltf-viewer` et `docs` |
+| `app` | Le code de l'IDE et du lanceur, le workspace Cargo, `CHANGELOG.md`, `.changeset/`, la CI de build |
+| `releases` | Les téléchargements seulement : l'IDE sous `app/vX.Y.Z`, chaque plugin sous `plugins/<nom>/vX.Y.Z` |
+| `api` | Le crate `atelier-plugin-api` (branche `main`, un tag par version), et sur la branche `kits` le kit de compilation de chaque version de l'IDE (`vX.Y.Z/`) |
+| `plugin-<nom>` | Un plugin natif (`plugin-gltf-viewer`) : son code, son `plugin.json`, ses `locales/` et son `doc/` |
+| `docs` | Le site VitePress, publié sur <https://atelier-ide-org.github.io/docs/> |
+
+**Un seul secret** : `ATELIER_RELEASES`, un jeton de l'organisation qui écrit le contenu de
+`releases` et d'`api`.
+- `app` s'en sert pour publier l'IDE dans `releases` et son kit dans `api`.
+- Les plugins s'en servent pour publier dans `releases`.
+- Tout le reste se lit sans jeton.
+
+**Comment sort une version :**
+1. La release d'`app` publie `app/vX.Y.Z` dans `releases`. Elle publie aussi le kit de
+   compilation (`Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, sans code) dans
+   `api@kits/vX.Y.Z/`.
+2. La CI de chaque plugin (toutes les six heures, ou à la main) trouve cette release, fait du kit
+   un paquet vide, y place le plugin et le compile comme l'IDE. Elle publie ensuite
+   `plugins/<nom>/vX.Y.Z` avec un seul fichier, `<nom>.atelier-plugin`, qui contient les 4 systèmes.
+3. L'utilisateur l'installe dans l'IDE : Plugins → **+** (« Installer un plugin depuis un
+   fichier »). L'installation vaut pour tous les projets.
+
+**Vérifié :** un plugin compilé avec seulement le kit se charge dans l'IDE compilé seul. Même
+compilateur et même empreinte, parce que l'API ne dépend que d'eframe.
+
+`app` a été privé quelques heures le 2 novembre, puis repassé en public. Les anciens lanceurs
+(≤ `0.1.4`), qui interrogent `ThomasFarineau/atelier-ide`, suivent la redirection vers `app` et
+fonctionnent. La release `0.2.0` (publiée à la fois dans `app` et dans `releases`) leur apporte
+le lanceur qui lit `releases`.
+
+Ce qui suit est le plan d'origine, gardé pour l'historique. Certains choix ont changé depuis :
+- les dépôts sont publics ;
+- un seul secret ;
+- les plugins ne sont ni des sous-modules ni compilés avec le code d'`app` ;
+- `plugin-api` a été renommé `api`.
 
 ---
 
@@ -174,7 +181,7 @@ Pour contrôler : les compteurs de téléchargement des archives de la release p
    qu'un seul crate, et les `TypeId` sont identiques) :
 
    ```toml
-   atelier-plugin-api = { git = "https://github.com/atelier-ide-org/plugin-api", tag = "v0.2.0" }
+   atelier-plugin-api = { git = "https://github.com/atelier-ide-org/api", tag = "v0.2.0" }
    ```
 
    Ce crate ne dépend **que d'eframe**. La v0.1.0 dépendait aussi de `serde_json`. Or l'identité

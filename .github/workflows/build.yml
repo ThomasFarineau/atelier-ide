@@ -2,7 +2,7 @@ name: Build
 
 # Builds the IDE and its bootstrap for Windows, Linux and macOS and keeps the files as artifacts.
 # The native plugins are built afterwards, by the CI of their repositories, for the tag of the
-# release (see atelier-ide-org/plugin-api).
+# release (see atelier-ide-org/api).
 # `prepare-release.yml` calls it on the release branch (a preview, and the cache of the release),
 # `release.yml` before publishing a release; started by hand, it only builds.
 
