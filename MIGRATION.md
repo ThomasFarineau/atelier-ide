@@ -12,7 +12,15 @@
 | `.github` | public | Optionnel : le profil de l'organisation (`profile/README.md`) |
 
 État au 2 novembre 2026 : `ThomasFarineau/atelier-ide` a été transféré vers
-`atelier-ide-org/app`, qui est **encore public**. **Ne pas le passer en privé avant l'étape 4.**
+`atelier-ide-org/app`, **passé en privé le jour même, avant la release pont** (étapes 2 et 3
+sautées). Conséquences, acceptées :
+
+- les lanceurs installés (≤ `0.1.4`) reçoivent une 404 et ne se mettront plus à jour seuls :
+  leurs utilisateurs doivent réinstaller depuis `releases` ;
+- la release `v0.1.4` a été copiée telle quelle dans `releases`, pour que le téléchargement
+  marche. Son lanceur pointe encore vers l'ancien dépôt : un utilisateur qui l'installe devra
+  réinstaller la version suivante à la main, une fois. C'est la **première release publiée par
+  la CI** (`0.2.0`) qui rétablit les mises à jour automatiques ; la publier vite.
 
 ### Où on en est
 
