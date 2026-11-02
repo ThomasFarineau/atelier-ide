@@ -104,7 +104,10 @@ fn git_is_on_only_in_a_repository_and_the_plugins_are_written_in_the_project() {
     assert!(ide.builtin_enabled("markdown"));
     let states = crate::atelier::plugin_states(&plain);
     assert_eq!(states.builtin.get("git"), Some(&PluginState::AUTO));
-    assert_eq!(states.builtin.get("markdown"), Some(&PluginState::Set(true)));
+    assert_eq!(
+        states.builtin.get("markdown"),
+        Some(&PluginState::Set(true))
+    );
     // Every plugin of the Plugins page is listed, the IDE's own windows are not.
     let listed = ide.builtins.iter().filter(|p| !p.core()).count();
     assert_eq!(states.builtin.len(), listed);
@@ -119,8 +122,12 @@ fn git_is_on_only_in_a_repository_and_the_plugins_are_written_in_the_project() {
 
     // A worktree or a submodule has a `.git` file.
     let worktree = temp_project("plugins-worktree");
-    fs::write(worktree.join(".git"), "gitdir: ../repository/.git
-").unwrap();
+    fs::write(
+        worktree.join(".git"),
+        "gitdir: ../repository/.git
+",
+    )
+    .unwrap();
     let mut ide = ide_in(worktree.clone());
     ide.load_project_plugins(true);
     assert!(ide.builtin_enabled("git"));

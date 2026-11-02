@@ -55,9 +55,22 @@ fn sub_plugins_have_a_parent() {
 fn plugins_have_a_card() {
     for plugin in all().iter().filter(|p| !p.core()) {
         // An unknown text shows as its key.
-        assert!(!plugin.name().starts_with("plugin."), "{} has no card", plugin.id());
-        assert!(!plugin.description().starts_with("plugin."), "{}", plugin.id());
-        assert_ne!(plugin.icon(), "settings", "{} has no icon in its card", plugin.id());
+        assert!(
+            !plugin.name().starts_with("plugin."),
+            "{} has no card",
+            plugin.id()
+        );
+        assert!(
+            !plugin.description().starts_with("plugin."),
+            "{}",
+            plugin.id()
+        );
+        assert_ne!(
+            plugin.icon(),
+            "settings",
+            "{} has no icon in its card",
+            plugin.id()
+        );
     }
 }
 

@@ -50,7 +50,7 @@ impl Builder<'_> {
     /// Where the text of a scalar ends. The parser only says where it starts.
     fn scalar_end(&self, start: usize, value: &str, style: TScalarStyle) -> usize {
         let rest = &self.text[start..];
-        let line = rest.find('\n').map_or(rest.len(), |n| n);
+        let line = rest.find('\n').unwrap_or(rest.len());
         let end = match style {
             TScalarStyle::SingleQuoted => {
                 let mut i = 1;

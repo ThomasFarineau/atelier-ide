@@ -120,7 +120,7 @@ fn collect_cards(
     let mut paths: Vec<_> = read.flatten().map(|e| e.path()).collect();
     paths.sort();
     for path in paths.into_iter().filter(|p| p.is_dir()) {
-        if !path.file_name().is_some_and(|n| n == "doc") {
+        if path.file_name().is_none_or(|n| n != "doc") {
             collect_cards(&path, out, icons);
             continue;
         }
@@ -128,7 +128,11 @@ fn collect_cards(
         if dir.join("icon.svg").exists() {
             icons.insert(plugin.clone(), dir.join("icon.svg"));
         }
-        let mut cards: Vec<_> = fs::read_dir(&path).unwrap().flatten().map(|e| e.path()).collect();
+        let mut cards: Vec<_> = fs::read_dir(&path)
+            .unwrap()
+            .flatten()
+            .map(|e| e.path())
+            .collect();
         cards.sort();
         for card in cards {
             let file = card.file_name().unwrap().to_string_lossy().into_owned();
@@ -286,7 +290,10 @@ fn main() {
             .ok()
             .and_then(|file| keys.get(&file))
             .unwrap_or_else(|| {
-                panic!("the icon of {plugin}, {}, is not an icon of the IDE", file.display())
+                panic!(
+                    "the icon of {plugin}, {}, is not an icon of the IDE",
+                    file.display()
+                )
             });
         table.push_str(&format!("    ({plugin:?}, {key:?}),\n"));
     }
