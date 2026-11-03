@@ -6,7 +6,7 @@ name: Release
 #   bootstrap looks for updates (src/bin/atelier.rs);
 # - here, with `knope release`, which tags `vX.Y.Z` and publishes the notes of CHANGELOG.md. The
 #   bootstraps installed before the move to `releases` still look here, through the redirection
-#   of `ThomasFarineau/atelier-ide`, until they update themselves (see MIGRATION.md).
+#   of `ThomasFarineau/atelier-ide`, until they update themselves.
 # The release of `releases` is a draft until both are done: a bootstrap never sees it without
 # its files.
 #
