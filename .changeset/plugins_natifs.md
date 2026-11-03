@@ -1,5 +1,5 @@
 ---
-default: minor
+default: major
 ---
 
 # Plugins natifs, et la visionneuse 3D devient un plugin à installer
