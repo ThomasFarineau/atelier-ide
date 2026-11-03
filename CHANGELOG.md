@@ -2,6 +2,54 @@
 
 Every version of Atelier IDE. The entries come from the files of `.changeset/` (see [Versions & releases](https://atelier-ide-org.github.io/docs/contributing/releases)).
 
+## 0.1.5 (2026-11-03)
+
+### Features
+
+#### Fiches des plugins, partagées avec la documentation
+
+Le nom, le résumé et l'icône de chaque plugin intégré viennent de sa fiche : le front matter de sa page de documentation, dans le dossier `doc` du plugin. La fenêtre Plugins et ses menus montrent donc les mêmes textes et le même logo que le catalogue de la documentation ; les langages y ont désormais leur logo au lieu de l'engrenage.
+
+La documentation a un catalogue des plugins, avec une recherche et un filtre par catégorie, et la page de chaque plugin vit à côté de son code.
+
+#### Plugin YAML / TOML, et coloration des langages par leur plugin
+
+**YAML / TOML.** Un nouveau plugin colore et reformate (Ctrl+Alt+L) les fichiers YAML et TOML en gardant les commentaires, les guillemets et l'ordre des clés ; un reformatage qui changerait les données du fichier est refusé. Le menu contextuel d'un fichier `.yaml` ou `.yml` de l'arbre du projet propose « Convertir en JSON », qui écrit le JSON à côté du fichier et l'ouvre.
+
+**Coloration.** La coloration d'un langage vient de son plugin (JavaScript, Rust, Java, Markdown, YAML / TOML) : un plugin désactivé laisse ses fichiers en texte brut. Les fichiers TOML, que la coloration ne connaissait pas, sont désormais colorés, et le plugin Cargo colore `Cargo.lock`.
+
+#### Plugins natifs, et la visionneuse 3D devient un plugin à installer
+
+Un plugin externe peut apporter une bibliothèque dynamique (`"library"` dans son manifeste, rangé dans `.atelier/plugins/<plugin>/plugin.json`), qui dessine dans l'IDE comme un plugin intégré et ouvre des fichiers dans un onglet de l'éditeur. Elle n'est chargée qu'une fois le plugin activé dans le projet. Atelier refuse une bibliothèque qui n'a pas été compilée exactement comme lui (même compilateur, mêmes crates) au lieu de la charger. Les plugins implémentent le crate `atelier-plugin-api`.
+
+Un plugin natif s'installe depuis son fichier (`<plugin>.atelier-plugin`) : **Plugins › Installer un plugin depuis un fichier** (le bouton +). Il est installé une fois, dans l'IDE, pour tous les projets, et activé ; sa page a un bouton **Désinstaller**.
+
+La visionneuse de modèles 3D (glTF, GLB) n'est plus intégrée : c'est désormais le plugin natif `gltf-viewer`, publié pour chaque version d'Atelier (release `plugins/gltf-viewer/vX.Y.Z` du dépôt des téléchargements). Installez `gltf-viewer.atelier-plugin` pour continuer à ouvrir les modèles en 3D.
+
+#### Plugins activés par projet, dans `.atelier`
+
+Les plugins activés et désactivés sont propres à chaque projet : leur état est écrit dans `.atelier/config.json` (section `plugins`), qui peut se partager avec le projet, et non plus dans les réglages de l'IDE. À l'ouverture d'un projet, chaque plugin qu'il ne mentionne pas encore y est inscrit : Git en `"auto"`, activé tant qu'il existe un `.git` dans le projet (un dossier, ou le fichier d'un worktree ou d'un sous-module) : il s'active de lui-même après un `git init` et se désactive si le dépôt disparaît, jusqu'à ce qu'on le règle à la main dans la fenêtre Plugins ; les autres comme ils l'étaient dans les réglages de l'IDE. Les plugins ne font plus partie des réglages exportés ou synchronisés.
+
+#### Schémas JSON, et celui de package.json
+
+Les fichiers JSON signalent leurs erreurs de syntaxe pendant la frappe ; les commentaires et les virgules finales des réglages d'outils (`tsconfig.json`…) ne sont pas des erreurs.
+
+Un fichier JSON peut avoir un schéma : celui que nomme sa clé `$schema` (un fichier du projet, ou l'adresse d'un schéma qu'apporte un plugin), sinon celui qu'un plugin apporte pour son nom. Ses valeurs sont alors vérifiées, ses clés et leurs valeurs complétées, et une clé est décrite sous la souris. Le plugin Node.js apporte le schéma de `package.json`.
+
+#### Sous-plugins, et GitHub sous Git
+
+**Sous-plugins.** Un plugin peut avoir des sous-plugins, affichés sous lui dans la fenêtre Plugins : un sous-plugin ne fonctionne que quand son parent est activé, et se désactive à part.
+
+**GitHub.** Le premier, sous Git. Sa fenêtre Pull Request montre la pull request de la branche courante, la décision et le commentaire de chaque revue, et les commentaires des revues sur le code, par conversation ; une conversation ouvre son fichier à sa ligne. Il passe par la CLI GitHub (`gh`). Il apporte aussi les schémas des workflows GitHub Actions et de `dependabot.yml`.
+
+**Schémas YAML.** Les schémas valent aussi pour les fichiers YAML : ceux qu'apporte un plugin, ou celui que nomme un commentaire `# yaml-language-server: $schema=…`. Valeurs vérifiées, clés et valeurs complétées, description sous la souris.
+
+### Fixes
+
+#### Les téléchargements passent dans `atelier-ide-org/releases`
+
+Atelier déménage dans l'organisation GitHub `atelier-ide-org`. Le lanceur cherche désormais les mises à jour dans le dépôt public [`atelier-ide-org/releases`](https://github.com/atelier-ide-org/releases), qui ne contient que les fichiers des releases. Il se met à jour de lui-même : rien à faire. La documentation a son propre dépôt, `atelier-ide-org/docs`, et une nouvelle adresse : <https://atelier-ide-org.github.io/docs/>.
+
 ## 0.1.4 (2026-10-31)
 
 ### Features
