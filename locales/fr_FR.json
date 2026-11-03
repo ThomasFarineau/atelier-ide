@@ -337,6 +337,7 @@
   "installed_fonts": "Polices installées",
   "installed_lower": "installé : {tag} ({cli})",
   "installed_plugin_interface": "Interface des plugins v{abi}",
+  "installed_plugin_old": "Fait pour Atelier {version}, il ne se charge plus : installez sa nouvelle version depuis Plugins › Disponibles.",
   "installed_plugin_version": "Installé · {version}",
   "intellij_windows": "IntelliJ (Windows)",
   "intention_add_braces": "Mettre l'instruction entre accolades",

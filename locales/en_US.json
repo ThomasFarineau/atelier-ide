@@ -337,6 +337,7 @@
   "installed_fonts": "Installed fonts",
   "installed_lower": "installed: {tag} ({cli})",
   "installed_plugin_interface": "Plugin interface v{abi}",
+  "installed_plugin_old": "Made for Atelier {version}, it no longer loads: install its new version from Plugins › Available.",
   "installed_plugin_version": "Installed · {version}",
   "intellij_windows": "IntelliJ (Windows)",
   "intention_add_braces": "Put the statement in braces",

@@ -845,6 +845,17 @@ impl Ide {
                 if tabs(ui) == 0 {
                     ui.add(egui::Label::new(&plugin.description).wrap());
                     ui.add_space(10.0);
+                    if let (None, Some(version)) = (plugin.abi, &plugin.atelier) {
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(trf!("installed_plugin_old", version = version))
+                                    .small()
+                                    .color(t.error),
+                            )
+                            .wrap(),
+                        );
+                        ui.add_space(4.0);
+                    }
                     if let Some(abi) = plugin.abi {
                         ui.label(
                             RichText::new(trf!("installed_plugin_interface", abi = abi))
