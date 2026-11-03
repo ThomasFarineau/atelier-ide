@@ -120,6 +120,15 @@ pub fn t(key: &'static str) -> &'static str {
         .unwrap_or(key)
 }
 
+/// The text of a key made at run time (`html.element.div`), in the language of the interface,
+/// else in the default language; None when no catalog has it.
+pub fn lookup(key: &str) -> Option<&'static str> {
+    [current(), DEFAULT]
+        .into_iter()
+        .filter_map(catalog)
+        .find_map(|c| c.texts.get(key).copied())
+}
+
 /// Puts the values in the `{name}` of a text; `{{` and `}}` are braces.
 pub fn fill(text: &str, values: &[(&str, &dyn Display)]) -> String {
     let mut out = String::with_capacity(text.len() + 16);

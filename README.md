@@ -5,17 +5,17 @@
 <h1 align="center">Atelier IDE</h1>
 
 <p align="center">
-  <a href="https://github.com/ThomasFarineau/atelier-ide/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/ThomasFarineau/atelier-ide?color=6d3df5&label=release"></a>
-  <a href="https://github.com/ThomasFarineau/atelier-ide/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/ThomasFarineau/atelier-ide/ci.yml?branch=main&label=CI"></a>
+  <a href="https://github.com/atelier-ide-org/releases/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/atelier-ide-org/releases?color=6d3df5&label=release"></a>
+  <a href="https://github.com/atelier-ide-org/app/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/atelier-ide-org/app/ci.yml?branch=main&label=CI"></a>
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-8b39f6"></a>
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-555">
 </p>
 
 <p align="center">
   A fast, modern desktop IDE written in Rust.<br>
-  <a href="https://thomasfarineau.github.io/atelier-ide/"><b>Documentation</b></a> ·
-  <a href="https://thomasfarineau.github.io/atelier-ide/fr/">Documentation en français</a> ·
-  <a href="https://github.com/ThomasFarineau/atelier-ide/releases/latest">Download</a> ·
+  <a href="https://atelier-ide-org.github.io/docs/"><b>Documentation</b></a> ·
+  <a href="https://atelier-ide-org.github.io/docs/fr/">Documentation en français</a> ·
+  <a href="https://github.com/atelier-ide-org/releases/releases/latest">Download</a> ·
   <a href="CHANGELOG.md">Changelog</a>
 </p>
 
@@ -30,16 +30,17 @@
 
 ## Install
 
-- **Windows**: run `atelier-setup-windows-x86_64.exe` from the [latest release](https://github.com/ThomasFarineau/atelier-ide/releases/latest).
+- **Windows**: run `atelier-setup-windows-x86_64.exe` from the [latest release](https://github.com/atelier-ide-org/releases/releases/latest).
 - **Linux and macOS**: download the launcher of your platform (`atelier-<os>-<arch>`) from the latest release and start it; it installs and updates the IDE next to itself.
 
-Then `atelier .` opens the current folder. See [Installation](https://thomasfarineau.github.io/atelier-ide/guide/getting-started).
+Then `atelier .` opens the current folder. See [Installation](https://atelier-ide-org.github.io/docs/guide/getting-started).
 
 ## Build from source
 
-You need stable Rust and a native toolchain (on Windows, the Visual Studio Build Tools with the C++ workload).
+You need stable Rust and a native toolchain (on Windows, the Visual Studio Build Tools with the C++ workload). The compiler is fixed by `rust-toolchain.toml`. The native plugins have repositories of their own (`plugin-<name>`): one cloned into `plugins/` (ignored by git) joins the workspace, built with `--workspace`.
 
 ```bash
+git clone git@github.com:atelier-ide-org/plugin-gltf-viewer.git plugins/gltf-viewer   # optional
 cargo run -- examples/demo        # the IDE on the multi-language demo project
 cargo dev                         # hot reload while you work on the IDE
 cargo build --release             # target/release/atelier-ide(.exe)
@@ -53,15 +54,11 @@ cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
 ```
 
-A change worth a line in the changelog comes with a file in `.changeset/` (see [Versions & releases](https://thomasfarineau.github.io/atelier-ide/contributing/releases)). The architecture and the development tools are described in [Development](https://thomasfarineau.github.io/atelier-ide/contributing/development).
+A change worth a line in the changelog comes with a file in `.changeset/` (see [Versions & releases](https://atelier-ide-org.github.io/docs/contributing/releases)). The architecture and the development tools are described in [Development](https://atelier-ide-org.github.io/docs/contributing/development).
 
 ## Documentation
 
-The documentation lives in [`docs/`](docs) (VitePress, with [Bun](https://bun.sh)), in English and French, and is published to GitHub Pages from `main`:
-
-```bash
-cd docs && bun install && bun run dev
-```
+The documentation has a repository of its own, [atelier-ide-org/docs](https://github.com/atelier-ide-org/docs) (VitePress, with [Bun](https://bun.sh)), in English and French, published at <https://atelier-ide-org.github.io/docs/>. The pages of the plugins and languages stay here, next to their code, in the `doc` folder of each one.
 
 ## License
 

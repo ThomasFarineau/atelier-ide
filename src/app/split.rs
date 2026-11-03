@@ -63,11 +63,13 @@ impl Ide {
 /// Draws the pane in `ui`: a bar with the name of the file, then the editor. `service` is given
 /// when the file is not the one of the first editor (the language service follows one view of a
 /// file). Whether the pane asked to be closed.
+#[allow(clippy::too_many_arguments)]
 pub fn show(
     ui: &mut egui::Ui,
     pane: &mut SplitPane,
     doc: &mut Document,
     service: Option<&Service>,
+    highlight: bool,
     settings: &super::Settings,
     theme: ui::Theme,
     font: FontId,
@@ -113,6 +115,7 @@ pub fn show(
     let has_assist = assist.is_some();
     let options = Options {
         language: &doc.language,
+        highlight,
         font,
         theme,
         marks: &[],

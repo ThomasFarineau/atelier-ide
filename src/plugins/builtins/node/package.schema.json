@@ -1,0 +1,329 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "package.json",
+  "description": "The manifest of a Node.js package: its name, version, scripts and dependencies.",
+  "type": "object",
+  "definitions": {
+    "person": {
+      "description": "A person who worked on the package: \"Name <email> (url)\", or an object.",
+      "anyOf": [
+        { "type": "string" },
+        {
+          "type": "object",
+          "required": ["name"],
+          "properties": {
+            "name": { "type": "string", "description": "The name of the person." },
+            "email": { "type": "string", "description": "The email address of the person." },
+            "url": { "type": "string", "description": "The website of the person." }
+          }
+        }
+      ]
+    },
+    "people": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/person" }
+    },
+    "dependencies": {
+      "type": "object",
+      "description": "Package names, each with a version range, a tag, a URL, a path (file:) or a Git repository.",
+      "additionalProperties": { "type": "string" }
+    },
+    "funding": {
+      "anyOf": [
+        { "type": "string", "description": "The address of a page to fund the package." },
+        {
+          "type": "object",
+          "required": ["url"],
+          "properties": {
+            "type": { "type": "string", "description": "The kind of funding: patreon, opencollective, github, individual…" },
+            "url": { "type": "string", "description": "The address of the page." }
+          }
+        }
+      ]
+    },
+    "script": {
+      "type": "string"
+    }
+  },
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "The name of the package: lowercase, at most 214 characters, URL-safe, with an optional @scope/. It and the version identify the package in the registry.",
+      "maxLength": 214,
+      "minLength": 1,
+      "pattern": "^(?:@[a-z0-9~-][a-z0-9._~-]*/)?[a-z0-9~-][a-z0-9._~-]*$"
+    },
+    "version": {
+      "type": "string",
+      "description": "The version of the package, which node-semver can read: major.minor.patch, with an optional pre-release (1.2.0-beta.1)."
+    },
+    "description": {
+      "type": "string",
+      "description": "What the package does, shown by npm search."
+    },
+    "keywords": {
+      "type": "array",
+      "description": "Words that help people find the package with npm search.",
+      "items": { "type": "string" }
+    },
+    "homepage": {
+      "type": "string",
+      "description": "The address of the website of the project."
+    },
+    "bugs": {
+      "description": "Where to report problems: an address, or an object with the address and an email.",
+      "anyOf": [
+        { "type": "string" },
+        {
+          "type": "object",
+          "properties": {
+            "url": { "type": "string", "description": "The address of the issue tracker." },
+            "email": { "type": "string", "description": "The email address for issues." }
+          }
+        }
+      ]
+    },
+    "license": {
+      "type": "string",
+      "description": "The license of the package, as an SPDX expression (MIT, Apache-2.0, (MIT OR Apache-2.0)), or \"UNLICENSED\" for a private one."
+    },
+    "author": {
+      "$ref": "#/definitions/person",
+      "description": "The person who wrote the package: \"Name <email> (url)\", or an object."
+    },
+    "contributors": {
+      "$ref": "#/definitions/people",
+      "description": "The people who contributed to the package."
+    },
+    "maintainers": {
+      "$ref": "#/definitions/people",
+      "description": "The people who maintain the package."
+    },
+    "funding": {
+      "description": "Where to fund the development of the package: an address, an object, or an array of them.",
+      "anyOf": [
+        { "$ref": "#/definitions/funding" },
+        { "type": "array", "items": { "$ref": "#/definitions/funding" } }
+      ]
+    },
+    "files": {
+      "type": "array",
+      "description": "The files and folders (glob patterns) that go into the package when it is published.",
+      "items": { "type": "string" }
+    },
+    "main": {
+      "type": "string",
+      "description": "The module that require() of the package loads, relative to the root of the package."
+    },
+    "module": {
+      "type": "string",
+      "description": "The ES module entry point, for bundlers."
+    },
+    "browser": {
+      "description": "The entry point for browsers, or the modules to replace in a browser bundle.",
+      "anyOf": [{ "type": "string" }, { "type": "object" }]
+    },
+    "type": {
+      "type": "string",
+      "enum": ["commonjs", "module"],
+      "description": "How Node.js reads the .js files of the package: \"module\" for ES modules, \"commonjs\" (the default) for CommonJS."
+    },
+    "exports": {
+      "description": "The entry points of the package, by path (\".\", \"./utils\") and by condition (\"import\", \"require\", \"types\", \"default\"…). Other modules of the package cannot be imported.",
+      "anyOf": [
+        { "type": "string" },
+        { "type": "array" },
+        { "type": "object" },
+        { "type": "null" }
+      ]
+    },
+    "imports": {
+      "type": "object",
+      "description": "Private imports of the package, whose names start with #."
+    },
+    "types": {
+      "type": "string",
+      "description": "The TypeScript declarations of the package (a .d.ts file)."
+    },
+    "typings": {
+      "type": "string",
+      "description": "The TypeScript declarations of the package; the same as \"types\"."
+    },
+    "bin": {
+      "description": "The commands the package installs: a file, or command names with their file.",
+      "anyOf": [
+        { "type": "string" },
+        { "type": "object", "additionalProperties": { "type": "string" } }
+      ]
+    },
+    "man": {
+      "description": "The manual pages of the package.",
+      "anyOf": [
+        { "type": "string" },
+        { "type": "array", "items": { "type": "string" } }
+      ]
+    },
+    "directories": {
+      "type": "object",
+      "description": "The layout of the package.",
+      "properties": {
+        "bin": { "type": "string", "description": "The folder whose files are all commands." },
+        "doc": { "type": "string", "description": "The folder of the documentation." },
+        "lib": { "type": "string", "description": "The folder of the library." },
+        "man": { "type": "string", "description": "The folder of the manual pages." },
+        "example": { "type": "string", "description": "The folder of the examples." },
+        "test": { "type": "string", "description": "The folder of the tests." }
+      }
+    },
+    "repository": {
+      "description": "Where the code lives: \"github:user/repo\", an address, or an object with its type and address.",
+      "anyOf": [
+        { "type": "string" },
+        {
+          "type": "object",
+          "required": ["url"],
+          "properties": {
+            "type": { "type": "string", "description": "The version control system, as \"git\"." },
+            "url": { "type": "string", "description": "The address of the repository." },
+            "directory": { "type": "string", "description": "The folder of the package in a monorepo." }
+          }
+        }
+      ]
+    },
+    "scripts": {
+      "type": "object",
+      "description": "Commands to run with npm run <name>. Some run by themselves at a step of the life of the package (install, publish, test…); \"pre\" and \"post\" scripts run before and after the one they name.",
+      "additionalProperties": { "type": "string" },
+      "properties": {
+        "build": { "$ref": "#/definitions/script", "description": "Builds the package, by convention." },
+        "dev": { "$ref": "#/definitions/script", "description": "Starts the project for development, by convention." },
+        "start": { "$ref": "#/definitions/script", "description": "Runs with npm start. Without it, npm start runs \"node server.js\"." },
+        "test": { "$ref": "#/definitions/script", "description": "Runs with npm test." },
+        "lint": { "$ref": "#/definitions/script", "description": "Checks the code, by convention." },
+        "format": { "$ref": "#/definitions/script", "description": "Formats the code, by convention." },
+        "stop": { "$ref": "#/definitions/script", "description": "Runs with npm stop." },
+        "restart": { "$ref": "#/definitions/script", "description": "Runs with npm restart. Without it, npm restart runs stop then start." },
+        "prepare": { "$ref": "#/definitions/script", "description": "Runs before the package is packed or published, and after npm install without arguments." },
+        "prepublishOnly": { "$ref": "#/definitions/script", "description": "Runs before the package is prepared and packed, only on npm publish." },
+        "prepack": { "$ref": "#/definitions/script", "description": "Runs before a tarball is packed (npm pack, npm publish, Git dependencies)." },
+        "postpack": { "$ref": "#/definitions/script", "description": "Runs after the tarball is made." },
+        "preinstall": { "$ref": "#/definitions/script", "description": "Runs before the package is installed." },
+        "install": { "$ref": "#/definitions/script", "description": "Runs when the package is installed." },
+        "postinstall": { "$ref": "#/definitions/script", "description": "Runs after the package is installed." },
+        "preversion": { "$ref": "#/definitions/script", "description": "Runs before npm version changes the version." },
+        "version": { "$ref": "#/definitions/script", "description": "Runs after npm version changed the version, before the commit." },
+        "postversion": { "$ref": "#/definitions/script", "description": "Runs after npm version made its commit." }
+      }
+    },
+    "config": {
+      "type": "object",
+      "description": "Values the scripts read as npm_package_config_<key>."
+    },
+    "dependencies": {
+      "$ref": "#/definitions/dependencies",
+      "description": "The packages the package needs to run."
+    },
+    "devDependencies": {
+      "$ref": "#/definitions/dependencies",
+      "description": "The packages needed to develop and test the package, not installed with it."
+    },
+    "peerDependencies": {
+      "$ref": "#/definitions/dependencies",
+      "description": "The packages the package works with, which the project that uses it installs (a plugin and its host)."
+    },
+    "peerDependenciesMeta": {
+      "type": "object",
+      "description": "More about the peer dependencies, such as which are optional.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "optional": { "type": "boolean", "description": "The peer dependency may be missing." }
+        }
+      }
+    },
+    "optionalDependencies": {
+      "$ref": "#/definitions/dependencies",
+      "description": "Packages that are installed when they can be: their failure does not stop the installation."
+    },
+    "bundleDependencies": {
+      "description": "The dependencies that go into the package when it is published.",
+      "anyOf": [
+        { "type": "boolean" },
+        { "type": "array", "items": { "type": "string" } }
+      ]
+    },
+    "bundledDependencies": {
+      "description": "The dependencies that go into the package when it is published; the same as \"bundleDependencies\".",
+      "anyOf": [
+        { "type": "boolean" },
+        { "type": "array", "items": { "type": "string" } }
+      ]
+    },
+    "overrides": {
+      "type": "object",
+      "description": "Versions of dependencies of dependencies to use instead of the ones they ask for (npm)."
+    },
+    "resolutions": {
+      "type": "object",
+      "description": "Versions of dependencies of dependencies to use instead of the ones they ask for (Yarn)."
+    },
+    "engines": {
+      "type": "object",
+      "description": "The versions of Node.js (and of npm…) the package runs on.",
+      "additionalProperties": { "type": "string" },
+      "properties": {
+        "node": { "type": "string", "description": "The versions of Node.js, as a range: \">=18\"." },
+        "npm": { "type": "string", "description": "The versions of npm, as a range." }
+      }
+    },
+    "os": {
+      "type": "array",
+      "description": "The operating systems the package runs on (darwin, linux, win32…); one starting with ! is excluded.",
+      "items": { "type": "string" }
+    },
+    "cpu": {
+      "type": "array",
+      "description": "The processors the package runs on (x64, arm64…); one starting with ! is excluded.",
+      "items": { "type": "string" }
+    },
+    "private": {
+      "type": "boolean",
+      "description": "true keeps npm from publishing the package."
+    },
+    "publishConfig": {
+      "type": "object",
+      "description": "Settings used when the package is published.",
+      "properties": {
+        "access": { "type": "string", "enum": ["public", "restricted"], "description": "Who can install a scoped package." },
+        "registry": { "type": "string", "description": "The registry to publish to." },
+        "tag": { "type": "string", "description": "The tag of the version published (latest by default)." },
+        "provenance": { "type": "boolean", "description": "Publish with a provenance statement." }
+      }
+    },
+    "workspaces": {
+      "description": "The folders (glob patterns) of the packages of a monorepo, installed together.",
+      "anyOf": [
+        { "type": "array", "items": { "type": "string" } },
+        {
+          "type": "object",
+          "properties": {
+            "packages": { "type": "array", "items": { "type": "string" }, "description": "The folders of the packages." },
+            "nohoist": { "type": "array", "items": { "type": "string" }, "description": "The packages not hoisted to the root (Yarn)." }
+          }
+        }
+      ]
+    },
+    "packageManager": {
+      "type": "string",
+      "description": "The package manager of the project and its version, for Corepack: \"pnpm@9.1.0\".",
+      "pattern": "^(npm|pnpm|yarn|bun)@\\d+\\.\\d+\\.\\d+(-[^+]+)?(\\+.+)?$"
+    },
+    "sideEffects": {
+      "description": "false when no module of the package has side effects, or the modules that have some: bundlers can leave the others out.",
+      "anyOf": [
+        { "type": "boolean" },
+        { "type": "array", "items": { "type": "string" } }
+      ]
+    }
+  }
+}

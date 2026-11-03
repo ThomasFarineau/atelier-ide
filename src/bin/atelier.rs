@@ -10,7 +10,9 @@
 //! bootstrap.log      what the last start did
 //! ```
 //!
-//! At every start the bootstrap asks GitHub for the latest release. When it is newer than
+//! At every start the bootstrap asks GitHub for the latest release of the IDE: in the repository
+//! of the downloads, the releases of the IDE are tagged `app/vX.Y.Z` (those of the native plugins
+//! `plugins/<name>/vX.Y.Z`; a tag with no prefix is one of the IDE too). When it is newer than
 //! `app/VERSION` (or the IDE is not there yet), it downloads the archive of this platform,
 //! checks it against the release's `SHA256SUMS`, unpacks it next to `app/` and swaps the two.
 //! The IDE is not running at that moment, which is why an update never meets a locked file on
@@ -45,7 +47,8 @@ use std::{
     time::Duration,
 };
 
-const REPO: &str = "ThomasFarineau/atelier-ide";
+/// The public repository of the downloads: the code is in `atelier-ide-org/app`, which is private.
+const REPO: &str = "atelier-ide-org/releases";
 const APP_DIR: &str = "app";
 const EXE: &str = if cfg!(windows) {
     "atelier-ide.exe"
@@ -179,9 +182,13 @@ fn fail(message: &str) -> ! {
     std::process::exit(1);
 }
 
-/// Numbers of a release tag: `v1.2.3` is [1, 2, 3]; a suffix such as `-beta` is ignored.
+/// Numbers of a release tag: `v1.2.3` (or `app/v1.2.3`) is [1, 2, 3]; a suffix such as `-beta`
+/// is ignored.
 fn version(tag: &str) -> Vec<u64> {
     tag.trim()
+        .rsplit('/')
+        .next()
+        .unwrap_or("")
         .trim_start_matches(['v', 'V'])
         .split('-')
         .next()
@@ -200,6 +207,25 @@ fn newer(candidate: &str, installed: &str) -> bool {
         v
     };
     pad(a) > pad(b)
+}
+
+/// Whether a tag is a release of the IDE: `app/vX.Y.Z`, or a tag with no prefix (the releases
+/// made before the plugins had theirs).
+fn is_app_tag(tag: &str) -> bool {
+    tag.strip_prefix("app/").unwrap_or(tag).find('/').is_none()
+}
+
+/// The latest published release of the IDE among the releases of the repository (newest first,
+/// as GitHub lists them, but compared by version): the releases of the plugins share it.
+fn latest_app_release(releases: &[Value]) -> Option<&Value> {
+    releases
+        .iter()
+        .filter(|r| r["draft"] != true && r["prerelease"] != true)
+        .filter(|r| r["tag_name"].as_str().is_some_and(is_app_tag))
+        .fold(None, |best: Option<&Value>, r| match best {
+            Some(b) if !newer(r["tag_name"].as_str()?, b["tag_name"].as_str()?) => Some(b),
+            _ => Some(r),
+        })
 }
 
 /// Name of the release archive for this platform.
@@ -268,9 +294,10 @@ fn update(dir: &Path, progress: &dyn Fn(Progress)) -> Result<String> {
         .map(|v| v.trim().to_string());
     let present = dir.join(APP_DIR).join(EXE).exists();
     let repo = env::var("ATELIER_REPO").unwrap_or_else(|_| REPO.to_string());
+    // Not `releases/latest`: it may be the release of a plugin.
     let latest = get(
         &agent(CHECK_TIMEOUT),
-        &format!("https://api.github.com/repos/{repo}/releases/latest"),
+        &format!("https://api.github.com/repos/{repo}/releases?per_page=50"),
         "application/vnd.github+json",
     );
     // GitHub answers 404 both for a repository without a release and for a private one.
@@ -279,7 +306,9 @@ fn update(dir: &Path, progress: &dyn Fn(Progress)) -> Result<String> {
     {
         return Err(trf!("no_release_found", repo = repo).into());
     }
-    let release: Value = serde_json::from_slice(&latest?)?;
+    let releases: Vec<Value> = serde_json::from_slice(&latest?)?;
+    let release =
+        latest_app_release(&releases).ok_or_else(|| trf!("no_release_found", repo = repo))?;
     let tag = release["tag_name"]
         .as_str()
         .ok_or(tr!("answer_github_without_version"))?

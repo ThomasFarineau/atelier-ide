@@ -1,0 +1,158 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Dependabot",
+  "description": "The configuration of Dependabot version updates: which package managers, in which folders, how often.",
+  "type": "object",
+  "required": ["version", "updates"],
+  "definitions": {
+    "strings": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "update-types": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
+      }
+    },
+    "update": {
+      "type": "object",
+      "required": ["package-ecosystem", "schedule"],
+      "anyOf": [{ "required": ["directory"] }, { "required": ["directories"] }],
+      "properties": {
+        "package-ecosystem": {
+          "type": "string",
+          "description": "The package manager to update.",
+          "enum": [
+            "bun", "bundler", "cargo", "composer", "conda", "devcontainers", "docker", "docker-compose",
+            "dotnet-sdk", "elm", "gitsubmodule", "github-actions", "gomod", "gradle", "helm", "julia",
+            "maven", "mix", "npm", "nuget", "pip", "pub", "rust-toolchain", "swift", "terraform", "uv", "vcpkg"
+          ]
+        },
+        "directory": { "type": "string", "description": "The folder of the manifests, from the root of the repository (\"/\")." },
+        "directories": { "$ref": "#/definitions/strings", "description": "Several folders of manifests (glob patterns allowed)." },
+        "schedule": {
+          "type": "object",
+          "description": "How often Dependabot looks for new versions.",
+          "required": ["interval"],
+          "properties": {
+            "interval": {
+              "type": "string",
+              "enum": ["daily", "weekly", "monthly", "quarterly", "semiannually", "yearly", "cron"],
+              "description": "How often."
+            },
+            "day": {
+              "type": "string",
+              "enum": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
+              "description": "The day of a weekly check."
+            },
+            "time": { "type": "string", "description": "The time of the check, hh:mm (UTC unless timezone says)." },
+            "timezone": { "type": "string", "description": "The time zone of time: Europe/Paris…" },
+            "cronjob": { "type": "string", "description": "When, in cron syntax, with the cron interval." }
+          }
+        },
+        "target-branch": { "type": "string", "description": "The branch the pull requests are opened against (the default branch otherwise)." },
+        "open-pull-requests-limit": { "type": "integer", "minimum": 0, "description": "The most pull requests open at a time (5 by default; 0 stops version updates)." },
+        "labels": { "$ref": "#/definitions/strings", "description": "The labels of the pull requests." },
+        "assignees": { "$ref": "#/definitions/strings", "description": "The people the pull requests are assigned to." },
+        "milestone": { "type": "integer", "description": "The number of the milestone of the pull requests." },
+        "ignore": {
+          "type": "array",
+          "description": "Dependencies or versions to leave as they are.",
+          "items": {
+            "type": "object",
+            "required": ["dependency-name"],
+            "properties": {
+              "dependency-name": { "type": "string", "description": "The name of the dependency (* for any part)." },
+              "versions": { "description": "The versions to leave out.", "anyOf": [{ "type": "string" }, { "$ref": "#/definitions/strings" }] },
+              "update-types": { "$ref": "#/definitions/update-types", "description": "The kinds of updates to leave out." }
+            }
+          }
+        },
+        "allow": {
+          "type": "array",
+          "description": "The only dependencies to update.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "dependency-name": { "type": "string", "description": "The name of the dependency (* for any part)." },
+              "dependency-type": {
+                "type": "string",
+                "enum": ["direct", "indirect", "all", "production", "development"],
+                "description": "The kind of dependencies."
+              }
+            }
+          }
+        },
+        "groups": {
+          "type": "object",
+          "description": "Updates gathered in one pull request per group.",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "applies-to": { "type": "string", "enum": ["version-updates", "security-updates"], "description": "The updates the group is for." },
+              "dependency-type": { "type": "string", "enum": ["production", "development"], "description": "The kind of dependencies of the group." },
+              "patterns": { "$ref": "#/definitions/strings", "description": "The dependencies of the group (* for any part)." },
+              "exclude-patterns": { "$ref": "#/definitions/strings", "description": "The dependencies left out of the group." },
+              "update-types": { "$ref": "#/definitions/update-types", "description": "The kinds of updates of the group." }
+            }
+          }
+        },
+        "commit-message": {
+          "type": "object",
+          "description": "How the commit messages and titles start.",
+          "properties": {
+            "prefix": { "type": "string", "description": "The start of the messages (chore, build(deps)…)." },
+            "prefix-development": { "type": "string", "description": "The start of the messages of development dependencies." },
+            "include": { "type": "string", "enum": ["scope"], "description": "scope adds deps or deps-dev after the prefix." }
+          }
+        },
+        "rebase-strategy": { "type": "string", "enum": ["auto", "disabled"], "description": "Whether Dependabot rebases its pull requests when they conflict." },
+        "versioning-strategy": {
+          "type": "string",
+          "enum": ["auto", "increase", "increase-if-necessary", "lockfile-only", "widen"],
+          "description": "How the version requirements of the manifest change."
+        },
+        "registries": {
+          "description": "The private registries this update may use, by name, or *.",
+          "anyOf": [{ "type": "string" }, { "$ref": "#/definitions/strings" }]
+        },
+        "vendor": { "type": "boolean", "description": "Update the vendored dependencies too." },
+        "insecure-external-code-execution": { "type": "string", "enum": ["allow", "deny"], "description": "Whether the code of the manifests may run during the update." },
+        "pull-request-branch-name": {
+          "type": "object",
+          "properties": {
+            "separator": { "type": "string", "enum": ["-", "_", "/"], "description": "The separator of the branch names." }
+          }
+        },
+        "cooldown": {
+          "type": "object",
+          "description": "Days to wait after a release before updating to it.",
+          "properties": {
+            "default-days": { "type": "integer", "description": "For every update." },
+            "semver-major-days": { "type": "integer", "description": "For major updates." },
+            "semver-minor-days": { "type": "integer", "description": "For minor updates." },
+            "semver-patch-days": { "type": "integer", "description": "For patch updates." },
+            "include": { "$ref": "#/definitions/strings", "description": "The dependencies it is for." },
+            "exclude": { "$ref": "#/definitions/strings", "description": "The dependencies it is not for." }
+          }
+        }
+      }
+    }
+  },
+  "properties": {
+    "version": { "type": "integer", "enum": [2], "description": "The version of the format: 2." },
+    "updates": {
+      "type": "array",
+      "description": "The package managers to update, each with its folder and its schedule.",
+      "items": { "$ref": "#/definitions/update" }
+    },
+    "registries": {
+      "type": "object",
+      "description": "Private registries, by name, with their type, address and credentials (secrets)."
+    },
+    "enable-beta-ecosystems": { "type": "boolean", "description": "Allow the package managers still in beta." },
+    "multi-ecosystem-groups": { "type": "object", "description": "Groups of updates across package managers." }
+  }
+}

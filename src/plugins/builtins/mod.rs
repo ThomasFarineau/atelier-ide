@@ -2,6 +2,7 @@
 
 pub mod cargo;
 pub mod csv;
+pub mod database;
 pub mod git;
 pub mod gradle;
 pub mod image;
@@ -17,3 +18,4 @@ pub mod node;
 pub mod runtimes;
 pub mod svg;
 pub mod translations;
+pub mod yaml;

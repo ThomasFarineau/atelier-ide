@@ -91,17 +91,20 @@ pub fn provider(root: &Path, repaint: Arc<dyn Fn() + Send + Sync>) -> Python {
 pub struct PythonPlugin;
 
 impl BuiltinPlugin for PythonPlugin {
+    fn language(&self) -> bool {
+        true
+    }
     fn id(&self) -> &'static str {
         "python"
     }
     fn name(&self) -> &'static str {
-        "Python"
+        tr!("plugin.python.name")
     }
     fn description(&self) -> &'static str {
-        tr!("python.description")
+        tr!("plugin.python.summary")
     }
     fn icon(&self) -> &'static str {
-        "settings"
+        crate::plugins::builtin::card_icon("python")
     }
 
     fn update(&mut self, _ctx: &eframe::egui::Context, host: &mut dyn Host) {

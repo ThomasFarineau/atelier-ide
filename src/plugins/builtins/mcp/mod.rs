@@ -614,13 +614,13 @@ impl BuiltinPlugin for McpPlugin {
         "mcp"
     }
     fn name(&self) -> &'static str {
-        tr!("mcp.atelier_super_intelligence_tools")
+        tr!("plugin.mcp.name")
     }
     fn description(&self) -> &'static str {
-        tr!("mcp.tools_atelier_ais_through_mcp")
+        tr!("plugin.mcp.summary")
     }
     fn icon(&self) -> &'static str {
-        "mcp/icon"
+        crate::plugins::builtin::card_icon("mcp")
     }
 
     fn update(&mut self, ctx: &egui::Context, host: &mut dyn Host) {

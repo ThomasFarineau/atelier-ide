@@ -2,7 +2,6 @@
   "python.cannot_install_server": "Installation de pyright impossible : {e}",
   "python.command_install": "Python : installer le serveur de langage (npm pyright)",
   "python.command_restart": "Python : redémarrer le serveur de langage",
-  "python.description": "Erreurs, complétion, infobulles, navigation, renommage et actions rapides pour Python avec pyright (ou basedpyright), qui connaît le venv du projet ; structure, erreurs de syntaxe, noms du fichier et de self, et modèles par analyse locale sans lui ; formatage avec ruff ou black.",
   "python.formatter_failed": "{name} n'a pas pu formater le fichier : {error}",
   "python.installing_server": "Installation de pyright…",
   "python.needs_server": "Cette action demande pyright : installez-le depuis Rechercher partout (« Python : installer »)",

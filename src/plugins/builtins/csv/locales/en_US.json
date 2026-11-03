@@ -16,6 +16,5 @@
   "csv.semicolon": "semicolon",
   "csv.semicolon_2": "Semicolon ;",
   "csv.tab": "tab",
-  "csv.tab_2": "Tab",
-  "csv.table_preview_csv_tsv_psv": "Table preview of CSV, TSV and PSV files: detected separator, first row as header, column sorting, editor only, side by side or table only."
+  "csv.tab_2": "Tab"
 }

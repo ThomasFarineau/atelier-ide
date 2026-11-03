@@ -36,6 +36,9 @@ fn language_extensions() {
         ("Main.java", "java"),
         ("a.py", "py"),
         ("lib.rs", "rs"),
+        ("Cargo.toml", "toml"),
+        ("Cargo.lock", "cargo-lock"),
+        ("yarn.lock", "txt"),
     ] {
         assert_eq!(language(Path::new(name)), expected);
     }

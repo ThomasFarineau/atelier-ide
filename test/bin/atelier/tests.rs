@@ -44,6 +44,32 @@ fn versions_compare_by_number_not_by_text() {
 }
 
 #[test]
+fn the_releases_of_the_ide_are_told_from_those_of_the_plugins() {
+    assert!(is_app_tag("app/v0.2.0"));
+    assert!(
+        is_app_tag("v0.1.4"),
+        "the releases made before the prefixes"
+    );
+    assert!(!is_app_tag("plugins/gltf-viewer/v0.2.0"));
+    assert!(newer("app/v0.2.0", "v0.1.4"));
+    assert!(!newer("app/v0.2.0", "app/v0.2.0"));
+
+    let release = |tag: &str, draft: bool| serde_json::json!({ "tag_name": tag, "draft": draft, "prerelease": false });
+    let releases = [
+        release("plugins/gltf-viewer/v0.3.0", false),
+        release("app/v0.3.0", true),
+        release("app/v0.2.0", false),
+        release("v0.1.4", false),
+    ];
+    let latest = latest_app_release(&releases).unwrap();
+    assert_eq!(
+        latest["tag_name"], "app/v0.2.0",
+        "not a plugin, not a draft"
+    );
+    assert!(latest_app_release(&releases[..2]).is_none());
+}
+
+#[test]
 fn archives_and_checksums_are_found_by_name() {
     assert_eq!(
         archive_name("windows", "x86_64"),

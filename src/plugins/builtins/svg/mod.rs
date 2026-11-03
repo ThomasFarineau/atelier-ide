@@ -32,13 +32,13 @@ impl BuiltinPlugin for SvgPlugin {
         "svg"
     }
     fn name(&self) -> &'static str {
-        "SVG"
+        tr!("plugin.svg.name")
     }
     fn description(&self) -> &'static str {
-        tr!("svg.preview_svg_files_editor_only")
+        tr!("plugin.svg.summary")
     }
     fn icon(&self) -> &'static str {
-        "editorPreview"
+        crate::plugins::builtin::card_icon("svg")
     }
     fn extensions_dir(&self) -> Option<&'static str> {
         Some("svg")

@@ -18,13 +18,26 @@ pub enum Notation {
     Named,
 }
 
-/// A color of the text.
-#[derive(Clone, PartialEq, Eq, Debug)]
+/// A value of CSS that has an editor of its own rather than the color picker.
+#[derive(Clone, PartialEq, Debug)]
+pub enum Special {
+    Gradient(super::gradient::Gradient),
+    Shadows(super::shadow::Shadows),
+    Easing(super::easing::Easing),
+    Radius(super::radius::Radius),
+    Effects(super::effects::Effects),
+}
+
+/// A color of the text, or a value with an editor of its own (a gradient, shadows, a curve).
+#[derive(Clone, PartialEq, Debug)]
 pub struct Swatch {
-    /// The bytes of the whole color: `#fff`, `rgb(1, 2, 3)`.
+    /// The bytes of the whole value: `#fff`, `rgb(1, 2, 3)`, `linear-gradient(…)`.
     pub range: Range<usize>,
+    /// The color; for a gradient, the one of its first stop.
     pub rgba: Rgba,
     pub notation: Notation,
+    /// Its swatch shows it, and a click opens its editor.
+    pub special: Option<std::sync::Arc<Special>>,
 }
 
 impl Swatch {
@@ -107,6 +120,7 @@ pub fn find(text: &str, dialect: Dialect) -> Vec<Swatch> {
                         range: token.range.clone(),
                         rgba,
                         notation: Notation::Hex,
+                        special: None,
                     });
                 }
             }
@@ -136,6 +150,7 @@ pub fn find(text: &str, dialect: Dialect) -> Vec<Swatch> {
                         range: token.range.start..close + 1,
                         rgba,
                         notation,
+                        special: None,
                     });
                 }
             }
@@ -146,6 +161,7 @@ pub fn find(text: &str, dialect: Dialect) -> Vec<Swatch> {
                         range: token.range.clone(),
                         rgba: from_rgb(*rgb),
                         notation: Notation::Named,
+                        special: None,
                     });
                 }
             }
@@ -153,6 +169,92 @@ pub fn find(text: &str, dialect: Dialect) -> Vec<Swatch> {
         }
     }
     out
+}
+
+/// The colors written in a file of any language (a string, a constant, a comment):
+/// hexadecimal (`#e34f26`) and `rgb()`, `rgba()`, `hsl()`, `hsla()`. Names are left out: outside
+/// a style sheet, `red` is mostly a word. A short hexadecimal of digits only (`#123`) is an issue
+/// number more often than a color: it counts only between quotes.
+pub fn find_in_code(text: &str) -> Vec<Swatch> {
+    if text.len() > MAX_TEXT {
+        return Vec::new();
+    }
+    let bytes = text.as_bytes();
+    let word = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'#' && (i == 0 || !(word(bytes[i - 1]) || matches!(bytes[i - 1], b'&' | b'#'))) {
+            let mut end = i + 1;
+            while end < bytes.len() && bytes[end].is_ascii_hexdigit() {
+                end += 1;
+            }
+            let digits = &text[i + 1..end];
+            let ends = end == bytes.len() || !word(bytes[end]);
+            let quoted = i > 0 && matches!(bytes[i - 1], b'"' | b'\'' | b'`');
+            let short_digits = digits.len() <= 4 && digits.bytes().all(|d| d.is_ascii_digit());
+            if ends
+                && (!short_digits || quoted)
+                && let Some(rgba) = parse_hex(&text[i..end])
+            {
+                out.push(Swatch {
+                    range: i..end,
+                    rgba,
+                    notation: Notation::Hex,
+                    special: None,
+                });
+            }
+            i = end.max(i + 1);
+            continue;
+        }
+        if b.is_ascii_alphabetic() && (i == 0 || !word(bytes[i - 1])) {
+            let mut end = i;
+            while end < bytes.len() && bytes[end].is_ascii_alphabetic() {
+                end += 1;
+            }
+            let notation = match text[i..end].to_ascii_lowercase().as_str() {
+                "rgb" | "rgba" => Some(Notation::Rgb),
+                "hsl" | "hsla" => Some(Notation::Hsl),
+                _ => None,
+            };
+            if let Some(notation) = notation
+                && bytes.get(end) == Some(&b'(')
+                && let Some(close) = text[end..].find(')').map(|c| end + c)
+            {
+                let inside = &text[end + 1..close];
+                let rgba = if inside.contains('\n') {
+                    None
+                } else if notation == Notation::Rgb {
+                    parse_rgb(inside)
+                } else {
+                    parse_hsl(inside)
+                };
+                if let Some(rgba) = rgba {
+                    out.push(Swatch {
+                        range: i..close + 1,
+                        rgba,
+                        notation,
+                        special: None,
+                    });
+                    i = close + 1;
+                    continue;
+                }
+            }
+            i = end;
+            continue;
+        }
+        i += 1;
+    }
+    out
+}
+
+/// The value of a color name (`red`, `rebeccapurple`), in lower case.
+pub fn named(name: &str) -> Option<Rgba> {
+    NAMED
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, rgb)| from_rgb(*rgb))
 }
 
 fn from_rgb(rgb: u32) -> Rgba {
@@ -197,7 +299,7 @@ fn alpha(value: &str) -> Option<u8> {
     Some((a.clamp(0.0, 1.0) * 255.0).round() as u8)
 }
 
-fn parse_rgb(inside: &str) -> Option<Rgba> {
+pub(crate) fn parse_rgb(inside: &str) -> Option<Rgba> {
     let args = arguments(inside);
     if !(3..=4).contains(&args.len()) {
         return None;
@@ -216,7 +318,7 @@ fn parse_rgb(inside: &str) -> Option<Rgba> {
     Some([channel(args[0])?, channel(args[1])?, channel(args[2])?, a])
 }
 
-fn parse_hsl(inside: &str) -> Option<Rgba> {
+pub(crate) fn parse_hsl(inside: &str) -> Option<Rgba> {
     let args = arguments(inside);
     if !(3..=4).contains(&args.len()) {
         return None;

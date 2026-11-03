@@ -25,7 +25,9 @@
 //!
 //! It also gathers the translations (`locales.rs`): every `locales/<identifier>.json` of the
 //! project, the one at the root for the IDE and the `locales` folder of each plugin or language
-//! (`src/plugins/builtins/git/locales/fr_FR.json`).
+//! (`src/plugins/builtins/git/locales/fr_FR.json`); and the name and summary of each plugin, from
+//! the front matter of its documentation page (`src/plugins/builtins/git/doc/fr-FR.md`), which
+//! the documentation reads as well.
 
 use std::{
     collections::BTreeMap,
@@ -104,6 +106,80 @@ fn collect_locales(dir: &Path, out: &mut Vec<(String, PathBuf)>) {
     }
 }
 
+/// The cards of the built-in plugins and languages: the front matter of the pages of their
+/// documentation (`<plugin>/doc/en-US.md`), which the documentation reads too. Their `name` and
+/// `summary` become the texts `plugin.<plugin>.name` and `plugin.<plugin>.summary` of the
+/// language of the file (`en_US`), and its `icon` (a file from the plugin folder, `icon.svg` by
+/// default) the icon of the plugin, in `icons`.
+fn collect_cards(
+    dir: &Path,
+    out: &mut BTreeMap<String, BTreeMap<String, String>>,
+    icons: &mut BTreeMap<String, PathBuf>,
+) {
+    let Ok(read) = fs::read_dir(dir) else { return };
+    let mut paths: Vec<_> = read.flatten().map(|e| e.path()).collect();
+    paths.sort();
+    for path in paths.into_iter().filter(|p| p.is_dir()) {
+        if path.file_name().is_none_or(|n| n != "doc") {
+            collect_cards(&path, out, icons);
+            continue;
+        }
+        let plugin = dir.file_name().unwrap().to_string_lossy().into_owned();
+        if dir.join("icon.svg").exists() {
+            icons.insert(plugin.clone(), dir.join("icon.svg"));
+        }
+        let mut cards: Vec<_> = fs::read_dir(&path)
+            .unwrap()
+            .flatten()
+            .map(|e| e.path())
+            .collect();
+        cards.sort();
+        for card in cards {
+            let file = card.file_name().unwrap().to_string_lossy().into_owned();
+            let Some(language) = file.strip_suffix(".md") else {
+                continue;
+            };
+            let source = fs::read_to_string(&card).unwrap().replace("\r\n", "\n");
+            let front_matter = source
+                .strip_prefix("---\n")
+                .and_then(|rest| rest.split_once("\n---").map(|(front, _)| front))
+                .unwrap_or_else(|| panic!("{}: no front matter", card.display()));
+            let docs = yaml_rust2::YamlLoader::load_from_str(front_matter)
+                .unwrap_or_else(|e| panic!("{}: {e}", card.display()));
+            if let Some(icon) = docs.first().and_then(|d| d["icon"].as_str()) {
+                icons.insert(plugin.clone(), dir.join(icon));
+            }
+            let texts = out.entry(language.replace('-', "_")).or_default();
+            for field in ["name", "summary"] {
+                let text = docs
+                    .first()
+                    .and_then(|d| d[field].as_str())
+                    .unwrap_or_else(|| panic!("{}: \"{field}\" is required", card.display()));
+                let key = format!("plugin.{plugin}.{field}");
+                if texts.insert(key.clone(), text.trim().to_string()).is_some() {
+                    panic!("two plugins give {key}: their folders share a name");
+                }
+            }
+        }
+    }
+}
+
+/// A text as a JSON string.
+fn json_string(text: &str) -> String {
+    let mut out = String::from('"');
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 /// The name Windows shows for the program (Task Manager, taskbar jump list): the product, not the
 /// file name.
 #[cfg(windows)]
@@ -143,6 +219,10 @@ fn main() {
     collect(&ui, &ui, "", false, &mut icons);
     let plugins = root.join("src/plugins/builtins");
     collect(&plugins, &plugins, "", true, &mut icons);
+
+    let mut cards = BTreeMap::new();
+    let mut card_icons = BTreeMap::new();
+    collect_cards(&root.join("src"), &mut cards, &mut card_icons);
 
     let mut shorts: BTreeMap<String, String> = BTreeMap::new();
     let mut table = String::from("pub static ICONS: &[Icon] = &[\n");
@@ -197,6 +277,26 @@ fn main() {
     for ((dir, ext), key) in &extensions {
         table.push_str(&format!("    ({dir:?}, {ext:?}, {key:?}),\n"));
     }
+    // The icon of each plugin, from its card: the key of the icon of the IDE that is this file.
+    let mut keys = BTreeMap::new();
+    for (key, entry) in &icons {
+        for file in entry.files.iter().flatten() {
+            keys.insert(fs::canonicalize(file).unwrap(), key.clone());
+        }
+    }
+    table.push_str("];\n\npub static PLUGIN_ICONS: &[(&str, &str)] = &[\n");
+    for (plugin, file) in &card_icons {
+        let key = fs::canonicalize(file)
+            .ok()
+            .and_then(|file| keys.get(&file))
+            .unwrap_or_else(|| {
+                panic!(
+                    "the icon of {plugin}, {}, is not an icon of the IDE",
+                    file.display()
+                )
+            });
+        table.push_str(&format!("    ({plugin:?}, {key:?}),\n"));
+    }
     table.push_str("];\n");
     let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("icon_set.rs");
     fs::write(out, table).unwrap();
@@ -208,6 +308,14 @@ fn main() {
     for (identifier, path) in &locales {
         let path = path.display().to_string().replace('\\', "/");
         table.push_str(&format!("    ({identifier:?}, include_str!({path:?})),\n"));
+    }
+    for (identifier, texts) in &cards {
+        let fields: Vec<_> = texts
+            .iter()
+            .map(|(key, text)| format!("{}: {}", json_string(key), json_string(text)))
+            .collect();
+        let catalog = format!("{{{}}}", fields.join(", "));
+        table.push_str(&format!("    ({identifier:?}, {catalog:?}),\n"));
     }
     table.push_str("];\n");
     let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("locales.rs");

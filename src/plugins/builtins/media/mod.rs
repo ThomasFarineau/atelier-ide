@@ -519,13 +519,13 @@ impl BuiltinPlugin for MediaPlugin {
         "media"
     }
     fn name(&self) -> &'static str {
-        tr!("media.media_player")
+        tr!("plugin.media.name")
     }
     fn description(&self) -> &'static str {
-        tr!("media.plays_music_and_videos")
+        tr!("plugin.media.summary")
     }
     fn icon(&self) -> &'static str {
-        "media/icon"
+        crate::plugins::builtin::card_icon("media")
     }
     fn extensions_dir(&self) -> Option<&'static str> {
         Some("media")

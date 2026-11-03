@@ -3,7 +3,6 @@
   "gradle.command_reload": "Gradle: Reload Project",
   "gradle.command_window": "Gradle: Gradle Window",
   "gradle.default_tasks": "Tasks of the plugins of the build file. Reload to get all those Gradle knows.",
-  "gradle.description": "The projects of a Gradle build (settings.gradle and its includes) and their tasks by group, as in IntelliJ's Gradle window: the tasks of the plugins of the build file, then the real list Gradle gives on reload. A double click runs the task with the gradlew wrapper of the build, or gradle; offline mode and a typed task to run.",
   "gradle.execute_task": "Execute Gradle Task",
   "gradle.loading": "Loading the tasks…",
   "gradle.no_project": "No Gradle build in this project",
