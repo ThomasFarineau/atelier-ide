@@ -35,6 +35,8 @@ anyhow = "1"
 similar = "2"
 syntect = { version = "5.3", default-features = false, features = ["default-fancy"] }
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+# The encodings of text files other than UTF-8 (Windows-1252, Shift_JIS…).
+encoding_rs = "0.8"
 flate2 = "1"
 quick-xml = "0.37"
 tree-sitter = "0.27.0"

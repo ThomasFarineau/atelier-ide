@@ -8,6 +8,7 @@ mod cli;
 mod crash;
 mod dev;
 mod editor;
+mod encoding;
 mod features;
 mod find;
 mod fonts;

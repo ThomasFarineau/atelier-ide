@@ -5495,6 +5495,9 @@ impl Ide {
     fn status_bar(&mut self, ctx: &egui::Context) {
         let t = self.theme(ctx);
         let mut open_problems = false;
+        // Chosen in the menus of the encoding and of the line endings.
+        let mut encoding_change: Option<(crate::encoding::TextEncoding, bool)> = None;
+        let mut ending_change: Option<crate::encoding::LineEnding> = None;
         egui::TopBottomPanel::bottom("status")
             .exact_height(STATUS_HEIGHT)
             .frame(
@@ -5654,15 +5657,48 @@ impl Ide {
                                 trf!("spaces", width = width)
                             };
                             ui::status_text(ui, &indent);
-                            ui::status_text(ui, "UTF-8");
-                            ui::status_text(
-                                ui,
-                                if doc.text.contains("\r\n") {
-                                    "CRLF"
-                                } else {
-                                    "LF"
-                                },
-                            );
+                            let encoding = ui::status_text(ui, &doc.encoding.label())
+                                .on_hover_text(tr!("encoding_tooltip"));
+                            let ending = crate::encoding::LineEnding::of(&doc.text);
+                            let endings = ui::status_text(ui, ending.label())
+                                .on_hover_text(tr!("line_endings_tooltip"));
+                            let current = doc.encoding;
+                            egui::Popup::menu(&encoding)
+                                .id(egui::Id::new("status_encoding"))
+                                .show(|ui| {
+                                    ui::menu_begin(ui);
+                                    for (title, reopen) in [
+                                        (tr!("encoding_reopen"), true),
+                                        (tr!("encoding_convert"), false),
+                                    ] {
+                                        ui::menu_title(ui, title);
+                                        for choice in crate::encoding::ALL {
+                                            let icon =
+                                                (choice == current).then_some("greenCheckmark");
+                                            if ui::menu_item(ui, icon, &choice.label(), None, false)
+                                                .clicked()
+                                            {
+                                                encoding_change = Some((choice, reopen));
+                                                ui.close();
+                                            }
+                                        }
+                                    }
+                                });
+                            egui::Popup::menu(&endings)
+                                .id(egui::Id::new("status_line_endings"))
+                                .show(|ui| {
+                                    ui::menu_begin(ui);
+                                    ui::menu_title(ui, tr!("line_endings"));
+                                    for choice in crate::encoding::LineEnding::ALL {
+                                        let icon = (choice == ending).then_some("greenCheckmark");
+                                        if ui::menu_item(ui, icon, choice.label(), None, false)
+                                            .clicked()
+                                        {
+                                            ending_change = Some(choice);
+                                            ui.close();
+                                        }
+                                    }
+                                });
                             ui::status_text(ui, &format!("{}:{}", self.cursor.0, self.cursor.1));
                             let (errors, warnings) = self.problems;
                             if errors + warnings > 0 {
@@ -5711,6 +5747,26 @@ impl Ide {
             });
         if open_problems {
             self.open_tool(&crate::features::problems::TOOL_WINDOWS[0]);
+        }
+        if let Some(doc) = self.documents.get_mut(self.active) {
+            if let Some(ending) = ending_change {
+                // Through the editor: one step of undo.
+                let new = ending.apply(&doc.text);
+                if new != doc.text {
+                    doc.view.replace_text(&mut doc.text, &new);
+                }
+            }
+            if let Some((encoding, reopen)) = encoding_change {
+                let done = if reopen {
+                    doc.reopen_with(encoding)
+                } else {
+                    doc.convert_to(encoding)
+                };
+                if let Err(e) = done {
+                    let title = tr!("encoding_tooltip").to_string();
+                    builtin::Host::balloon(self, &title, e.to_string(), true);
+                }
+            }
         }
     }
 

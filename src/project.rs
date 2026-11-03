@@ -1,3 +1,4 @@
+use crate::encoding::TextEncoding;
 use anyhow::{Context, Result, bail};
 use std::{
     fs,
@@ -18,7 +19,7 @@ pub const LARGE_FILE_SIZE: u64 = 64 * 1024 * 1024;
 
 /// A file being read on a background thread.
 pub struct Loading {
-    rx: Receiver<Result<String>>,
+    rx: Receiver<Result<(String, TextEncoding)>>,
     read: Arc<AtomicU64>,
     total: u64,
 }
@@ -45,6 +46,10 @@ pub struct Document {
     pub path: Option<PathBuf>,
     pub text: String,
     saved: String,
+    /// The encoding of the file, and the one it has on disk: converting it makes the document
+    /// modified until it is saved.
+    pub encoding: TextEncoding,
+    saved_encoding: TextEncoding,
     pub language: String,
     /// Editor view state: line index, caret, undo history, highlighting.
     pub view: crate::editor::EditorState,
@@ -60,12 +65,14 @@ impl Document {
             path: None,
             text: String::new(),
             saved: String::new(),
+            encoding: TextEncoding::default(),
+            saved_encoding: TextEncoding::default(),
             language: "txt".into(),
             view: Default::default(),
         }
     }
     pub fn open(path: PathBuf) -> Result<Self> {
-        let text = read_text(&path)?;
+        let (text, encoding) = read_text(&path)?;
         let large = text.len() as u64 > MAX_FILE_SIZE;
         let language = if large {
             "txt".into()
@@ -81,6 +88,8 @@ impl Document {
             path: Some(path),
             saved: if large { String::new() } else { text.clone() },
             text,
+            encoding,
+            saved_encoding: encoding,
             language,
             view: Default::default(),
         })
@@ -123,6 +132,8 @@ impl Document {
             path: Some(path),
             text: String::new(),
             saved: String::new(),
+            encoding: TextEncoding::default(),
+            saved_encoding: TextEncoding::default(),
             view: Default::default(),
         })
     }
@@ -136,7 +147,9 @@ impl Document {
             Err(TryRecvError::Disconnected) => Err(anyhow::anyhow!(tr!("reading_interrupted"))),
         };
         self.loading = None;
-        Some(result.map(|text| {
+        Some(result.map(|(text, encoding)| {
+            self.encoding = encoding;
+            self.saved_encoding = encoding;
             // A read-only file is never compared with a saved copy.
             self.saved = if self.read_only {
                 String::new()
@@ -171,8 +184,10 @@ impl Document {
             return Ok(false);
         }
         let mtime = modified(path);
-        let text = read_text(path)?;
+        let (text, encoding) = read_text(path)?;
         self.mtime = mtime;
+        self.encoding = encoding;
+        self.saved_encoding = encoding;
         if text == self.saved {
             return Ok(false);
         }
@@ -186,7 +201,46 @@ impl Document {
         Ok(true)
     }
     pub fn dirty(&self) -> bool {
-        !self.read_only && self.text != self.saved
+        !self.read_only && (self.text != self.saved || self.encoding != self.saved_encoding)
+    }
+    /// Reads the file again in another encoding: for a file that was read with the wrong one.
+    /// Refused while the document has changes.
+    pub fn reopen_with(&mut self, encoding: TextEncoding) -> Result<()> {
+        let Some(path) = &self.path else {
+            bail!(tr!("encoding_needs_file"));
+        };
+        if self.dirty() {
+            bail!(tr!("encoding_save_first"));
+        }
+        let bytes = fs::read(path)?;
+        let text = encoding.decode(&bytes);
+        self.mtime = modified(path);
+        self.encoding = encoding;
+        self.saved_encoding = encoding;
+        self.saved = if self.read_only {
+            String::new()
+        } else {
+            text.clone()
+        };
+        self.text = text;
+        self.view.invalidate();
+        Ok(())
+    }
+    /// Writes the document in another encoding from now on (once saved). Refused when the text
+    /// has a character that encoding cannot write.
+    pub fn convert_to(&mut self, encoding: TextEncoding) -> Result<()> {
+        if self.read_only {
+            bail!(tr!("file_read_only_too_large"));
+        }
+        if let Err(c) = encoding.encode(&self.text) {
+            bail!(trf!(
+                "encoding_cannot_write",
+                c = c,
+                encoding = encoding.label()
+            ));
+        }
+        self.encoding = encoding;
+        Ok(())
     }
     pub fn title(&self) -> String {
         self.path
@@ -206,16 +260,24 @@ impl Document {
             bail!(tr!("file_still_loading"));
         }
         if !force && self.path.as_ref() == Some(&path) && path.exists() {
-            let disk = fs::read_to_string(&path)?;
+            let disk = self.saved_encoding.decode(&fs::read(&path)?);
             if disk != self.saved {
                 bail!(tr!("file_was_changed_disk_use"));
             }
         }
-        fs::write(&path, &self.text).with_context(|| trf!("cannot_save", path = path.display()))?;
+        let bytes = self.encoding.encode(&self.text).map_err(|c| {
+            anyhow::anyhow!(trf!(
+                "encoding_cannot_write",
+                c = c,
+                encoding = self.encoding.label()
+            ))
+        })?;
+        fs::write(&path, bytes).with_context(|| trf!("cannot_save", path = path.display()))?;
         self.language = language(&path).into();
         self.mtime = modified(&path);
         self.path = Some(path);
         self.saved = self.text.clone();
+        self.saved_encoding = self.encoding;
         Ok(())
     }
 }
@@ -238,12 +300,12 @@ pub fn modified(path: &Path) -> Option<SystemTime> {
     fs::metadata(path).and_then(|m| m.modified()).ok()
 }
 
-fn read_text(path: &Path) -> Result<String> {
+fn read_text(path: &Path) -> Result<(String, TextEncoding)> {
     read_chunked(path, &AtomicU64::new(0))
 }
 
 /// Reads a text file, publishing the number of bytes read so far.
-fn read_chunked(path: &Path, progress: &AtomicU64) -> Result<String> {
+fn read_chunked(path: &Path, progress: &AtomicU64) -> Result<(String, TextEncoding)> {
     let mut file = fs::File::open(path)?;
     if file.metadata()?.len() > LARGE_FILE_SIZE {
         bail!(tr!("file_too_large_limit_4"));
@@ -258,11 +320,13 @@ fn read_chunked(path: &Path, progress: &AtomicU64) -> Result<String> {
         bytes.extend_from_slice(&chunk[..n]);
         progress.store(bytes.len() as u64, Ordering::Relaxed);
     }
-    let text = String::from_utf8(bytes).context(tr!("file_must_utf_8_text"))?;
-    if text.contains(' ') {
+    // A NUL byte is binary, unless the file is UTF-16 (its byte order mark says so).
+    let utf16 = matches!(bytes.get(..2), Some([0xFF, 0xFE] | [0xFE, 0xFF]));
+    if !utf16 && bytes.contains(&0) {
         bail!(tr!("file_seems_binary"));
     }
-    Ok(text)
+    let (text, encoding) = crate::encoding::detect(&bytes);
+    Ok((text, encoding))
 }
 
 pub fn language(path: &Path) -> &'static str {
