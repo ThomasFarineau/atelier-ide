@@ -10,7 +10,6 @@ pub mod k8s;
 pub mod markdown;
 pub mod maven;
 pub mod mcp;
-pub mod media;
 pub mod mermaid;
 pub mod node;
 pub mod runtimes;

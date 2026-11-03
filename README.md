@@ -25,7 +25,7 @@
 - **Code intelligence** for JavaScript, TypeScript, Rust and Java: tree-sitter right away, then tsserver, rust-analyzer or jdtls (completion, navigation, rename, quick actions, reformat).
 - **Git**: commit window, log with branch graph, branch widget, diff, conflict resolution, blame.
 - **Project tools**: terminal, run configurations, npm, Maven, Gradle, translations, Kubernetes, and viewers for Markdown, Mermaid, SVG, CSV and images.
-- **Native plugins** to install from **Plugins › Available**: a database viewer (MongoDB, PostgreSQL, MySQL), a Microsoft Office viewer and a 3D model viewer.
+- **Native plugins** to install from **Plugins › Marketplace**: a database viewer (MongoDB, PostgreSQL, MySQL), a Microsoft Office viewer, a media player and a 3D model viewer. They keep their dependencies out of the IDE; `atelier-cli` (in `api/`) creates and compiles new ones.
 - **For AI agents**: an MCP server for Claude Code, Codex and Gemini CLI, AI sessions, a context graph, and commits that follow the conventions of the repository.
 - **Updates itself**: a Windows installer, an `atelier` command on the PATH, and a launcher that keeps the IDE up to date.
 

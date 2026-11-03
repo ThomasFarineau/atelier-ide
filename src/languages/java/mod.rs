@@ -87,6 +87,9 @@ impl BuiltinPlugin for JavaPlugin {
     fn language(&self) -> bool {
         true
     }
+    fn file_extensions(&self) -> &'static [&'static str] {
+        &["java"]
+    }
     fn id(&self) -> &'static str {
         "java"
     }

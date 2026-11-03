@@ -278,8 +278,38 @@ const MAX_RECENT: usize = 50;
 
 /// Whether an `"auto"` plugin is on in the project at `root`: Git while it has a `.git` (a
 /// folder, or the file of a worktree or a submodule), the others always.
-fn auto_on(root: &Path, id: &str) -> bool {
-    id != "git" || root.join(".git").exists()
+/// The extensions of the files of a project (lowercase), out of its dependencies, build output and
+/// hidden folders, for the languages left to the IDE. A huge project is read in part only.
+pub(crate) fn project_extensions(root: &Path) -> BTreeSet<String> {
+    const MAX_ENTRIES: usize = 50_000;
+    let mut found = BTreeSet::new();
+    let mut stack = vec![root.to_path_buf()];
+    let mut seen = 0;
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            seen += 1;
+            if seen > MAX_ENTRIES {
+                return found;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') || crate::project::is_library(&name) {
+                continue;
+            }
+            match entry.file_type() {
+                Ok(t) if t.is_dir() => stack.push(entry.path()),
+                Ok(_) => {
+                    if let Some((_, extension)) = name.rsplit_once('.') {
+                        found.insert(extension.to_ascii_lowercase());
+                    }
+                }
+                Err(_) => {}
+            }
+        }
+    }
+    found
 }
 
 fn settings_path() -> PathBuf {
@@ -411,6 +441,9 @@ pub struct Ide {
     /// checked whether they should be on.
     auto_plugins: BTreeSet<String>,
     auto_checked: Instant,
+    /// The extensions of the files of the project, for the languages left to the IDE, and
+    /// when they were read.
+    project_extensions: Option<(Instant, BTreeSet<String>)>,
     root: PathBuf,
     documents: Vec<Document>,
     active: usize,
@@ -709,6 +742,7 @@ impl Ide {
             ),
             auto_plugins: BTreeSet::new(),
             auto_checked: Instant::now(),
+            project_extensions: None,
             settings,
             expanded: BTreeSet::from([root.clone()]),
             root,
@@ -6327,8 +6361,9 @@ impl Ide {
         let (legacy_enabled, legacy_disabled) = &self.legacy_plugins;
         for plugin in self.builtins.iter().filter(|p| !p.core() && !p.external()) {
             let id = plugin.id();
+            let automatic = id == "git" || plugin.language();
             states.builtin.entry(id.to_string()).or_insert_with(|| {
-                if id == "git" && !legacy_disabled.contains(id) {
+                if automatic && !legacy_disabled.contains(id) {
                     PluginState::AUTO
                 } else {
                     PluginState::Set(!legacy_disabled.contains(id))
@@ -6347,12 +6382,13 @@ impl Ide {
             .filter(|(_, state)| **state == PluginState::AUTO)
             .map(|(id, _)| id.clone())
             .collect();
-        let disabled: BTreeSet<String> = (states.builtin.iter())
+        self.project_extensions = None;
+        let disabled: BTreeSet<String> = (states.builtin.clone().into_iter())
             .filter(|(id, state)| match state {
                 PluginState::Set(on) => !on,
-                PluginState::Auto(_) => !auto_on(&self.root, id),
+                PluginState::Auto(_) => !self.auto_on(id),
             })
-            .map(|(id, _)| id.clone())
+            .map(|(id, _)| id)
             .collect();
         let enabled: BTreeSet<String> = (states.external.iter())
             .filter(|(_, on)| **on)
@@ -6450,7 +6486,7 @@ impl Ide {
         self.auto_checked = Instant::now();
         let ids: Vec<String> = self.auto_plugins.iter().cloned().collect();
         for id in ids {
-            let on = auto_on(&self.root, &id);
+            let on = self.auto_on(&id);
             if on != self.settings.disabled_builtins.contains(&id) {
                 continue;
             }
@@ -6463,6 +6499,27 @@ impl Ide {
                 }
             }
         }
+    }
+
+    /// Whether a plugin left to the IDE (`"auto"`) is on: Git while the project has a `.git`, a
+    /// language while it has one of its files (read again every 5 seconds at most).
+    fn auto_on(&mut self, id: &str) -> bool {
+        if id == "git" {
+            return self.root.join(".git").exists();
+        }
+        let extensions = match self.builtins.iter().find(|p| p.id() == id) {
+            Some(plugin) if !plugin.file_extensions().is_empty() => plugin.file_extensions(),
+            _ => return true,
+        };
+        let stale = self
+            .project_extensions
+            .as_ref()
+            .is_none_or(|(at, _)| at.elapsed() > Duration::from_secs(30));
+        if stale {
+            self.project_extensions = Some((Instant::now(), project_extensions(&self.root)));
+        }
+        let found = &self.project_extensions.as_ref().expect("just read").1;
+        extensions.iter().any(|e| found.contains(*e))
     }
 
     fn set_builtin_enabled(&mut self, id: &str, enabled: bool) {

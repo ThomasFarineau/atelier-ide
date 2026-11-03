@@ -181,6 +181,11 @@ pub trait BuiltinPlugin {
     fn language(&self) -> bool {
         false
     }
+    /// The extensions of the files of a language (lowercase, without the dot): the language is
+    /// `"auto"` in a project by default, on while the project has such a file.
+    fn file_extensions(&self) -> &'static [&'static str] {
+        &[]
+    }
     /// A native plugin (`native.rs`): it is turned on and off with the external plugins, and
     /// is present only while it is on.
     fn external(&self) -> bool {
@@ -234,7 +239,7 @@ pub trait BuiltinPlugin {
         None
     }
     /// Folder of the plugin whose `extensions` icons apply to every file of that extension
-    /// (`media` for `media/extensions/mp3.svg`).
+    /// (`image` for `image/extensions/png.svg`).
     fn extensions_dir(&self) -> Option<&'static str> {
         None
     }
@@ -337,7 +342,6 @@ pub fn all() -> Vec<Box<dyn BuiltinPlugin>> {
         Box::new(crate::features::search::SearchPlugin::default()),
         Box::new(crate::features::problems::ProblemsPlugin::default()),
         Box::new(crate::plugins::builtins::image::ImagePlugin::default()),
-        Box::new(crate::plugins::builtins::media::MediaPlugin::default()),
         Box::new(crate::plugins::builtins::k8s::K8sPlugin::default()),
         Box::new(crate::plugins::builtins::node::NodePlugin::default()),
         Box::new(crate::plugins::builtins::cargo::CargoPlugin::default()),

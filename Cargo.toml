@@ -57,8 +57,6 @@ spellbook = "0.4.2"
 # The window handle eframe gives, to place the window on Windows.
 raw-window-handle = "0.6"
 tree-sitter-python = "0.25"
-rodio = { version = "0.23", default-features = false, features = ["playback", "mp3", "wav", "flac", "vorbis", "mp4"] }
-lzma-rs = "0.3"
 # Native plugins: the dynamic libraries of `.atelier/plugins`, and the interface they implement.
 libloading = "0.8"
 # The interface of the native plugins (the submodule `api/`): C types, and the messages.

@@ -29,6 +29,8 @@ struct Builtin {
     tools: Vec<(&'static str, String)>,
     /// (label, shortcut)
     commands: Vec<(String, String)>,
+    /// The extensions of the files of a language, which turn it on in `"auto"`.
+    extensions: &'static [&'static str],
 }
 
 fn matches(filter: &str, name: &str, description: &str) -> bool {
@@ -280,7 +282,10 @@ impl Ide {
             .builtins
             .iter()
             .filter(|p| !p.core() && !p.external())
+            // The languages have a tab of their own.
+            .filter(|p| p.language() == (self.plugin_tab == 2))
             .map(|p| Builtin {
+                extensions: p.file_extensions(),
                 id: p.id(),
                 parent: p.parent(),
                 name: p.name(),
@@ -318,13 +323,20 @@ impl Ide {
         }
         builtins = sorted;
 
-        // Tabs, as in IntelliJ: the installed plugins, and those of the releases of Atelier.
+        // Tabs, as in IntelliJ: the plugins of the IDE and those installed, those of the releases of
+        // Atelier, and the languages.
         ui.horizontal(|ui| {
-            if tab(ui, &t, tr!("installed"), self.plugin_tab == 0) {
-                self.plugin_tab = 0;
-            }
-            if tab(ui, &t, tr!("plugins_available"), self.plugin_tab == 1) {
-                self.plugin_tab = 1;
+            for (index, text) in [
+                tr!("plugins"),
+                tr!("plugins_marketplace"),
+                tr!("plugins_languages"),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                if tab(ui, &t, text, self.plugin_tab == index) {
+                    self.plugin_tab = index;
+                }
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if self.plugin_tab == 1 {
@@ -364,10 +376,11 @@ impl Ide {
         );
 
         let filter = self.plugin_filter.to_lowercase();
-        // Keep the selection on something that exists.
+        // Keep the selection on something of this tab.
+        let languages = self.plugin_tab == 2;
         let exists = |key: &str, ide: &Ide| match key.split_once(':') {
-            Some(("b", id)) => ide.builtins.iter().any(|p| p.id() == id),
-            Some(("p", id)) => ide.plugins.iter().any(|p| p.id == id),
+            Some(("b", id)) => builtins.iter().any(|b| b.id == id),
+            Some(("p", id)) => !languages && ide.plugins.iter().any(|p| p.id == id),
             _ => false,
         };
         if !self
@@ -436,7 +449,8 @@ impl Ide {
                             }
                         }
                     }
-                    if (!visible_project.is_empty() || filter.is_empty())
+                    if !languages
+                        && (!visible_project.is_empty() || filter.is_empty())
                         && group_header(ui, &t, tr!("project_extensions"), visible_project.len())
                     {
                         if self.plugins.is_empty() {
@@ -481,7 +495,7 @@ impl Ide {
                             }
                         }
                     }
-                    if visible_builtins.is_empty() && visible_project.is_empty() {
+                    if visible_builtins.is_empty() && (languages || visible_project.is_empty()) {
                         ui.add_space(24.0);
                         ui.vertical_centered(|ui| {
                             ui.label(RichText::new(tr!("no_results")).color(t.text_secondary));
@@ -612,6 +626,15 @@ impl Ide {
                                     }
                                 });
                             });
+                            if !entry.extensions.is_empty() {
+                                let list: Vec<String> =
+                                    entry.extensions.iter().map(|e| format!(".{e}")).collect();
+                                ui.label(
+                                    RichText::new(trf!("plugin_files", files = list.join(", ")))
+                                        .small()
+                                        .color(t.text_secondary),
+                                );
+                            }
                             if !entry.description.is_empty() {
                                 ui.add(
                                     egui::Label::new(
@@ -799,9 +822,16 @@ impl Ide {
                         }
                     }
                     if self.auto_plugins.contains(id) {
-                        // Git while the project leaves it to the IDE (`"auto"`).
+                        // Git or a language while the project leaves it to the IDE (`"auto"`).
                         ui.add_space(10.0);
-                        let auto = RichText::new(tr!("plugin_auto_git")).color(t.text_secondary);
+                        let text = if b.extensions.is_empty() {
+                            tr!("plugin_auto_git").to_string()
+                        } else {
+                            let list: Vec<String> =
+                                b.extensions.iter().map(|e| format!(".{e}")).collect();
+                            trf!("plugin_auto_language", extensions = list.join(", "))
+                        };
+                        let auto = RichText::new(text).color(t.text_secondary);
                         ui.add(egui::Label::new(auto).wrap());
                     }
                     if !enabled {

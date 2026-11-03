@@ -25,6 +25,8 @@ pub struct Entry {
     pub name: String,
     pub version: String,
     pub description: String,
+    /// The extensions of the files it shows.
+    pub extensions: Vec<String>,
     /// The `.atelier-plugin` file.
     pub download: String,
     /// The page of the release.
@@ -57,6 +59,8 @@ struct Manifest {
     description: String,
     #[serde(default)]
     abi: Option<u32>,
+    #[serde(default)]
+    extensions: Vec<String>,
 }
 
 fn agent() -> ureq::Agent {
@@ -122,6 +126,7 @@ fn latest(releases: &[Release]) -> Vec<(Entry, String)> {
             name: id.to_string(),
             version: version.to_string(),
             description: String::new(),
+            extensions: Vec::new(),
             download,
             page: release.html_url.clone(),
         };
@@ -154,6 +159,7 @@ pub fn fetch() -> Result<Vec<Entry>> {
             entry.name = manifest.name;
         }
         entry.description = manifest.description;
+        entry.extensions = manifest.extensions;
         entries.push(entry);
     }
     Ok(entries)

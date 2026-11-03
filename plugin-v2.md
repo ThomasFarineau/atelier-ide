@@ -64,14 +64,19 @@ compile seul avec `atelier-plugin-api` `v0.3.0`. Sa CI vérifie fmt, clippy et t
 **Release** publie `plugins/<id>/vX.Y.Z` (version du plugin) quand la version de `Cargo.toml`
 change sur `main` : `<id>.atelier-plugin`, `plugin.json` et `<id>-SHA256SUMS`.
 
+## Ensuite (4 novembre 2026, `api` v0.4.0)
+
+- Media devient `plugin-media-viewer` (rodio et le téléchargement de ffmpeg sortent de l'IDE).
+  L'interface gagne `update` (chaque image, avec les fichiers ouverts) pour qu'il mette en pause
+  un onglet caché.
+- `plugin.json` liste les extensions prises en charge (`extensions`), leurs icônes sont dans
+  `extensions/` (`a+b.svg`, `.dark.svg`), empaquetées avec la bibliothèque.
+- `atelier-cli` (dans `api/cli`) remplace les scripts `package` : `plugin create`,
+  `plugin compile`, `plugin merge` ; la release des plugins s'en sert.
+- La fenêtre Plugins a trois onglets : Plugins, Marketplace, Langages. Un langage est
+  automatique par défaut : activé tant que le projet a un de ses fichiers.
+
 ## Ce qui reste
 
-- Créer les dépôts `atelier-ide-org/plugin-database` et `atelier-ide-org/plugin-msoffice-viewer`
-  (publics), puis y pousser `main` (les dépôts locaux sont prêts, `origin` déjà réglé) : leur
-  release se fait toute seule.
-- Fusionner les pull requests de `app` et de `docs` ensemble, puis la pull request de release
-  (0.3.0) une fois les trois plugins publiés : sinon les utilisateurs perdent l'explorateur de
-  bases et la visionneuse Office le temps qu'ils sortent.
-- Supprimer la branche `kits` d'`api`, qui ne sert plus.
 - Élargir l'interface au besoin : barre d'état, menus du projet, commandes de fichier, IME,
   glisser-déposer de fichiers, et ce que les prochains plugins demanderont.

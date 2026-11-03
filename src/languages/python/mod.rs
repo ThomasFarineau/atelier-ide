@@ -94,6 +94,9 @@ impl BuiltinPlugin for PythonPlugin {
     fn language(&self) -> bool {
         true
     }
+    fn file_extensions(&self) -> &'static [&'static str] {
+        &["py", "pyi", "pyw"]
+    }
     fn id(&self) -> &'static str {
         "python"
     }
