@@ -32,24 +32,24 @@ const BIG_LINES: u64 = 300;
 const SHOW_BUDGET: usize = 20_000;
 const FIELD: char = '\u{1f}';
 const RECORD: char = '\u{1e}';
-const LOG_FORMAT: &str = "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%B%x1e";
+pub(super) const LOG_FORMAT: &str = "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%B%x1e";
 
 #[derive(Clone, Debug)]
-struct Info {
-    hash: String,
+pub(super) struct Info {
+    pub(super) hash: String,
     parents: Vec<String>,
     author: String,
     email: String,
     date: String,
-    message: String,
+    pub(super) message: String,
 }
 
 impl Info {
-    fn subject(&self) -> &str {
+    pub(super) fn subject(&self) -> &str {
         self.message.lines().next().unwrap_or("").trim()
     }
 
-    fn body(&self) -> String {
+    pub(super) fn body(&self) -> String {
         self.message
             .lines()
             .skip(1)
@@ -60,7 +60,7 @@ impl Info {
     }
 }
 
-fn parse(out: &str) -> Vec<Info> {
+pub(super) fn parse(out: &str) -> Vec<Info> {
     out.split(RECORD)
         .filter_map(|record| {
             let record = record.trim_start_matches('\n');
@@ -166,7 +166,7 @@ fn unpushed(repo: &Repo) -> HashSet<String> {
 }
 
 /// `(path, status, added, deleted)` of what a commit changes.
-fn changes_of(repo: &Repo, hash: &str) -> Vec<(String, String, u64, u64)> {
+pub(super) fn changes_of(repo: &Repo, hash: &str) -> Vec<(String, String, u64, u64)> {
     let numstat = repo
         .read(&["show", "--numstat", "--no-renames", "--format=", hash])
         .unwrap_or_default();
@@ -209,7 +209,11 @@ fn looks_like_a_test(path: &str) -> bool {
 }
 
 /// Everything that does not match in a commit message, given what the commit changes.
-fn findings(c: &Convention, message: &str, changes: &[(String, String, u64, u64)]) -> Vec<String> {
+pub(super) fn findings(
+    c: &Convention,
+    message: &str,
+    changes: &[(String, String, u64, u64)],
+) -> Vec<String> {
     let mut out = Vec::new();
     let subject = message.lines().next().unwrap_or("").trim();
     let body = message.lines().skip(1).collect::<Vec<_>>().join("\n");

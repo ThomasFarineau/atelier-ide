@@ -15,7 +15,11 @@ use std::{
     time::Duration,
 };
 
-const SIZE: [f32; 2] = [300.0, 340.0];
+/// The card, and around it the room of its shadow: the window has no frame, and a transparent
+/// window gets no shadow from the system.
+const CARD: [f32; 2] = [300.0, 340.0];
+const SHADOW_ROOM: f32 = 24.0;
+const SIZE: [f32; 2] = [CARD[0] + 2.0 * SHADOW_ROOM, CARD[1] + 2.0 * SHADOW_ROOM];
 const BACKGROUND: Color32 = Color32::from_rgb(0x1E, 0x1F, 0x22);
 const TEXT: Color32 = Color32::from_rgb(0xDF, 0xE1, 0xE5);
 const MUTED: Color32 = Color32::from_rgb(0x9D, 0xA0, 0xA8);
@@ -141,7 +145,18 @@ impl eframe::App for Splash {
         let frame = egui::Frame::new()
             .fill(BACKGROUND.gamma_multiply(opacity))
             .corner_radius(12)
-            .inner_margin(24);
+            .inner_margin(24)
+            .outer_margin(SHADOW_ROOM)
+            .stroke(egui::Stroke::new(
+                1.0_f32,
+                Color32::from_white_alpha(14).gamma_multiply(opacity),
+            ))
+            .shadow(egui::epaint::Shadow {
+                offset: [0, 6],
+                blur: 22,
+                spread: 0,
+                color: Color32::from_black_alpha((110.0 * opacity) as u8),
+            });
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
             ui.set_opacity(opacity);
             // No title bar: the whole window moves it.

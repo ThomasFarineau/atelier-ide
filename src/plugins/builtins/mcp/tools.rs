@@ -173,6 +173,25 @@ pub fn specs() -> Vec<Value> {
             },
         }),
         json!({
+            "name": "git_pr_plan",
+            "description": "First step of a pull request. The commits of the current branch against the base (oldest first), each checked against the commit rules of the repository (`problems`: what blocks the pull request), the stat and the diff, and the guidance for the title and the description.",
+            "inputSchema": {"type": "object", "properties": {"base": {"type": "string", "description": "The branch to merge into; by default the default branch of origin, else main."}}},
+        }),
+        json!({
+            "name": "git_pull_request",
+            "description": "Opens the pull request of the current branch. Refuses it while a commit breaks the rules of the repository, or when the title does not follow them; removes Co-authored-by lines and any attribution (\"Generated with…\") from the description; pushes the branch (never forced) and creates the pull request with gh. Returns its address.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "One line, written as a commit subject of the repository."},
+                    "body": {"type": "string", "description": "The description, in Markdown: what the branch changes and why, exactly."},
+                    "base": {"type": "string"},
+                    "draft": {"type": "boolean"},
+                },
+                "required": ["title", "body"],
+            },
+        }),
+        json!({
             "name": "search_in_project",
             "description": "Searches text in the files of the project (like “Find in Files” of the IDE, without ignored folders or binaries).",
             "inputSchema": {

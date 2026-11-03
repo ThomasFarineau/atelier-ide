@@ -257,6 +257,8 @@
   "git.stash_dialog": "Stash…",
   "git.stash_local_changes_during_update": "Stash the local changes during the update",
   "git.stashing": "Stashing",
+  "git.submodule": "submodule",
+  "git.submodule_of": "Git submodule: {url}",
   "git.tag_name": "tag name",
   "git.text": "{title}: {label}",
   "git.text_hash": "Text or hash",

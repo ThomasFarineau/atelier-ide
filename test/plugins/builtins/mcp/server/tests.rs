@@ -230,7 +230,13 @@ fn the_commit_commands_are_offered_as_prompts_and_the_commit_tools_are_listed() 
         .collect();
     assert_eq!(
         names,
-        ["commit", "commit-all", "commit-by-context", "rework-commit"]
+        [
+            "commit",
+            "commit-all",
+            "commit-by-context",
+            "rework-commit",
+            "pr"
+        ]
     );
     let (_, body) = post(
         port,

@@ -34,7 +34,7 @@ Un autre client MCP peut s'y connecter avec l'adresse et le secret (`mcp.json` d
 | `search_in_project` | Cherche dans le projet, hors du fil de l'interface (la fenêtre ne se fige pas) |
 | `i18n` | Les [traductions](./translations) |
 | `graph_overview`, `graph_query`, `graph_node`, `graph_path` | Le [graphe de contexte](../ai/context-graph) |
-| `git_commit_plan`, `git_diff`, `git_commit`, `git_rework_plan`, `git_show`, `git_rework_apply` | Les [commits par l'IA](../ai/commits) |
+| `git_commit_plan`, `git_diff`, `git_commit`, `git_rework_plan`, `git_show`, `git_rework_apply`, `git_pr_plan`, `git_pull_request` | Les [commits par l'IA](../ai/commits) |
 | `session_note`, `get_session_context`, `list_sessions` | Les sessions d'IA, ci-dessous |
 
 ## Sessions d'IA

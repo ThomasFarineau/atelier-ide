@@ -2911,6 +2911,8 @@ impl EditorState {
                 );
                 painter.rect_filled(visible, 0.0, t.island);
                 let marks_at = |index: usize| opt.marks.iter().filter(move |m| m.line == index);
+                // The change under the mouse, to show what its lines were.
+                let mut change_tip: Option<(MarkKind, std::sync::Arc<str>)> = None;
                 let gutter_hot = hover_pos.is_some_and(|p| visible.contains(p));
                 for shown in first..last {
                     let index = self.line_at(shown);
@@ -2980,18 +2982,40 @@ impl EditorState {
                     }
                     for mark in marks_at(index) {
                         let x = left + marks_x + 2.0;
-                        if mark.kind == MarkKind::Deleted {
+                        let zone = if mark.kind == MarkKind::Deleted {
                             painter.add(egui::Shape::convex_polygon(
                                 vec![pos2(x, y - 4.0), pos2(x + 6.0, y), pos2(x, y + 4.0)],
                                 mark.kind.color(),
                                 Stroke::NONE,
                             ));
+                            Rect::from_min_max(pos2(x - 2.0, y - 5.0), pos2(x + 8.0, y + 5.0))
                         } else {
+                            // One bar over the lines of a block: no gap with a neighbour of the
+                            // same kind, rounded at its ends only.
+                            let joined = |line: Option<usize>| {
+                                line.is_some_and(|l| marks_at(l).any(|m| m.kind == mark.kind))
+                            };
+                            let above = joined(index.checked_sub(1));
+                            let below = joined(Some(index + 1));
+                            let top = if above { y } else { y + 1.0 };
+                            let bottom = if below { y + row } else { y + row - 1.0 };
+                            let radius = egui::CornerRadius {
+                                nw: if above { 0 } else { 1 },
+                                ne: if above { 0 } else { 1 },
+                                sw: if below { 0 } else { 1 },
+                                se: if below { 0 } else { 1 },
+                            };
                             painter.rect_filled(
-                                Rect::from_min_size(pos2(x, y + 1.0), vec2(3.0, row - 2.0)),
-                                1.0,
+                                Rect::from_min_max(pos2(x, top), pos2(x + 3.0, bottom)),
+                                radius,
                                 mark.kind.color(),
                             );
+                            Rect::from_min_max(pos2(x - 2.0, y), pos2(x + 7.0, y + row))
+                        };
+                        if let (Some(before), Some(pointer)) = (&mark.before, hover_pos)
+                            && zone.contains(pointer)
+                        {
+                            change_tip = Some((mark.kind, before.clone()));
                         }
                     }
                 }
@@ -3026,6 +3050,9 @@ impl EditorState {
                         [full.left_bottom(), full.right_bottom()],
                         Stroke::new(1.0_f32, t.separator),
                     );
+                }
+                if let Some((kind, before)) = change_tip {
+                    change_tooltip(ui, kind, &before, opt.font.clone());
                 }
                 self.assist_paint(ui, text, opt, origin, text_left, row, hover_pos);
                 self.intel_paint(ui, text, opt, origin, text_left, row);
@@ -3085,3 +3112,41 @@ mod hints_tests;
 #[cfg(test)]
 #[path = "../test/editor/context_tests.rs"]
 mod context_tests;
+
+/// What the lines of a change were, or the lines deleted, under the mouse in the gutter.
+fn change_tooltip(ui: &egui::Ui, kind: MarkKind, before: &str, font: FontId) {
+    let t = crate::ui::theme(ui.ctx());
+    let title = match kind {
+        MarkKind::Deleted => tr!("git_change_deleted"),
+        _ => tr!("git_change_before"),
+    };
+    // A long block is cut: the tooltip stays on the screen.
+    const MAX_LINES: usize = 30;
+    let mut text: String = before
+        .lines()
+        .take(MAX_LINES)
+        .collect::<Vec<_>>()
+        .join("\n");
+    let more = before.lines().count().saturating_sub(MAX_LINES);
+    if more > 0 {
+        text.push_str(&format!("\n… (+{more})"));
+    }
+    let pointer = ui.ctx().pointer_hover_pos().unwrap_or_default();
+    egui::Tooltip::always_open(
+        ui.ctx().clone(),
+        ui.layer_id(),
+        ui.id().with("git_change_tip"),
+        pointer,
+    )
+    .show(|ui| {
+        ui.label(egui::RichText::new(title).small().color(t.text_secondary));
+        egui::Frame::new()
+            .fill(kind.color().gamma_multiply(0.12))
+            .inner_margin(egui::Margin::symmetric(6, 4))
+            .corner_radius(4)
+            .show(ui, |ui| {
+                let shown = if text.is_empty() { " " } else { text.as_str() };
+                ui.label(egui::RichText::new(shown).font(font).color(t.text));
+            });
+    });
+}

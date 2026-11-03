@@ -350,6 +350,16 @@ impl Ide {
                 if ui::icon_button(ui, "add", tr!("install_plugin_file")).clicked() {
                     self.install_plugin_file();
                 }
+                // The installed plugins that have a newer version, all at once.
+                let updates = self.plugin_updates();
+                if !updates.is_empty() {
+                    let text = trf!("plugins_update_all", count = updates.len());
+                    if ui::primary_button(ui, &text).clicked() {
+                        for entry in &updates {
+                            self.plugin_catalog.download(entry);
+                        }
+                    }
+                }
             });
         });
         let (line, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
@@ -650,6 +660,27 @@ impl Ide {
         if let Some(entry) = download {
             self.plugin_catalog.download(&entry);
         }
+    }
+
+    /// The plugins of the catalog newer than the installed ones, not being downloaded. Asks for
+    /// the catalog the first time.
+    fn plugin_updates(&mut self) -> Vec<plugins::catalog::Entry> {
+        let Some(Ok(entries)) = self.plugin_catalog.entries() else {
+            return Vec::new();
+        };
+        let entries = entries.clone();
+        entries
+            .into_iter()
+            .filter(|entry| {
+                self.plugins.iter().any(|p| {
+                    p.id == entry.id
+                        && p.installed
+                        && plugins::catalog::version_key(&p.version)
+                            < plugins::catalog::version_key(&entry.version)
+                })
+            })
+            .filter(|entry| !self.plugin_catalog.is_downloading(&entry.id))
+            .collect()
     }
 
     /// Installs the plugins whose download ended.

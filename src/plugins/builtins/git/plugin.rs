@@ -314,6 +314,8 @@ pub struct GitPlugin {
     // Editor and project tree.
     colors: HashMap<PathBuf, Kind>,
     changed_dirs: HashSet<PathBuf>,
+    /// The submodules of the repository (`.gitmodules`): their folder and their address.
+    submodules: HashMap<PathBuf, String>,
     /// Ignored files and folders; what lies inside an ignored folder is ignored too.
     ignored: HashSet<PathBuf>,
     bases: HashMap<PathBuf, Option<String>>,
@@ -369,6 +371,7 @@ impl Default for GitPlugin {
             branch_sub: None,
             colors: HashMap::new(),
             changed_dirs: HashSet::new(),
+            submodules: HashMap::new(),
             ignored: HashSet::new(),
             bases: HashMap::new(),
             marks: HashMap::new(),
@@ -437,6 +440,17 @@ impl GitPlugin {
         }
         self.colors.clear();
         self.changed_dirs.clear();
+        self.submodules = match &self.repo {
+            Some(repo) => std::fs::read_to_string(repo.root.join(".gitmodules"))
+                .map(|text| {
+                    submodules(&text)
+                        .into_iter()
+                        .map(|(path, url)| (repo.abs(&path), url))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            None => HashMap::new(),
+        };
         self.ignored = snap.ignored.iter().cloned().collect();
         if let Some(repo) = &self.repo {
             for change in &snap.changes {
@@ -1634,7 +1648,19 @@ impl BuiltinPlugin for GitPlugin {
         self.is_ignored(path).then(|| ".gitignore".to_string())
     }
 
+    fn folder_mark(&self, path: &Path) -> Option<crate::plugins::builtin::FolderMark> {
+        let url = self.submodules.get(path)?;
+        Some(crate::plugins::builtin::FolderMark {
+            icon: "git/icons/submodule",
+            label: tr!("git.submodule").to_string(),
+            tooltip: trf!("git.submodule_of", url = url),
+        })
+    }
+
     fn file_color(&self, path: &Path) -> Option<Color32> {
+        if self.submodules.contains_key(path) && !self.changed_dirs.contains(path) {
+            return Some(SUBMODULE);
+        }
         match self.colors.get(path) {
             Some(kind) => Some(status_color(&self.theme, *kind)),
             None if self.changed_dirs.contains(path) => {
@@ -1829,3 +1855,40 @@ pub(super) fn add_to_gitignore(file: &Path, entries: &[(String, bool)]) -> std::
 #[cfg(test)]
 #[path = "../../../../test/plugins/builtins/git/plugin/tests.rs"]
 mod tests;
+
+/// The color of the folder of a submodule in the project tree, when nothing in it changed.
+const SUBMODULE: Color32 = Color32::from_rgb(0x4F, 0xB0, 0xC6);
+
+/// The submodules of a `.gitmodules` file: the path of each one (from the root of the
+/// repository) and its address.
+pub fn submodules(text: &str) -> Vec<(String, String)> {
+    let mut found = Vec::new();
+    let mut current: Option<(Option<String>, Option<String>)> = None;
+    let mut flush = |entry: Option<(Option<String>, Option<String>)>| {
+        if let Some((Some(path), url)) = entry {
+            found.push((path, url.unwrap_or_default()));
+        }
+    };
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            flush(current.take());
+            if line.starts_with("[submodule") {
+                current = Some((None, None));
+            }
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        if let Some((path, url)) = &mut current {
+            match key.trim() {
+                "path" => *path = Some(value.trim().to_string()),
+                "url" => *url = Some(value.trim().to_string()),
+                _ => {}
+            }
+        }
+    }
+    flush(current);
+    found
+}

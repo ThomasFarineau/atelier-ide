@@ -3886,8 +3886,20 @@ impl Ide {
         }
         x += 18.0;
         let icon_rect = Rect::from_min_size(pos2(x, center_y - 8.0), vec2(16.0, 16.0));
+        let folder_mark = is_dir
+            .then(|| {
+                self.builtins
+                    .iter()
+                    .filter(|p| self.builtin_enabled(p.id()))
+                    .find_map(|p| p.folder_mark(path))
+            })
+            .flatten();
         if is_dir {
-            ui::paint_icon(ui, "folder", icon_rect);
+            ui::paint_icon(
+                ui,
+                folder_mark.as_ref().map_or("folder", |m| m.icon),
+                icon_rect,
+            );
         } else {
             egui::Image::new(self.file_icon(ui.ctx(), path)).paint_at(ui, icon_rect);
         }
@@ -3915,6 +3927,16 @@ impl Ide {
         };
         let font = FontId::proportional(13.0);
         let end = ui::paint_text(ui, rect, x, &name, color, font);
+        if let Some(mark) = &folder_mark {
+            ui::paint_text(
+                ui,
+                rect,
+                end + 8.0,
+                &mark.label,
+                t.text_secondary,
+                FontId::proportional(12.5),
+            );
+        }
         if path == self.root {
             ui::paint_text(
                 ui,
@@ -3925,10 +3947,11 @@ impl Ide {
                 FontId::proportional(12.5),
             );
         }
-        // Which ignore file ignores it.
-        match self.ignored_by(path) {
-            Some(by) => response.on_hover_text(trf!("ignored_by_file", file = by)),
-            None => response,
+        // Which ignore file ignores it, or what the folder is.
+        match (self.ignored_by(path), folder_mark) {
+            (Some(by), _) => response.on_hover_text(trf!("ignored_by_file", file = by)),
+            (None, Some(mark)) => response.on_hover_text(mark.tooltip),
+            (None, None) => response,
         }
     }
 

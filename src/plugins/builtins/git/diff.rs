@@ -166,25 +166,48 @@ pub fn change_starts(rows: &[Row]) -> Vec<usize> {
 pub fn line_marks(old: &str, new: &str) -> Vec<LineMark> {
     let (old, new) = (normalize(old), normalize(new));
     let diff = TextDiff::from_lines(&old, &new);
+    let old_lines: Vec<&str> = old.split_inclusive('\n').collect();
+    // The old lines of a block, without the end of the last one.
+    let before = |start: usize, len: usize| -> std::sync::Arc<str> {
+        let end = (start + len).min(old_lines.len());
+        let text: String = old_lines[start.min(end)..end].concat();
+        text.strip_suffix('\n').unwrap_or(&text).into()
+    };
     let mut marks = Vec::new();
     for op in diff.ops() {
-        let (kind, range) = match *op {
+        let (kind, range, was) = match *op {
             DiffOp::Equal { .. } => continue,
-            DiffOp::Delete { new_index, .. } => {
+            DiffOp::Delete {
+                old_index,
+                old_len,
+                new_index,
+            } => {
                 marks.push(LineMark {
                     line: new_index,
                     kind: MarkKind::Deleted,
+                    before: Some(before(old_index, old_len)),
                 });
                 continue;
             }
             DiffOp::Insert {
                 new_index, new_len, ..
-            } => (MarkKind::Added, new_index..new_index + new_len),
+            } => (MarkKind::Added, new_index..new_index + new_len, None),
             DiffOp::Replace {
-                new_index, new_len, ..
-            } => (MarkKind::Modified, new_index..new_index + new_len),
+                old_index,
+                old_len,
+                new_index,
+                new_len,
+            } => (
+                MarkKind::Modified,
+                new_index..new_index + new_len,
+                Some(before(old_index, old_len)),
+            ),
         };
-        marks.extend(range.map(|line| LineMark { line, kind }));
+        marks.extend(range.map(|line| LineMark {
+            line,
+            kind,
+            before: was.clone(),
+        }));
     }
     marks
 }

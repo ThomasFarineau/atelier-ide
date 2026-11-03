@@ -9,6 +9,7 @@
 
 pub mod agents;
 mod commits;
+mod pr;
 mod rework;
 mod server;
 mod sessions;
