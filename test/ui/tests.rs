@@ -7,15 +7,11 @@ fn icons_follow_the_theme_and_plugins_keep_their_own() {
         assert_ne!(light.uri(), dark.uri(), "{name}: one file per theme");
     }
     // Only a plain file: both themes share it.
-    let plain = crate::icon_set::find("msoffice/icon").unwrap();
+    let plain = crate::icon_set::find("cargo/icon").unwrap();
     assert!(plain.variants[1].is_none() && plain.variants[2].is_none());
     assert_eq!(
-        crate::icon_set::source("msoffice/icon", true)
-            .unwrap()
-            .uri(),
-        crate::icon_set::source("msoffice/icon", false)
-            .unwrap()
-            .uri()
+        crate::icon_set::source("cargo/icon", true).unwrap().uri(),
+        crate::icon_set::source("cargo/icon", false).unwrap().uri()
     );
     // A name that exists nowhere falls back to a dot instead of failing.
     assert!(

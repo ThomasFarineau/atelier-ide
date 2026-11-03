@@ -22,8 +22,3 @@ desktop.ini
 # Environnement
 .env
 .env.*
-
-# The native plugins, cloned here to be built with the IDE (one repository plugin-<name> each).
-/plugins/*
-# Keeps the folder, which the workspace lists (plugins/*): Cargo fails on a missing one.
-!/plugins/README.md

@@ -1,0 +1,15 @@
+[submodule "api"]
+	path = api
+	url = https://github.com/atelier-ide-org/api.git
+[submodule "docs"]
+	path = docs
+	url = https://github.com/atelier-ide-org/docs.git
+[submodule "plugins/gltf-viewer"]
+	path = plugins/gltf-viewer
+	url = https://github.com/atelier-ide-org/plugin-gltf-viewer.git
+[submodule "plugins/database"]
+	path = plugins/database
+	url = https://github.com/atelier-ide-org/plugin-database.git
+[submodule "plugins/msoffice-viewer"]
+	path = plugins/msoffice-viewer
+	url = https://github.com/atelier-ide-org/plugin-msoffice-viewer.git

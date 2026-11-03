@@ -40,6 +40,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
+      # The plugin interface, a submodule (the other submodules are not part of the IDE).
+      - run: git submodule update --init --depth 1 api
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'

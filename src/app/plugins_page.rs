@@ -318,11 +318,21 @@ impl Ide {
         }
         builtins = sorted;
 
-        // Tabs, as in IntelliJ. Only the installed plugins exist here: there is no marketplace.
+        // Tabs, as in IntelliJ: the installed plugins, and those of the releases of Atelier.
         ui.horizontal(|ui| {
-            tab(ui, &t, tr!("installed"), true);
+            if tab(ui, &t, tr!("installed"), self.plugin_tab == 0) {
+                self.plugin_tab = 0;
+            }
+            if tab(ui, &t, tr!("plugins_available"), self.plugin_tab == 1) {
+                self.plugin_tab = 1;
+            }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui::icon_button(ui, "refresh", tr!("reload_project_extensions")).clicked() {
+                if self.plugin_tab == 1 {
+                    if ui::icon_button(ui, "refresh", tr!("plugins_catalog_refresh")).clicked() {
+                        self.plugin_catalog.refresh();
+                    }
+                } else if ui::icon_button(ui, "refresh", tr!("reload_project_extensions")).clicked()
+                {
                     (self.plugins, self.plugin_errors) = plugins::load(&self.root);
                 }
                 if ui::icon_button(ui, "add", tr!("install_plugin_file")).clicked() {
@@ -333,6 +343,11 @@ impl Ide {
         let (line, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
         ui.painter().rect_filled(line, 0.0, t.separator);
         ui.add_space(8.0);
+        self.finish_downloads();
+        if self.plugin_tab == 1 {
+            self.available_plugins(ui, t);
+            return;
+        }
 
         let body_height = (ui.available_height() - 4.0).max(BODY_HEIGHT);
         let (body, _) =
@@ -503,6 +518,133 @@ impl Ide {
         }
     }
 
+    /// The plugins of the releases of Atelier that this IDE loads, to install or update.
+    fn available_plugins(&mut self, ui: &mut egui::Ui, t: Theme) {
+        if self.plugin_catalog.busy() {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(200));
+        }
+        let entries = match self.plugin_catalog.entries() {
+            None => {
+                ui.add_space(24.0);
+                ui.vertical_centered(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.add(egui::Spinner::new().size(14.0).color(t.accent));
+                        ui.label(
+                            RichText::new(tr!("plugins_catalog_loading")).color(t.text_secondary),
+                        );
+                    });
+                });
+                return;
+            }
+            Some(Err(e)) => {
+                let text = trf!("plugins_catalog_error", e = e);
+                ui.add_space(12.0);
+                ui.add(egui::Label::new(RichText::new(text).color(t.error)).wrap());
+                return;
+            }
+            Some(Ok(entries)) => entries.clone(),
+        };
+        if entries.is_empty() {
+            ui.add_space(24.0);
+            ui.vertical_centered(|ui| {
+                ui.label(RichText::new(tr!("plugins_catalog_empty")).color(t.text_secondary));
+            });
+            return;
+        }
+        let mut download = None;
+        egui::ScrollArea::vertical()
+            .id_salt("plugin_catalog")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                for entry in &entries {
+                    let installed = self
+                        .plugins
+                        .iter()
+                        .find(|p| p.id == entry.id && p.installed)
+                        .map(|p| p.version.clone());
+                    let downloading = self.plugin_catalog.is_downloading(&entry.id);
+                    egui::Frame::new()
+                        .inner_margin(egui::Margin::symmetric(4, 10))
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            ui.horizontal(|ui| {
+                                ui.vertical(|ui| {
+                                    ui.label(RichText::new(&entry.name).font(ui::semibold(14.0)));
+                                    ui.label(
+                                        RichText::new(trf!(
+                                            "plugin_catalog_version",
+                                            version = entry.version
+                                        ))
+                                        .small()
+                                        .color(t.text_secondary),
+                                    );
+                                });
+                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                    let newer = installed.as_ref().is_none_or(|v| {
+                                        plugins::catalog::version_key(v)
+                                            < plugins::catalog::version_key(&entry.version)
+                                    });
+                                    if downloading {
+                                        ui.add(egui::Spinner::new().size(14.0).color(t.accent));
+                                        ui.label(
+                                            RichText::new(tr!("plugin_downloading"))
+                                                .color(t.text_secondary),
+                                        );
+                                    } else if !newer {
+                                        ui.label(
+                                            RichText::new(tr!("plugin_up_to_date"))
+                                                .color(t.text_secondary),
+                                        );
+                                    } else {
+                                        let text = match installed {
+                                            Some(_) => {
+                                                trf!("plugin_update", version = entry.version)
+                                            }
+                                            None => tr!("plugin_install").to_string(),
+                                        };
+                                        if ui::primary_button(ui, &text).clicked() {
+                                            download = Some(entry.clone());
+                                        }
+                                    }
+                                    if ui.link(tr!("plugin_release_page")).clicked() {
+                                        ui.ctx().open_url(egui::OpenUrl::new_tab(&entry.page));
+                                    }
+                                });
+                            });
+                            if !entry.description.is_empty() {
+                                ui.add(
+                                    egui::Label::new(
+                                        RichText::new(&entry.description).color(t.text_secondary),
+                                    )
+                                    .wrap(),
+                                );
+                            }
+                        });
+                    ui.separator();
+                }
+            });
+        if let Some(entry) = download {
+            self.plugin_catalog.download(&entry);
+        }
+    }
+
+    /// Installs the plugins whose download ended.
+    fn finish_downloads(&mut self) {
+        for (_, result) in self.plugin_catalog.downloaded() {
+            match result {
+                Ok(file) => {
+                    self.install_plugin_from(&file);
+                    let _ = std::fs::remove_file(&file);
+                }
+                Err(e) => {
+                    let title = tr!("plugins").to_string();
+                    crate::plugins::builtin::Host::balloon(self, &title, e, true);
+                }
+            }
+        }
+    }
+
     /// Installs a plugin from its file (`.atelier-plugin`), chosen in a dialog, and turns it on.
     fn install_plugin_file(&mut self) {
         let Some(file) = rfd::FileDialog::new()
@@ -511,8 +653,13 @@ impl Ide {
         else {
             return;
         };
+        self.install_plugin_from(&file);
+    }
+
+    /// Installs a plugin from its file, and turns it on.
+    fn install_plugin_from(&mut self, file: &std::path::Path) {
         let title = tr!("plugins").to_string();
-        match plugins::install(&file) {
+        match plugins::install(file) {
             Ok(installed) => {
                 let text = match installed {
                     plugins::Installed::Now(name) => trf!("plugin_installed", name = name),
@@ -698,9 +845,9 @@ impl Ide {
                 if tabs(ui) == 0 {
                     ui.add(egui::Label::new(&plugin.description).wrap());
                     ui.add_space(10.0);
-                    if let Some(version) = &plugin.atelier {
+                    if let Some(abi) = plugin.abi {
                         ui.label(
-                            RichText::new(trf!("installed_plugin_built_for", version = version))
+                            RichText::new(trf!("installed_plugin_interface", abi = abi))
                                 .small()
                                 .color(t.text_secondary),
                         );

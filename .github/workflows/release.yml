@@ -10,13 +10,11 @@ name: Release
 # The release of `releases` is a draft until both are done: a bootstrap never sees it without
 # its files.
 #
-# It also shares with the native plugins what they need to be built like this IDE: the build kit
-# (Cargo.toml, Cargo.lock, rust-toolchain.toml), in `vX.Y.Z/` of the `kits` branch of
-# atelier-ide-org/api. The CI of each plugin builds it with that kit, then publishes it as
-# `plugins/<name>/vX.Y.Z` in `releases`: the IDE never waits for its plugins.
+# The native plugins have releases of their own (`plugins/<name>/vX.Y.Z`, published by their
+# repositories): they are built against the plugin interface alone (`api/`), and load in every
+# version of the IDE that keeps its version. The IDE never waits for its plugins.
 #
-# The secret ATELIER_RELEASES (a token of the organization) writes the contents of `releases`
-# and `api`.
+# The secret ATELIER_RELEASES (a token of the organization) writes the contents of `releases`.
 #
 # Started by hand on `main`, it releases the version of Cargo.toml if it has no release yet
 # (to finish a release whose publication failed).
@@ -100,41 +98,3 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.ATELIER_RELEASES }}
         run: gh release edit "${{ steps.version.outputs.download_tag }}" --draft=false --latest --repo atelier-ide-org/releases
-
-  # What a native plugin needs to be built like this IDE: the versions and features of its crates
-  # (Cargo.toml, Cargo.lock), its compiler and its profiles. No code of the IDE: the plugins build
-  # an empty package with these dependencies, and their crates come out the same.
-  kit:
-    needs: release
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
-          path: app
-      - uses: actions/checkout@v7
-        with:
-          repository: atelier-ide-org/api
-          token: ${{ secrets.ATELIER_RELEASES }}
-          path: api
-          fetch-depth: 0
-      - name: Share the build kit with the plugins
-        run: |
-          version="v$(sed -n 's/^version = "\(.*\)"/\1/p' app/Cargo.toml | head -1)"
-          cd api
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # A branch of its own, apart from the code of the API: Cargo reads every Cargo.toml of
-          # the branch it takes the API from.
-          if git ls-remote --exit-code --heads origin kits > /dev/null; then
-            git checkout kits
-          else
-            git checkout --orphan kits
-            git rm -rfq .
-          fi
-          mkdir -p "$version/plugins"
-          cp ../app/Cargo.toml ../app/Cargo.lock ../app/rust-toolchain.toml "$version/"
-          cp ../app/plugins/README.md "$version/plugins/"
-          git add "$version"
-          git commit -m "kit: Atelier $version" || exit 0
-          git push origin kits

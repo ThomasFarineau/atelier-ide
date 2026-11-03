@@ -16,3 +16,5 @@ Les filtres existants restent valables :
 ```sh
 cargo test --locked terminal::tests
 ```
+
+`fixtures/demo` est un petit projet multilangage que les tests de `app` ouvrent.

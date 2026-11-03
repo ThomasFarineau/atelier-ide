@@ -335,6 +335,21 @@ struct Note {
     at: Instant,
 }
 
+impl Note {
+    /// The message as the copy button of a notification puts it in the clipboard.
+    fn copy_text(&self) -> String {
+        match (self.title.is_empty(), self.text.is_empty()) {
+            (true, _) => self.text.clone(),
+            (false, true) => self.title.clone(),
+            (false, false) => format!(
+                "{}
+{}",
+                self.title, self.text
+            ),
+        }
+    }
+}
+
 #[derive(Clone)]
 enum Target {
     /// A 0-based line and column of the active document.
@@ -459,6 +474,10 @@ pub struct Ide {
     /// When the font size last changed with the wheel, to show it briefly.
     zoom_hint: Option<Instant>,
     plugin_selected: Option<String>,
+    /// The tab of the Plugins page: 0 installed, 1 available.
+    plugin_tab: usize,
+    /// The plugins one can install, and those being downloaded.
+    plugin_catalog: crate::plugins::catalog::Store,
     show_palette: bool,
     /// The title the window has now, to send it again only when it changes.
     window_title: String,
@@ -733,6 +752,8 @@ impl Ide {
             plugin_filter: String::new(),
             zoom_hint: None,
             plugin_selected: None,
+            plugin_tab: 0,
+            plugin_catalog: Default::default(),
             show_palette: false,
             window_title: String::new(),
             mcp_offer: None,
@@ -4561,6 +4582,15 @@ impl Ide {
                                         ui.with_layout(
                                             egui::Layout::right_to_left(egui::Align::Center),
                                             |ui| {
+                                                if ui::icon_button(
+                                                    ui,
+                                                    "copy",
+                                                    tr!("copy_notification"),
+                                                )
+                                                .clicked()
+                                                {
+                                                    ui.ctx().copy_text(note.copy_text());
+                                                }
                                                 ui.label(
                                                     RichText::new(ago(note.at))
                                                         .small()
@@ -4612,6 +4642,11 @@ impl Ide {
                                         if ui::icon_button(ui, "closeSmall", tr!("close")).clicked()
                                         {
                                             close = Some(index);
+                                        }
+                                        if ui::icon_button(ui, "copy", tr!("copy_notification"))
+                                            .clicked()
+                                        {
+                                            ui.ctx().copy_text(note.copy_text());
                                         }
                                     },
                                 );
@@ -6254,10 +6289,8 @@ impl Ide {
             .iter()
             .filter(|p| self.builtin_enabled(p.id()))
             .find_map(|p| {
-                p.file_image(path, dark).or_else(|| {
-                    p.file_icon_for(path)
-                        .and_then(|key| crate::icon_set::source(key, dark))
-                })
+                p.file_icon_for(path)
+                    .and_then(|key| crate::icon_set::source(key, dark))
             })
             .unwrap_or_else(|| icons::file(path, dark))
     }
