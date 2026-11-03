@@ -570,7 +570,7 @@ fn dirty_documents_block_close_project_switch_and_exit() {
     assert!(matches!(ide.pending, Some(Pending::Close(0))));
     assert_eq!(ide.documents.len(), 1);
     let original = ide.root.clone();
-    ide.request(Pending::Project(original.join("examples/demo")));
+    ide.request(Pending::Project(original.join("test/fixtures/demo")));
     assert!(matches!(ide.pending, Some(Pending::Project(_))));
     assert_eq!(ide.root, original);
     ide.request(Pending::Quit);
@@ -581,7 +581,7 @@ fn dirty_documents_block_close_project_switch_and_exit() {
 #[test]
 fn opening_another_project_asks_for_the_window() {
     let mut ide = ide();
-    let demo = ide.root.join("examples/demo");
+    let demo = ide.root.join("test/fixtures/demo");
     ide.open_project(demo.clone());
     assert_eq!(ide.project_choice, Some(demo.canonicalize().unwrap()));
     let original = ide.root.clone();
@@ -595,8 +595,8 @@ fn opening_another_project_asks_for_the_window() {
 #[test]
 fn dev_reload_keeps_project_tabs_and_unsaved_text() {
     let mut ide = ide();
-    ide.open_file(ide.root.join("examples/demo/hello.py"));
-    ide.open_file(ide.root.join("examples/demo/app.js"));
+    ide.open_file(ide.root.join("test/fixtures/demo/hello.py"));
+    ide.open_file(ide.root.join("test/fixtures/demo/app.js"));
     ide.wait_loaded();
     ide.documents[0].text.push_str("# pas encore enregistré\n");
     ide.documents.push(Document::untitled());
@@ -647,7 +647,7 @@ fn dropped_tabs_split_the_pane_on_the_side_they_land() {
 #[test]
 fn opening_the_same_file_reuses_its_tab() {
     let mut ide = ide();
-    let path = ide.root.join("examples/demo/src/main.rs");
+    let path = ide.root.join("test/fixtures/demo/src/main.rs");
     ide.open_file(path.clone());
     ide.open_file(path);
     ide.wait_loaded();
@@ -713,7 +713,7 @@ fn all_languages_and_themes_render_without_panicking() {
         "hello.py",
         "src/main.rs",
     ] {
-        ide.open_file(ide.root.join("examples/demo").join(file));
+        ide.open_file(ide.root.join("test/fixtures/demo").join(file));
         ide.wait_loaded();
     }
     assert_eq!(ide.documents.len(), 7);
@@ -748,8 +748,8 @@ fn git_plugin_windows_render_on_this_repository() {
     let tools = ide.tool_windows();
     assert_eq!(
         tools.len(),
-        8,
-        "Commit, Git, Kubernetes, Database, Search, Problems, AI sessions and Runtimes: no npm, \
+        7,
+        "Commit, Git, Kubernetes, Search, Problems, AI sessions and Runtimes: no npm, \
          Maven or Gradle here"
     );
     for tool in tools {
@@ -815,8 +815,8 @@ fn a_press_begun_in_another_file_does_not_select() {
     let ctx = egui::Context::default();
     let mut ide = ide();
     ide.apply_theme(&ctx);
-    ide.open_file(ide.root.join("examples/demo/hello.py"));
-    ide.open_file(ide.root.join("examples/demo/app.js"));
+    ide.open_file(ide.root.join("test/fixtures/demo/hello.py"));
+    ide.open_file(ide.root.join("test/fixtures/demo/app.js"));
     ide.wait_loaded();
     ide.active = 0;
     let mut time = 0.0;
@@ -855,7 +855,7 @@ fn shift_f6_then_enter_renames_the_name_at_the_caret() {
     let ctx = egui::Context::default();
     let mut ide = ide();
     ide.apply_theme(&ctx);
-    ide.open_file(ide.root.join("examples/demo/app.js"));
+    ide.open_file(ide.root.join("test/fixtures/demo/app.js"));
     ide.wait_loaded();
     let mut time = 0.0;
     let mut step = |ide: &mut Ide, events: Vec<Event>, modifiers: Modifiers| {
@@ -928,7 +928,7 @@ fn a_mouse_drag_selects_from_where_the_button_went_down() {
     let ctx = egui::Context::default();
     let mut ide = ide();
     ide.apply_theme(&ctx);
-    ide.open_file(ide.root.join("examples/demo/app.js"));
+    ide.open_file(ide.root.join("test/fixtures/demo/app.js"));
     ide.wait_loaded();
     let mut time = 0.0;
     let mut step = |ide: &mut Ide, events: Vec<Event>| {

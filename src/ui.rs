@@ -334,7 +334,18 @@ fn install_fonts(ctx: &egui::Context, choice: &Fonts) {
         mono.push("Symbols".into());
     }
     fonts.families.insert(FontFamily::Monospace, mono);
+    let mut installed = INSTALLED_FONTS.lock().expect("fonts");
+    *installed = (installed.0 + 1, Some(Arc::new(fonts.clone())));
+    drop(installed);
     ctx.set_fonts(fonts);
+}
+
+/// The fonts last installed, and how many times fonts were installed: native plugins draw with
+/// the same ones.
+static INSTALLED_FONTS: Mutex<(u64, Option<Arc<FontDefinitions>>)> = Mutex::new((0, None));
+
+pub fn installed_fonts() -> (u64, Option<Arc<FontDefinitions>>) {
+    INSTALLED_FONTS.lock().expect("fonts").clone()
 }
 
 /// A Nerd Font and a font of symbols of the system, when they are there.

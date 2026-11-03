@@ -5,7 +5,12 @@
 //! theme, else the plain one, else the file of the other theme.
 
 use eframe::egui::{ImageSource, load::Bytes};
-use std::borrow::Cow;
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    hash::{DefaultHasher, Hash, Hasher},
+    sync::{LazyLock, RwLock},
+};
 
 pub struct Variant {
     pub uri: &'static str,
@@ -29,7 +34,8 @@ impl Icon {
     }
 }
 
-/// An icon by its key, or by its short name (`branch` for `git/icons/branch`).
+/// An icon by its key, or by its short name (`branch` for `git/icons/branch`), or one a native
+/// plugin brought ([`register`]).
 pub fn find(name: &str) -> Option<&'static Icon> {
     let by_key = |key: &str| {
         ICONS
@@ -37,12 +43,54 @@ pub fn find(name: &str) -> Option<&'static Icon> {
             .ok()
             .map(|i| &ICONS[i])
     };
-    by_key(name).or_else(|| {
-        let index = SHORT_NAMES
-            .binary_search_by(|(short, _)| short.cmp(&name))
-            .ok()?;
-        by_key(SHORT_NAMES[index].1)
-    })
+    by_key(name)
+        .or_else(|| {
+            let index = SHORT_NAMES
+                .binary_search_by(|(short, _)| short.cmp(&name))
+                .ok()?;
+            by_key(SHORT_NAMES[index].1)
+        })
+        .or_else(|| REGISTERED.read().ok()?.get(name).copied())
+}
+
+/// The icons of the native plugins, by key. They stay for the life of the IDE (a few
+/// kilobytes each): what was drawn with them may be drawn again.
+static REGISTERED: LazyLock<RwLock<HashMap<String, &'static Icon>>> =
+    LazyLock::new(Default::default);
+
+/// Adds an icon of a native plugin under `key` (`plugin:database/table`), as an SVG for every
+/// theme, or one for the light themes and one for the dark ones. Registering the same key
+/// again with the same pictures keeps the first.
+pub fn register(key: &str, svg: &[u8], svg_dark: Option<&[u8]>) -> &'static str {
+    let mut hasher = DefaultHasher::new();
+    (svg, svg_dark).hash(&mut hasher);
+    let hash = hasher.finish();
+    let mut registered = REGISTERED.write().expect("icons");
+    if let Some(icon) = registered.get(key)
+        && icon.variants[0]
+            .as_ref()
+            .or(icon.variants[1].as_ref())
+            .is_some_and(|v| v.uri.contains(&format!("{hash:016x}")))
+    {
+        return icon.key;
+    }
+    let leak = |bytes: &[u8]| -> &'static [u8] { Box::leak(bytes.to_vec().into_boxed_slice()) };
+    let variant = |bytes: &[u8], theme: &str| Variant {
+        uri: Box::leak(format!("bytes://plugin/{key}.{hash:016x}.{theme}.svg").into_boxed_str()),
+        bytes: leak(bytes),
+    };
+    let key: &'static str = Box::leak(key.to_string().into_boxed_str());
+    let variants = match svg_dark {
+        Some(dark) => [
+            None,
+            Some(variant(svg, "light")),
+            Some(variant(dark, "dark")),
+        ],
+        None => [Some(variant(svg, "all")), None, None],
+    };
+    let icon: &'static Icon = Box::leak(Box::new(Icon { key, variants }));
+    registered.insert(key.to_string(), icon);
+    key
 }
 
 /// The key of the icon of a built-in plugin, by the name of its folder (`cargo`, `github`): the

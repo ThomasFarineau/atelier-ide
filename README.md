@@ -24,7 +24,8 @@
 - **A clean, modern interface**: Islands themes, tool window rails, Search Everywhere, run widget and familiar shortcuts. Interface in English and French.
 - **Code intelligence** for JavaScript, TypeScript, Rust and Java: tree-sitter right away, then tsserver, rust-analyzer or jdtls (completion, navigation, rename, quick actions, reformat).
 - **Git**: commit window, log with branch graph, branch widget, diff, conflict resolution, blame.
-- **Project tools**: terminal, run configurations, npm, Maven, Gradle, translations, Kubernetes, and viewers for Markdown, Mermaid, SVG, CSV, images and Office documents.
+- **Project tools**: terminal, run configurations, npm, Maven, Gradle, translations, Kubernetes, and viewers for Markdown, Mermaid, SVG, CSV and images.
+- **Native plugins** to install from **Plugins › Available**: a database viewer (MongoDB, PostgreSQL, MySQL), a Microsoft Office viewer and a 3D model viewer.
 - **For AI agents**: an MCP server for Claude Code, Codex and Gemini CLI, AI sessions, a context graph, and commits that follow the conventions of the repository.
 - **Updates itself**: a Windows installer, an `atelier` command on the PATH, and a launcher that keeps the IDE up to date.
 
@@ -37,11 +38,11 @@ Then `atelier .` opens the current folder. See [Installation](https://atelier-id
 
 ## Build from source
 
-You need stable Rust and a native toolchain (on Windows, the Visual Studio Build Tools with the C++ workload). The compiler is fixed by `rust-toolchain.toml`. The native plugins have repositories of their own (`plugin-<name>`): one cloned into `plugins/` (ignored by git) joins the workspace, built with `--workspace`.
+You need stable Rust and a native toolchain (on Windows, the Visual Studio Build Tools with the C++ workload). The compiler is fixed by `rust-toolchain.toml`. The IDE needs its submodule `api/` (the interface of the native plugins); the others are repositories of their own, never built with the IDE: the native plugins (`plugins/<name>`, each built alone) and the documentation (`docs/`).
 
 ```bash
-git clone git@github.com:atelier-ide-org/plugin-gltf-viewer.git plugins/gltf-viewer   # optional
-cargo run -- examples/demo        # the IDE on the multi-language demo project
+git submodule update --init api   # or clone with --recurse-submodules
+cargo run -- test/fixtures/demo   # the IDE on the multi-language project of the tests
 cargo dev                         # hot reload while you work on the IDE
 cargo build --release             # target/release/atelier-ide(.exe)
 ```
@@ -58,7 +59,7 @@ A change worth a line in the changelog comes with a file in `.changeset/` (see [
 
 ## Documentation
 
-The documentation has a repository of its own, [atelier-ide-org/docs](https://github.com/atelier-ide-org/docs) (VitePress, with [Bun](https://bun.sh)), in English and French, published at <https://atelier-ide-org.github.io/docs/>. The pages of the plugins and languages stay here, next to their code, in the `doc` folder of each one.
+The documentation has a repository of its own, [atelier-ide-org/docs](https://github.com/atelier-ide-org/docs) (VitePress, with [Bun](https://bun.sh)), in English and French, published at <https://atelier-ide-org.github.io/docs/>. It is the submodule `docs/`. The pages of the plugins and languages stay next to their code, in the `doc` folder of each one (here, or in the repository of a native plugin).
 
 ## License
 

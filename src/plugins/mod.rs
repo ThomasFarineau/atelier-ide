@@ -4,7 +4,9 @@
 
 pub mod builtin;
 pub mod builtins;
+pub mod catalog;
 mod external;
+mod gl;
 pub mod native;
 
 pub use external::*;

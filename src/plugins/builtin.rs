@@ -181,8 +181,8 @@ pub trait BuiltinPlugin {
     fn language(&self) -> bool {
         false
     }
-    /// A native plugin of the project (`native.rs`): it is turned on and off with the external
-    /// plugins, and is present only while it is on.
+    /// A native plugin (`native.rs`): it is turned on and off with the external plugins, and
+    /// is present only while it is on.
     fn external(&self) -> bool {
         false
     }
@@ -234,18 +234,13 @@ pub trait BuiltinPlugin {
         None
     }
     /// Folder of the plugin whose `extensions` icons apply to every file of that extension
-    /// (`msoffice` for `msoffice/extensions/docx.svg`).
+    /// (`media` for `media/extensions/mp3.svg`).
     fn extensions_dir(&self) -> Option<&'static str> {
         None
     }
     /// Icon of the files this plugin handles, in the project tree and the tabs: the key of an
     /// icon of the plugin (`icon_set`), e.g. `"mermaid/icon"`.
     fn file_icon(&self, path: &Path) -> Option<&'static str> {
-        None
-    }
-    /// Icon of the files this plugin handles, when it brings the picture itself rather than the
-    /// key of an icon of the IDE (a native plugin). It wins over `file_icon`.
-    fn file_image(&self, path: &Path, dark: bool) -> Option<egui::ImageSource<'static>> {
         None
     }
     /// The icon of a file for this plugin: `file_icon`, else the one of its extension.
@@ -341,11 +336,9 @@ pub fn all() -> Vec<Box<dyn BuiltinPlugin>> {
         Box::new(crate::languages::python::PythonPlugin),
         Box::new(crate::features::search::SearchPlugin::default()),
         Box::new(crate::features::problems::ProblemsPlugin::default()),
-        Box::new(crate::plugins::builtins::msoffice::MsOfficeViewerPlugin::default()),
         Box::new(crate::plugins::builtins::image::ImagePlugin::default()),
         Box::new(crate::plugins::builtins::media::MediaPlugin::default()),
         Box::new(crate::plugins::builtins::k8s::K8sPlugin::default()),
-        Box::new(crate::plugins::builtins::database::DatabasePlugin::default()),
         Box::new(crate::plugins::builtins::node::NodePlugin::default()),
         Box::new(crate::plugins::builtins::cargo::CargoPlugin::default()),
         Box::new(crate::plugins::builtins::runtimes::RuntimesPlugin::default()),

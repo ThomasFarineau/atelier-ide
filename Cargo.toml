@@ -1,12 +1,8 @@
-# The native plugins (one repository `plugin-<name>` each) are not part of the IDE: its releases are
-# built without them. A plugin cloned into `plugins/` (ignored by git) joins the workspace, to be
-# built like the IDE, as its CI does for each release (see atelier-ide-org/api). The IDE
-# alone is built by default.
+# The submodules are repositories of their own, each its own workspace: the interface of the
+# plugins (`api/`), the native plugins (`plugins/<name>/`) and the documentation (`docs/`). The
+# IDE is built without the plugins: they build alone, against `api` only.
 [workspace]
-members = [".", "plugins/*"]
-default-members = ["."]
-# A demo project of its own, opened in the IDE.
-exclude = ["examples/demo"]
+exclude = ["api", "plugins", "docs", "test/fixtures/demo"]
 
 [package]
 name = "atelier-ide"
@@ -65,13 +61,8 @@ rodio = { version = "0.23", default-features = false, features = ["playback", "m
 lzma-rs = "0.3"
 # Native plugins: the dynamic libraries of `.atelier/plugins`, and the interface they implement.
 libloading = "0.8"
-# The same tag as the plugins: one crate, whose types the IDE and the plugins share.
-atelier-plugin-api = { git = "https://github.com/atelier-ide-org/api", tag = "v0.2.0" }
-mongodb = { version = "3", features = ["sync"] }
-postgres = "0.19"
-postgres-native-tls = "0.5"
-native-tls = "0.2"
-mysql = { version = "28", default-features = false, features = ["minimal-rust", "native-tls"] }
+# The interface of the native plugins (the submodule `api/`): C types, and the messages.
+atelier-plugin-api = { path = "api", default-features = false, features = ["serde"] }
 # The YAML plugin: checks a reformat kept the data, and converts YAML to JSON.
 yaml-rust2 = { version = "0.13", default-features = false }
 

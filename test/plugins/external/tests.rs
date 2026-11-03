@@ -36,7 +36,7 @@ fn manifests_are_files_or_folders_and_name_their_library_only() {
         r#"{ "id": "escape", "name": "Escape", "version": "1", "library": "../../evil" }"#,
     )
     .unwrap();
-    let (loaded, errors) = load(&root);
+    let (loaded, errors) = load_with(&root, &root.join("installed"));
     let ids: Vec<_> = loaded.iter().map(|p| p.id.as_str()).collect();
     assert_eq!(ids, ["tools", "viewer"]);
     assert_eq!(errors.len(), 1, "{errors:?}");
@@ -86,7 +86,7 @@ fn a_plugin_installs_from_its_file_for_every_project_and_uninstalls() {
         &[
             (
                 "plugin.json",
-                br#"{ "id": "viewer", "name": "Viewer", "version": "1.0.0", "library": "viewer", "atelier": "0.2.0" }"#,
+                br#"{ "id": "viewer", "name": "Viewer", "version": "1.0.0", "library": "viewer", "abi": 2 }"#,
             ),
             (&library, b"library"),
         ],
@@ -99,7 +99,7 @@ fn a_plugin_installs_from_its_file_for_every_project_and_uninstalls() {
     assert!(errors.is_empty(), "{errors:?}");
     assert_eq!(plugins.len(), 1);
     assert!(plugins[0].installed);
-    assert_eq!(plugins[0].atelier.as_deref(), Some("0.2.0"));
+    assert_eq!(plugins[0].abi, Some(2));
     assert_eq!(
         plugins[0].library_path().unwrap(),
         installed.join("viewer").join(&library),
@@ -120,7 +120,11 @@ fn a_plugin_file_must_be_safe_and_fit_this_system() {
     let dir = temp("checks");
     let installed = dir.join("installed");
     let manifest: &[u8] =
-        br#"{ "id": "viewer", "name": "Viewer", "version": "1", "library": "viewer" }"#;
+        br#"{ "id": "viewer", "name": "Viewer", "version": "1", "library": "viewer", "abi": 2 }"#;
+    // Made for another interface (the plugins of Atelier 0.2 say none).
+    let old: &[u8] = br#"{ "id": "viewer", "name": "Viewer", "version": "1", "library": "viewer", "atelier": "0.2.0" }"#;
+    let file = package(&dir, &[("plugin.json", old)]);
+    assert!(install_into(&file, &installed).unwrap_err().contains('2'));
     // No library for this system.
     let file = package(
         &dir,

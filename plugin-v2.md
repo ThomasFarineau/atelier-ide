@@ -1,125 +1,77 @@
-# Plugins natifs v2 : une API stable, sans egui
+# Plugins natifs v2 : une interface stable
 
-Idée à étudier. Rien n'est commencé.
+Fait le 3 novembre 2026 : interface `atelier-plugin-api` 0.3 (version d'ABI **2**), IDE qui ne
+charge plus que la v2, trois plugins portés.
 
-## Le problème de la v1
+## Ce qui a été fait
 
-Un plugin natif v1 est une bibliothèque Rust qui partage les types d'egui avec l'IDE (`egui::Ui`,
-`egui::Context`, les callbacks d'`egui_glow`). Rust n'a pas d'ABI stable, ce qui impose trois
-contraintes :
+### L'interface (`api/`, atelier-ide-org/api, tag `v0.3.0`)
 
-- **Le plugin doit être compilé exactement comme l'IDE** : même `rustc`
-  (`rust-toolchain.toml`), même cible et même profil, mêmes versions et fonctionnalités des crates
-  partagés. L'IDE le vérifie avec une empreinte des `TypeId` partagés (`atelier-plugin-api`) et
-  refuse tout le reste.
-- **Chaque plugin doit être recompilé pour chaque version de l'IDE.** Une release de l'IDE
-  publie son kit de compilation (`api@kits/vX.Y.Z/` : `Cargo.toml`, `Cargo.lock`,
-  `rust-toolchain.toml`), puis la CI de chaque plugin recompile tout et publie
-  `plugins/<nom>/vX.Y.Z`.
-- **Chaque build de plugin compile toutes les dépendances de l'IDE**, soit environ 700 crates
-  (MongoDB, tree-sitter, syntect…), uniquement pour reproduire les fonctionnalités des crates
-  partagés. Un kit réduit (eframe et ses dépendances, environ 135 crates) réduirait le coût sans
-  le supprimer.
+L'IDE et un plugin ne partagent que des types `#[repr(C)]` et des fonctions `extern "C"`
+(`abi.rs`), plus des messages JSON par nom (`protocol.rs`). Sans fonctionnalité, le crate ne
+dépend de rien ; l'IDE n'active que `serde`.
 
-La v1 a aussi appris deux choses :
-- **L'API ne doit dépendre que d'eframe.** Une dépendance à `serde_json` changeait l'identité
-  du crate dès qu'un plugin activait une fonctionnalité de `serde_json` (`gltf` active
-  `raw_value`).
-- **L'IDE ne doit jamais dépendre d'un plugin.**
+Choix fait au lieu d'une API de widgets dessinés par l'IDE : **le plugin embarque son propre
+egui** (fonctionnalité `egui`, de la version qu'il veut). Pour chaque surface (aperçu d'un
+fichier, fenêtre d'outils) :
 
-## L'idée
+1. l'IDE envoie les entrées de l'image (pointeur, molette, touches et texte quand la surface a le
+   clavier, taille de la fenêtre et de la surface, temps) ;
+2. le plugin fait tourner son `egui::Context` et rend des maillages (coordonnées de la fenêtre),
+   les textures qu'ils utilisent (son atlas de polices, ses images), et les rectangles de ses
+   fenêtres et menus flottants ;
+3. l'IDE peint la base dans la surface, le flottant au-dessus de lui (où il bloque le pointeur),
+   et rappelle le plugin pour ses callbacks OpenGL (`gl.rs`, `glow` du plugin chargé avec le
+   `get_proc_address` de l'IDE, `src/plugins/gl.rs`).
 
-Une API qui **ne dépend de rien** : des types `#[repr(C)]`, des pointeurs de fonctions
-`extern "C"`, un numéro de version d'ABI. Le plugin ne voit jamais egui : l'IDE lui transmet ce
-qui se passe, le plugin répond par ce qu'il faut dessiner, et l'IDE le traduit en egui.
+Ce que ça a donné par rapport aux questions de la première version de ce document :
+- mode immédiat, sans rien à traduire : le plugin garde tout egui (états des widgets, fenêtres,
+  listes, `TableBuilder`, `TextEdit`…) ;
+- les textures restent au plugin et sont recopiées dans l'IDE (création, mise à jour partielle,
+  libération) ;
+- l'apparence suit l'IDE : il envoie son `egui::Style` en JSON, ses couleurs (`ui::theme`) et ses
+  polices ; `ui.rs` a ses widgets (boutons à icône, menus, lignes, dialogues), et les icônes de
+  l'IDE sont rastérisées par l'IDE (`ui::icon`) ; un plugin ajoute les siennes
+  (`ui::register_icon`) ;
+- même processus (OpenGL partagé), une panique est arrêtée à la frontière et le plugin est marqué
+  en échec.
 
-```
-IDE (egui)  ──── événements, zone, thème, langue ────▶  plugin
-            ◀─── ordres de dessin, widgets, GL ───────
-```
+L'évolution se fait par ajouts : chaque structure commence par sa taille, un appel inconnu ne
+répond rien ; un changement incompatible demande un nouveau `abi::VERSION`.
 
-### Ce que le plugin reçoit à chaque image
+### L'IDE
 
-- la zone qui lui est donnée (rectangle, échelle de l'écran) ;
-- les événements : pointeur (position, boutons, glisser, double clic), molette, clavier
-  (touches et modificateurs), focus, temps écoulé (`dt`) ;
-- le thème (couleurs), la langue de l'interface, le fichier ouvert.
+- `src/plugins/native.rs` : chargeur v2 (refuse la v1 avec un message clair), surfaces,
+  routage des entrées et du focus, textures, flottants, curseur, presse-papiers, liens.
+- La v1 (empreinte, `rust-toolchain` imposé aux plugins) et les kits (`api@kits`, job `kit` de
+  `release.yml`) sont retirés. Le manifeste a `"abi": 2` au lieu de `"atelier"`.
+- `src/plugins/catalog.rs` et l'onglet **Plugins › Disponibles** : les releases
+  `plugins/<id>/vX.Y.Z` de `releases` (la plus récente de chaque plugin, avec son `plugin.json`
+  et la bonne version d'ABI), avec Installer / Mettre à jour.
+- Database et MS Office Viewer ne sont plus intégrés (MongoDB, Postgres, MySQL sortent des
+  dépendances de l'IDE).
+- Un bouton pour copier chaque notification (panneau et bulles).
+- `examples/` supprimé ; le projet de démonstration des tests est `test/fixtures/demo`.
+- Sous-modules : `api/`, `docs/`, `plugins/gltf-viewer`, `plugins/database`,
+  `plugins/msoffice-viewer`. Seul `api/` sert à compiler l'IDE (la CI ne récupère que lui).
+- Tests de bout en bout (`test/plugins/native/tests.rs`) : la vraie bibliothèque d'un plugin
+  compilé à côté est chargée et dessine (aperçu et fenêtre d'outils) sans fenêtre.
 
-### Ce qu'il peut demander à l'IDE (une table de fonctions, l'« hôte »)
+### Les plugins
 
-- **Dessin** : rectangles (pleins, bordés, arrondis), lignes, texte (taille, couleur,
-  alignement), images (pixels RGBA donnés par le plugin, gardés par l'IDE sous un identifiant).
-- **Widgets dessinés par l'IDE**, pour garder son apparence : bouton, bouton à icône (avec les
-  icônes de l'IDE), case à cocher, curseur, liste déroulante, étiquette, infobulle. Chacun
-  renvoie son état : cliqué, nouvelle valeur.
-- **Mise en page minimale** : rangée de gauche à droite et de droite à gauche, espacement. Pas
-  tout egui, seulement de quoi faire une barre d'outils.
-- **OpenGL** : un callback de dessin dans un rectangle, appelé avec le contexte GL courant et
-  une fonction `get_proc_address`. Le plugin crée sa propre instance de `glow` à partir de
-  cette fonction : le contexte OpenGL est partagé au niveau du système, pas des types Rust.
-- **Divers** : demander une nouvelle image (animation), journaliser, notifier.
+`plugin-gltf-viewer`, `plugin-database`, `plugin-msoffice-viewer` (historique gardé) : chacun se
+compile seul avec `atelier-plugin-api` `v0.3.0`. Sa CI vérifie fmt, clippy et tests ; son
+**Release** publie `plugins/<id>/vX.Y.Z` (version du plugin) quand la version de `Cargo.toml`
+change sur `main` : `<id>.atelier-plugin`, `plugin.json` et `<id>-SHA256SUMS`.
 
-### Ce que l'IDE appelle dans le plugin
+## Ce qui reste
 
-Les mêmes points qu'aujourd'hui, en `extern "C"` :
-- `opens_binary`, `editor_layout`, `layout_switch`, `file_icon` (SVG en octets) ;
-- `frame` (la vue d'un fichier, à chaque image) ;
-- `file_closed`, `destroy`.
-
-Un symbole exporté (`ATELIER_PLUGIN_V2`) donne la version d'ABI et la table de ces fonctions.
-
-### Mémoire et chaînes
-
-Rien ne traverse la frontière en type Rust : pas de `String`, de `Vec` ni de `Box`.
-- Les chaînes passent en pointeur + longueur (UTF-8), valables le temps de l'appel.
-- Ce que l'un alloue, c'est lui qui le libère (par exemple une fonction `free` dans la table du
-  plugin).
-- Une panique ne doit jamais traverser la frontière : le plugin l'attrape (`catch_unwind`) et
-  renvoie une erreur.
-
-## Ce qu'on y gagne
-
-- **Le plugin ne compile que l'API et ses propres crates.** Pour la visionneuse : `api`,
-  `gltf`, `glam` et `glow`, en quelques minutes au lieu de 700 crates.
-- **Un plugin marche avec toutes les versions de l'IDE qui gardent la même version d'ABI.**
-  Plus de kit, plus de rebuild à chaque release, plus de `rust-toolchain.toml` imposé. Une
-  release de plugin devient indépendante de l'IDE (`plugins/<nom>/vX.Y.Z` porterait la
-  version du plugin).
-- **Plus d'empreinte à vérifier**, seulement le numéro d'ABI.
-- **Un plugin pourrait même être écrit dans un autre langage** (C, Zig…), puisque c'est une
-  ABI C.
-
-## Ce que ça coûte
-
-- **Concevoir et maintenir l'API** : dessin, widgets, événements, GL. Côté IDE, la traduction
-  en egui.
-- **Réécrire la visionneuse glTF contre cette API**, surtout sa barre de contrôles (lecture,
-  curseur de temps, vitesse, boucle, choix de l'animation, grille). Le rendu OpenGL lui-même
-  change peu (`glow` du plugin au lieu de celui d'eframe).
-- **Une ABI publiée n'évolue que par ajouts** : nouvelles fonctions en fin de table, ou
-  nouvelle version d'ABI. Sinon, les plugins existants cassent.
-- **Un plugin ne peut faire que ce que l'API expose.** Il n'a plus accès à egui en entier.
-
-## Comment y aller
-
-1. **Une première version de l'API limitée à ce dont la visionneuse a besoin** : zone et
-   événements, rectangles et texte, bouton à icône, case, curseur, liste déroulante, callback
-   OpenGL, demande de nouvelle image.
-2. **L'IDE charge les deux versions** : un plugin v1 (`ATELIER_PLUGIN`, empreinte) ou v2
-   (`ATELIER_PLUGIN_V2`, numéro d'ABI). La v1 continue de marcher pendant la transition.
-3. **Porter la visionneuse en v2.** Sa CI se simplifie : un `cargo build` du plugin seul, une
-   release qui ne dépend plus de la version de l'IDE.
-4. **Retirer la v1 et les kits** une fois les plugins portés.
-5. **Élargir l'API plugin par plugin**, selon les besoins réels.
-
-## Questions ouvertes
-
-- Faut-il un mode immédiat (le plugin redemande ses widgets à chaque image, comme egui), ou
-  une description retenue ? Le mode immédiat est le plus proche d'egui, donc le plus simple à
-  traduire.
-- Comment le plugin garde-t-il l'état d'un widget (curseur tenu, liste ouverte) ? Avec des
-  identifiants fournis par le plugin, que l'IDE passe à egui (`Id`).
-- Les textures : qui les garde, et combien de temps ? Probablement l'IDE, avec une libération
-  explicite.
-- Faut-il aller jusqu'à un plugin dans un processus à part (crash isolé, pas de `unsafe` dans
-  l'IDE) ? C'est plus robuste, mais l'OpenGL partagé devient impossible.
+- Créer les dépôts `atelier-ide-org/plugin-database` et `atelier-ide-org/plugin-msoffice-viewer`
+  (publics), puis y pousser `main` (les dépôts locaux sont prêts, `origin` déjà réglé) : leur
+  release se fait toute seule.
+- Fusionner les pull requests de `app` et de `docs` ensemble, puis la pull request de release
+  (0.3.0) une fois les trois plugins publiés : sinon les utilisateurs perdent l'explorateur de
+  bases et la visionneuse Office le temps qu'ils sortent.
+- Supprimer la branche `kits` d'`api`, qui ne sert plus.
+- Élargir l'interface au besoin : barre d'état, menus du projet, commandes de fichier, IME,
+  glisser-déposer de fichiers, et ce que les prochains plugins demanderont.

@@ -24,8 +24,13 @@ pub struct Plugin {
     /// manifest. It is loaded once the plugin is turned on (`native.rs`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub library: Option<String>,
-    /// The version of Atelier a native plugin was built for: it loads in that version only.
+    /// The version of the plugin interface a native plugin was built for
+    /// (`atelier_plugin_api::abi::VERSION`): it loads in every Atelier of that version.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub abi: Option<u32>,
+    /// The version of Atelier a plugin of the first interface was built for (Atelier 0.2): still
+    /// read, so that such a plugin is listed, and refused with a message that says why.
+    #[serde(default, skip_serializing)]
     pub atelier: Option<String>,
     /// The folder of the manifest.
     #[serde(skip)]
@@ -60,7 +65,7 @@ pub fn platform() -> String {
     format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH)
 }
 
-fn library_file(name: &str) -> String {
+pub(crate) fn library_file(name: &str) -> String {
     format!(
         "{}{name}{}",
         std::env::consts::DLL_PREFIX,
@@ -195,8 +200,13 @@ pub fn install_into(file: &Path, installed: &Path) -> Result<Installed, String> 
         .read_to_string(&mut json)
         .map_err(|e| invalid(&e))?;
     let plugin = parse(&json).map_err(|e| invalid(&e))?;
-    // A native plugin must have a library for this system.
+    // A native plugin must be made for this interface, and have a library for this system.
     if let Some(library) = &plugin.library {
+        let mine = atelier_plugin_api::abi::VERSION;
+        if plugin.abi != Some(mine) {
+            let theirs = plugin.abi.map_or("1".to_string(), |v| v.to_string());
+            return Err(trf!("plugin_wrong_abi", theirs = theirs, mine = mine));
+        }
         let file = library_file(library);
         let here = [format!("{}/{file}", platform()), file];
         if !here.iter().any(|name| zip.by_name(name).is_ok()) {
