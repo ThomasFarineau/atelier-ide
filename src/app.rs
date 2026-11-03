@@ -12,8 +12,7 @@ use crate::{
 };
 use eframe::egui::{
     self, Align2, Color32, CornerRadius, FontId, Margin, Rect, RichText, Sense, Stroke, StrokeKind,
-    containers::menu::{MenuButton, MenuConfig},
-    pos2, vec2,
+    containers::menu::MenuButton, pos2, vec2,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -45,6 +44,8 @@ use crate::editor::FormatRequest;
 use settings_page::{Draft, Page, RunTool};
 
 const TITLE_HEIGHT: f32 = 40.0;
+/// Least width of the dropdowns of the main menu.
+const MENU_WIDTH: f32 = 240.0;
 /// Size of the window that opens without a project, in points.
 const START_SCREEN_SIZE: [f32; 2] = [980.0, 680.0];
 const STATUS_HEIGHT: f32 = 28.0;
@@ -237,8 +238,13 @@ struct Settings {
     theme: usize,
     font_size: f32,
     recent: Vec<PathBuf>,
+    /// The external plugins that are on in the project (`<project>::<id>`), and the built-in
+    /// plugins that are off in it. They are kept in the project (`.atelier/config.json`, see
+    /// `Ide::load_project_plugins`), not here: an older `settings.json` that has them only gives
+    /// the state of the plugins a project has not decided yet.
+    #[serde(skip_serializing)]
     enabled_plugins: BTreeSet<String>,
-    /// Built-in plugins are enabled unless listed here.
+    #[serde(skip_serializing)]
     disabled_builtins: BTreeSet<String>,
     /// Ctrl + mouse wheel changes the editor font size unless this is set.
     wheel_zoom_off: bool,
@@ -269,6 +275,12 @@ struct Settings {
 
 /// The projects the Projects page keeps; the project widget shows the first ten.
 const MAX_RECENT: usize = 50;
+
+/// Whether an `"auto"` plugin is on in the project at `root`: Git while it has a `.git` (a
+/// folder, or the file of a worktree or a submodule), the others always.
+fn auto_on(root: &Path, id: &str) -> bool {
+    id != "git" || root.join(".git").exists()
+}
 
 fn settings_path() -> PathBuf {
     crate::cli::data_dir().join("settings.json")
@@ -377,6 +389,13 @@ pub struct Ide {
     /// The settings as they were when this window read or wrote them: what changed since is
     /// what this window has to write, the rest belongs to the other windows.
     settings_base: serde_json::Value,
+    /// The plugins `settings.json` turned on and off before they were kept per project: the
+    /// state of a plugin a project has not decided yet.
+    legacy_plugins: (BTreeSet<String>, BTreeSet<String>),
+    /// The built-in plugins the project leaves to the IDE (`"auto"`), and when the IDE last
+    /// checked whether they should be on.
+    auto_plugins: BTreeSet<String>,
+    auto_checked: Instant,
     root: PathBuf,
     documents: Vec<Document>,
     active: usize,
@@ -403,6 +422,10 @@ pub struct Ide {
     last_watch: Instant,
     show_terminal: bool,
     show_project: bool,
+    /// The main menu is spread over the title bar, as when its button is clicked in IntelliJ.
+    main_menu_open: bool,
+    /// One of its menus was open on the previous frame.
+    main_menu_popup: bool,
     show_notifications: bool,
     show_settings: bool,
     /// The Projects page, open, and its search.
@@ -516,6 +539,8 @@ pub struct Ide {
     /// Raised by the dev supervisor (`cargo dev`) to swap this process for a new build.
     reload: Option<Arc<AtomicBool>>,
     builtins: Vec<Box<dyn BuiltinPlugin>>,
+    /// The parent of each sub-plugin, kept apart: `builtins` is taken out while a plugin runs.
+    builtin_parents: std::collections::HashMap<&'static str, &'static str>,
     /// Built-in tool window shown instead of the project view.
     left_tool: Option<&'static ToolWindow>,
     /// A plugin's tool window on the right (npm, Maven, Gradle), in the place of the notifications.
@@ -579,6 +604,50 @@ fn ago(at: Instant) -> String {
     }
 }
 
+/// Icon of a main menu item, or an empty space as wide for an item without one, so that the
+/// labels line up.
+fn menu_icon(ui: &egui::Ui, name: &str) -> egui::Image<'static> {
+    if name.is_empty() {
+        ui::icon(ui, "menu").tint(Color32::TRANSPARENT)
+    } else {
+        ui::icon(ui, name)
+    }
+}
+
+/// A title of the spread main menu opens its dropdown as soon as the pointer is on it, without
+/// a click, as in IntelliJ.
+fn open_on_hover(ui: &egui::Ui, title: &egui::Response) {
+    let id = egui::Popup::default_response_id(title);
+    if title.hovered() && !egui::Popup::is_id_open(ui.ctx(), id) {
+        egui::Popup::open_id(ui.ctx(), id);
+        ui.ctx().request_repaint();
+    }
+}
+
+/// Dropdowns of the main menu: a clear hover background, room on the sides of the items.
+fn menu_popup_style(t: ui::Theme) -> impl Fn(&mut egui::Style) + Send + Sync + 'static {
+    move |style: &mut egui::Style| {
+        egui::containers::menu::menu_style(style);
+        // The background of every other popup; only the hover is lighter.
+        let hover = if t.dark {
+            t.popup.lerp_to_gamma(Color32::WHITE, 0.15)
+        } else {
+            t.pressed
+        };
+        style.spacing.menu_margin = Margin::symmetric(4, 6);
+        style.spacing.button_padding = vec2(6.0, 5.0);
+        style.spacing.icon_spacing = 8.0;
+        style.spacing.item_spacing.x = 8.0;
+        let widgets = &mut style.visuals.widgets;
+        for state in [&mut widgets.hovered, &mut widgets.open, &mut widgets.active] {
+            state.weak_bg_fill = hover;
+            state.bg_fill = hover;
+            state.corner_radius = 5.into();
+            state.expansion = 0.0;
+        }
+    }
+}
+
 impl Ide {
     /// Writes what this window changed in the settings, keeping what the other windows wrote.
     pub(super) fn persist_settings(&mut self) -> anyhow::Result<()> {
@@ -601,6 +670,7 @@ impl Ide {
     }
 
     fn blank(root: PathBuf, settings: Settings, reload: Option<Arc<AtomicBool>>) -> Self {
+        let builtins = builtin::all();
         let (plugins, plugin_errors) = plugins::load(&root);
         let draft = Draft::of(&settings);
         let repaint: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
@@ -614,6 +684,12 @@ impl Ide {
             nav_forward: Vec::new(),
             pending_nav: None,
             settings_base: serde_json::to_value(&settings).unwrap_or_default(),
+            legacy_plugins: (
+                settings.enabled_plugins.clone(),
+                settings.disabled_builtins.clone(),
+            ),
+            auto_plugins: BTreeSet::new(),
+            auto_checked: Instant::now(),
             settings,
             expanded: BTreeSet::from([root.clone()]),
             root,
@@ -634,6 +710,8 @@ impl Ide {
             last_watch: Instant::now(),
             show_terminal: false,
             show_project: true,
+            main_menu_open: false,
+            main_menu_popup: false,
             show_notifications: false,
             show_settings: false,
             show_projects: false,
@@ -699,7 +777,11 @@ impl Ide {
             can_quit: false,
             cursor: (1, 1),
             reload,
-            builtins: builtin::all(),
+            builtin_parents: builtins
+                .iter()
+                .filter_map(|p| Some((p.id(), p.parent()?)))
+                .collect(),
+            builtins,
             left_tool: None,
             right_tool: None,
             bottom_tool: None,
@@ -739,6 +821,10 @@ impl Ide {
         };
         let mut ide = Self::blank(root, settings, reload);
         ide.start_screen = start_screen;
+        if !start_screen {
+            // The folder of a file given on the command line: read, never written.
+            ide.load_project_plugins(false);
+        }
         ide.window = crate::window::Window::new(cc);
         if let Some(window) = &mut ide.window {
             let size = if start_screen {
@@ -974,7 +1060,7 @@ impl Ide {
         let binary = self
             .builtins
             .iter()
-            .filter(|p| !self.settings.disabled_builtins.contains(p.id()))
+            .filter(|p| self.builtin_enabled(p.id()))
             .any(|p| p.opens_binary(&path));
         let opened = if binary {
             Ok(Document::binary(path))
@@ -1197,6 +1283,7 @@ impl Ide {
         let root = self.root.clone();
         self.remember(&root);
         (self.plugins, self.plugin_errors) = plugins::load(&self.root);
+        self.load_project_plugins(true);
         self.languages = Arc::new(crate::languages::Service::new(
             &self.root,
             self.repaint.clone(),
@@ -1913,7 +2000,8 @@ impl Ide {
                 ui.painter().add(egui::Shape::mesh(mesh));
                 ui.horizontal_centered(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
-                    ui.add_space(8.0);
+                    // The logo lines up with the tool window icons of the stripe below it.
+                    ui.add_space((STRIPE_WIDTH - 20.0) / 2.0);
                     self.main_menu(ui);
                     ui.add_space(2.0);
                     self.project_widget(ui, &name, color);
@@ -1963,186 +2051,346 @@ impl Ide {
             });
     }
 
+    /// The logo, then the main menu button. As in IntelliJ, a click spreads the menus over the
+    /// title bar (File, Edit…); they fold back once a command is chosen, on a click elsewhere
+    /// or on Escape.
     fn main_menu(&mut self, ui: &mut egui::Ui) {
-        let config = MenuConfig::new();
-        MenuButton::from_button(egui::Button::image(ui::icon(ui, "menu")).frame(false))
-            .config(config)
-            .ui(ui, |ui| {
-                ui.set_min_width(220.0);
-                let item = |ui: &mut egui::Ui, label: &str, shortcut: &str| {
-                    ui.add(egui::Button::new(label).shortcut_text(shortcut))
-                        .clicked()
-                };
-                ui.menu_button(tr!("file"), |ui| {
-                    if item(ui, tr!("new_file"), "Alt+Insert") {
-                        self.new_document();
+        let ctx = ui.ctx().clone();
+        let logo = ui
+            .add(
+                egui::Image::new(egui::include_image!("../assets/logo/atelier.svg"))
+                    .fit_to_exact_size(vec2(20.0, 20.0))
+                    .sense(Sense::click()),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        let mut opened = logo.clicked() && !self.main_menu_open;
+        if logo.clicked() && self.main_menu_open {
+            self.main_menu_open = false;
+        }
+        ui.add_space(2.0);
+        if !self.main_menu_open {
+            if ui::icon_button(ui, "menu", tr!("main_menu")).clicked() {
+                opened = true;
+            }
+            if opened {
+                self.main_menu_open = true;
+                self.main_menu_popup = false;
+            }
+            return;
+        }
+        // Menu titles styled like the other title bar controls: the theme's hover background,
+        // rounded, as tall as the icon buttons.
+        let t = self.theme(&ctx);
+        let style = move |style: &mut egui::Style| {
+            egui::containers::menu::menu_style(style);
+            style.spacing.button_padding = vec2(10.0, 4.0);
+            style.spacing.interact_size.y = ui::BUTTON;
+            style.spacing.item_spacing.x = 2.0;
+            let widgets = &mut style.visuals.widgets;
+            // Clearly lighter than the bar in a dark theme: its own hover color barely shows.
+            let (hover, open) = if t.dark {
+                (
+                    t.frame.lerp_to_gamma(Color32::WHITE, 0.12),
+                    t.frame.lerp_to_gamma(Color32::WHITE, 0.17),
+                )
+            } else {
+                (t.pressed, t.pressed)
+            };
+            for (state, fill) in [
+                (&mut widgets.hovered, hover),
+                (&mut widgets.open, open),
+                (&mut widgets.active, open),
+            ] {
+                state.weak_bg_fill = fill;
+                state.bg_fill = fill;
+                state.corner_radius = 5.into();
+                state.expansion = 0.0;
+            }
+        };
+        // The bar takes the whole width it is given: give it the width of its titles, measured
+        // on the previous frame, so that the project widget and the run toolbar stay beside it.
+        let width_id = egui::Id::new("main_menu_width");
+        let width = ctx
+            .data(|d| d.get_temp::<f32>(width_id))
+            .unwrap_or(ui.available_width())
+            .min(ui.available_width());
+        let bar = ui
+            .allocate_ui(vec2(width, ui.available_height()), |ui| {
+                egui::MenuBar::new()
+                    .style(style)
+                    .config(egui::containers::menu::MenuConfig::new().style(menu_popup_style(t)))
+                    .ui(ui, |ui| {
+                        let start = ui.cursor().min.x;
+                        self.main_menu_items(ui);
+                        let used = ui.cursor().min.x - start;
+                        ctx.data_mut(|d| d.insert_temp(width_id, used));
+                    })
+            })
+            .response;
+        let popup = egui::Popup::is_any_open(&ctx);
+        let over_bar = ctx
+            .pointer_hover_pos()
+            .is_some_and(|pos| bar.rect.contains(pos));
+        let clicked_away = !opened && !popup && !over_bar && ctx.input(|i| i.pointer.any_pressed());
+        let closed_menu = self.main_menu_popup && !popup && !over_bar;
+        if clicked_away || closed_menu || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.main_menu_open = false;
+        }
+        self.main_menu_popup = popup;
+    }
+
+    /// The menus of the main menu, laid side by side in the title bar.
+    fn main_menu_items(&mut self, ui: &mut egui::Ui) {
+        // An item: its icon (none for "", the labels still line up), its label, its shortcut.
+        // The shortcut ends a little before the right edge, as the icon starts after the left one.
+        let item = |ui: &mut egui::Ui, icon: &str, label: &str, shortcut: &str| {
+            let button = egui::Button::new((
+                menu_icon(ui, icon),
+                label,
+                egui::Atom::grow(),
+                egui::RichText::new(shortcut).weak(),
+                egui::Atom::custom(egui::Id::NULL, vec2(2.0, 0.0)),
+            ));
+            ui.add(button).clicked()
+        };
+        let menu = ui.menu_button(tr!("file"), |ui| {
+            ui.set_min_width(MENU_WIDTH);
+            if item(ui, "add", tr!("new_file"), "Alt+Insert") {
+                self.new_document();
+                ui.close();
+            }
+            if item(ui, "file", tr!("new_file_project"), "") {
+                self.show_new_file = true;
+                ui.close();
+            }
+            ui.separator();
+            if item(ui, "folder", tr!("open_file_dialog"), "Ctrl+O") {
+                self.choose_file();
+                ui.close();
+            }
+            if item(ui, "project", tr!("open_project_dialog"), "") {
+                self.choose_project(false);
+                ui.close();
+            }
+            if item(ui, "openNewTab", tr!("open_project_new_window"), "") {
+                self.choose_project(true);
+                ui.close();
+            }
+            if item(ui, "project", tr!("projects.all"), "") {
+                self.open_projects_page();
+                ui.close();
+            }
+            ui.menu_button((menu_icon(ui, "undo"), tr!("recent_projects")), |ui| {
+                ui.set_min_width(MENU_WIDTH);
+                for path in self.settings.recent.clone() {
+                    if path != self.root
+                        && item(
+                            ui,
+                            "folder",
+                            &crate::project::simplify(&path).display().to_string(),
+                            "",
+                        )
+                    {
+                        self.open_project(path);
                         ui.close();
                     }
-                    if item(ui, tr!("new_file_project"), "") {
-                        self.show_new_file = true;
-                        ui.close();
-                    }
-                    ui.separator();
-                    if item(ui, tr!("open_file_dialog"), "Ctrl+O") {
-                        self.choose_file();
-                        ui.close();
-                    }
-                    if item(ui, tr!("open_project_dialog"), "") {
-                        self.choose_project(false);
-                        ui.close();
-                    }
-                    if item(ui, tr!("open_project_new_window"), "") {
-                        self.choose_project(true);
-                        ui.close();
-                    }
-                    if item(ui, tr!("projects.all"), "") {
-                        self.open_projects_page();
-                        ui.close();
-                    }
-                    ui.menu_button(tr!("recent_projects"), |ui| {
-                        for path in self.settings.recent.clone() {
-                            if path != self.root && item(ui, &path.display().to_string(), "") {
-                                self.open_project(path);
-                                ui.close();
-                            }
-                        }
-                    });
-                    ui.separator();
-                    if item(ui, tr!("save"), "Ctrl+S") {
-                        self.save_document(self.active, false);
-                        ui.close();
-                    }
-                    if item(ui, tr!("save_as_dialog"), "Ctrl+Shift+S") {
-                        self.save_document(self.active, true);
-                        ui.close();
-                    }
-                    if item(ui, tr!("save_all"), "") {
-                        self.save_all();
-                        ui.close();
-                    }
-                    ui.separator();
-                    if item(ui, tr!("settings_dialog"), "Ctrl+Alt+S") {
-                        self.open_settings(self.settings_page);
-                        ui.close();
-                    }
-                    ui.separator();
-                    if item(ui, tr!("exit"), "") {
-                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-                        ui.close();
-                    }
+                }
+            });
+            ui.separator();
+            if item(ui, "save", tr!("save"), "Ctrl+S") {
+                self.save_document(self.active, false);
+                ui.close();
+            }
+            if item(ui, "", tr!("save_as_dialog"), "Ctrl+Shift+S") {
+                self.save_document(self.active, true);
+                ui.close();
+            }
+            if item(ui, "", tr!("save_all"), "") {
+                self.save_all();
+                ui.close();
+            }
+            ui.separator();
+            if item(ui, "settings", tr!("settings_dialog"), "Ctrl+Alt+S") {
+                self.open_settings(self.settings_page);
+                ui.close();
+            }
+            ui.separator();
+            if item(ui, "close", tr!("exit"), "") {
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                ui.close();
+            }
+        });
+        open_on_hover(ui, &menu.response);
+        let menu = ui.menu_button(tr!("edit"), |ui| {
+            ui.set_min_width(MENU_WIDTH);
+            if item(ui, "search", tr!("find_dialog"), "Ctrl+F") {
+                let selected = self.selected_text();
+                self.find.show(selected, false);
+                ui.close();
+            }
+            if item(
+                ui,
+                "edit",
+                tr!("rename_dialog"),
+                &crate::i18n::shortcut("Shift+F6"),
+            ) {
+                if let Some(doc) = self.documents.get_mut(self.active) {
+                    doc.view.request_rename(&doc.text);
+                }
+                ui.close();
+            }
+            if item(ui, "", tr!("replace_dialog"), "Ctrl+R") {
+                let selected = self.selected_text();
+                self.find.show(selected, true);
+                ui.close();
+            }
+            if item(
+                ui,
+                "search",
+                tr!("search_everywhere_dialog"),
+                tr!("double_shift"),
+            ) {
+                self.open_palette();
+                ui.close();
+            }
+            let core: Vec<_> = self
+                .builtins
+                .iter()
+                .filter(|p| p.core())
+                .flat_map(|p| p.commands().into_iter().map(move |c| (p.id(), c)))
+                .collect();
+            for (plugin, command) in core {
+                let (label, shortcut) = command
+                    .label
+                    .split_once("  ")
+                    .unwrap_or((&command.label, ""));
+                if item(ui, "", label, shortcut) {
+                    self.run_builtin_command(plugin, command.id);
+                    ui.close();
+                }
+            }
+        });
+        open_on_hover(ui, &menu.response);
+        let menu = ui.menu_button(tr!("code"), |ui| {
+            ui.set_min_width(MENU_WIDTH);
+            if item(ui, "", tr!("reformat_code"), "Ctrl+Alt+L") {
+                self.reformat_code();
+                ui.close();
+            }
+            if item(ui, "", tr!("reformat_file"), tr!("ctrl_alt_shift_l")) {
+                self.open_reformat_dialog();
+                ui.close();
+            }
+            if item(ui, "", tr!("optimize_imports"), "Ctrl+Alt+O") {
+                self.reformat(FormatRequest {
+                    imports_only: true,
+                    ..Default::default()
                 });
-                ui.menu_button(tr!("edit"), |ui| {
-                    if item(ui, tr!("find_dialog"), "Ctrl+F") {
-                        let selected = self.selected_text();
-                        self.find.show(selected, false);
+                ui.close();
+            }
+        });
+        open_on_hover(ui, &menu.response);
+        let menu = ui.menu_button(tr!("view"), |ui| {
+            ui.set_min_width(MENU_WIDTH);
+            ui.menu_button((menu_icon(ui, "structure"), tr!("tool_windows")), |ui| {
+                ui.set_min_width(MENU_WIDTH);
+                for tool in self.all_tools() {
+                    if item(
+                        ui,
+                        tool.icon,
+                        tool.title.get(),
+                        &crate::i18n::shortcut(tool.shortcut),
+                    ) {
+                        self.open_tool(tool);
                         ui.close();
                     }
-                    if item(ui, tr!("rename_dialog"), &crate::i18n::shortcut("Shift+F6")) {
-                        if let Some(doc) = self.documents.get_mut(self.active) {
-                            doc.view.request_rename(&doc.text);
-                        }
+                }
+            });
+            ui.menu_button((menu_icon(ui, "show"), tr!("theme")), |ui| {
+                ui.set_min_width(MENU_WIDTH);
+                for (index, name) in ui::THEMES.iter().enumerate() {
+                    if ui.radio(self.settings.theme == index, *name).clicked() {
+                        self.settings.theme = index;
+                        self.apply_theme(ui.ctx());
                         ui.close();
                     }
-                    if item(ui, tr!("replace_dialog"), "Ctrl+R") {
-                        let selected = self.selected_text();
-                        self.find.show(selected, true);
-                        ui.close();
-                    }
-                    if item(ui, tr!("search_everywhere_dialog"), tr!("double_shift")) {
-                        self.open_palette();
-                        ui.close();
-                    }
-                });
-                ui.menu_button(tr!("code"), |ui| {
-                    if item(ui, tr!("reformat_code"), "Ctrl+Alt+L") {
-                        self.reformat_code();
-                        ui.close();
-                    }
-                    if item(ui, tr!("reformat_file"), tr!("ctrl_alt_shift_l")) {
-                        self.open_reformat_dialog();
-                        ui.close();
-                    }
-                    if item(ui, tr!("optimize_imports"), "Ctrl+Alt+O") {
-                        self.reformat(FormatRequest {
-                            imports_only: true,
-                            ..Default::default()
-                        });
-                        ui.close();
-                    }
-                });
-                ui.menu_button(tr!("view"), |ui| {
-                    ui.menu_button(tr!("tool_windows"), |ui| {
-                        for tool in self.all_tools() {
-                            if item(ui, tool.title.get(), &crate::i18n::shortcut(tool.shortcut)) {
-                                self.open_tool(tool);
-                                ui.close();
-                            }
-                        }
-                    });
-                    ui.menu_button(tr!("theme"), |ui| {
-                        for (index, name) in ui::THEMES.iter().enumerate() {
-                            if ui.radio(self.settings.theme == index, *name).clicked() {
-                                self.settings.theme = index;
-                                self.apply_theme(ui.ctx());
-                                ui.close();
-                            }
-                        }
-                    });
-                });
-                ui.menu_button(tr!("run"), |ui| {
-                    if item(ui, tr!("run_current_file"), "Shift+F10") {
-                        self.run_file();
-                        ui.close();
-                    }
-                    self.external_commands_menu(ui);
-                });
-                let menus: Vec<_> = self
-                    .builtins
-                    .iter()
-                    .filter(|p| self.builtin_enabled(p.id()) && p.applies())
-                    .map(|p| (p.id(), p.name(), p.commands()))
-                    .collect();
-                for (plugin, name, commands) in menus {
-                    ui.menu_button(name, |ui| {
+                }
+            });
+        });
+        open_on_hover(ui, &menu.response);
+        let menu = ui.menu_button(tr!("run"), |ui| {
+            ui.set_min_width(MENU_WIDTH);
+            if item(ui, "run", tr!("run_current_file"), "Shift+F10") {
+                self.run_file();
+                ui.close();
+            }
+            self.external_commands_menu(ui);
+        });
+        open_on_hover(ui, &menu.response);
+        // Commands of the built-in plugins, one submenu each, under Languages for the
+        // language plugins and under Plugins for the others.
+        let menus: Vec<_> = self
+            .builtins
+            .iter()
+            .filter(|p| !p.core() && self.builtin_enabled(p.id()) && p.applies())
+            .map(|p| (p.language(), p.id(), p.name(), p.icon(), p.commands()))
+            .filter(|(_, _, _, _, commands)| !commands.is_empty())
+            .collect();
+        for (languages, title) in [(true, tr!("languages_menu")), (false, tr!("plugins"))] {
+            let group: Vec<_> = menus.iter().filter(|m| m.0 == languages).collect();
+            if group.is_empty() {
+                continue;
+            }
+            let menu = ui.menu_button(title, |ui| {
+                ui.set_min_width(MENU_WIDTH);
+                for (_, plugin, name, icon, commands) in group {
+                    ui.menu_button((menu_icon(ui, icon), *name), |ui| {
+                        ui.set_min_width(MENU_WIDTH);
                         for command in commands {
                             let label = command
                                 .label
                                 .split_once(" : ")
                                 .map_or(command.label.as_str(), |(_, l)| l);
                             let (label, shortcut) = label.split_once("  ").unwrap_or((label, ""));
-                            if item(ui, label, shortcut) {
+                            if item(ui, "", label, shortcut) {
                                 self.run_builtin_command(plugin, command.id);
                                 ui.close();
                             }
                         }
                     });
                 }
-                ui.menu_button(tr!("window"), |ui| {
-                    if item(ui, tr!("new_project_window"), "") {
-                        self.choose_project(true);
-                        ui.close();
-                    }
-                    if item(ui, "Notifications", "") {
-                        self.show_notifications = !self.show_notifications;
-                        ui.close();
-                    }
-                });
-                ui.menu_button(tr!("help"), |ui| {
-                    if item(ui, tr!("keymap"), "") {
-                        self.open_settings(Page::Keymap);
-                        ui.close();
-                    }
-                    if item(ui, tr!("about"), "") {
-                        self.push_note(
-                            "Atelier IDE",
-                            format!("Version {}", env!("CARGO_PKG_VERSION")),
-                            false,
-                            true,
-                        );
-                        ui.close();
-                    }
-                });
             });
+            open_on_hover(ui, &menu.response);
+        }
+        let menu = ui.menu_button(tr!("window"), |ui| {
+            ui.set_min_width(MENU_WIDTH);
+            if item(ui, "openNewTab", tr!("new_project_window"), "") {
+                self.choose_project(true);
+                ui.close();
+            }
+            if item(ui, "notifications", "Notifications", "") {
+                self.show_notifications = !self.show_notifications;
+                ui.close();
+            }
+        });
+        open_on_hover(ui, &menu.response);
+        let menu = ui.menu_button(tr!("help"), |ui| {
+            ui.set_min_width(MENU_WIDTH);
+            if item(ui, "", tr!("keymap"), "") {
+                self.open_settings(Page::Keymap);
+                ui.close();
+            }
+            if item(ui, "info", tr!("about"), "") {
+                self.push_note(
+                    "Atelier IDE",
+                    format!("Version {}", env!("CARGO_PKG_VERSION")),
+                    false,
+                    true,
+                );
+                ui.close();
+            }
+        });
+        open_on_hover(ui, &menu.response);
     }
 
     fn external_commands_menu(&mut self, ui: &mut egui::Ui) {
@@ -2951,6 +3199,25 @@ impl Ide {
                 ui.close();
             }
             tree_menu_commands(self, ui);
+            if !is_dir {
+                let plugins: Vec<_> = self
+                    .builtins
+                    .iter()
+                    .filter(|p| self.builtin_enabled(p.id()))
+                    .map(|p| (p.id(), p.name(), p.file_commands(path)))
+                    .filter(|(_, _, commands)| !commands.is_empty())
+                    .collect();
+                for (plugin, name, commands) in plugins {
+                    ui::menu_separator(ui);
+                    ui::menu_title(ui, name);
+                    for command in commands {
+                        if ui::menu_item(ui, None, &command.label, None, false).clicked() {
+                            self.run_file_command(plugin, command.id, path);
+                            ui.close();
+                        }
+                    }
+                }
+            }
         });
     }
 
@@ -4390,6 +4657,12 @@ impl Ide {
                     return;
                 }
                 self.tabs(ui);
+                let uncolored = self.uncolored_languages();
+                let enabled_builtins: Vec<bool> = self
+                    .builtins
+                    .iter()
+                    .map(|p| self.builtin_enabled(p.id()))
+                    .collect();
                 let split_other = self.split_other();
                 let (doc, mut other_doc) = match split_other {
                     Some(other) => match self.documents.get_disjoint_mut([self.active, other]) {
@@ -4435,7 +4708,7 @@ impl Ide {
                     self.builtins
                         .iter()
                         .enumerate()
-                        .filter(|(_, p)| !self.settings.disabled_builtins.contains(p.id()))
+                        .filter(|(i, _)| enabled_builtins[*i])
                         .find_map(|(i, p)| {
                             p.editor_layout(&path)
                                 .map(|layout| (i, path.clone(), layout))
@@ -4584,6 +4857,7 @@ impl Ide {
                             pane,
                             target,
                             separate.then_some(&self.languages),
+                            !uncolored.contains(&target.language.as_str()),
                             &self.settings,
                             t,
                             font.clone(),
@@ -4633,6 +4907,7 @@ impl Ide {
                 );
                 let options = crate::editor::Options {
                     language: &doc.language,
+                    highlight: !uncolored.contains(&doc.language.as_str()),
                     font,
                     theme: t,
                     marks: &gutter.marks,
@@ -5150,17 +5425,30 @@ impl Ide {
                     )];
                     if let Some(path) = self.documents.get(self.active).and_then(|d| d.path.clone())
                     {
-                        let relative = path
-                            .strip_prefix(&self.root)
-                            .map(Path::to_path_buf)
-                            .unwrap_or_else(|_| path.clone());
-                        let mut current = self.root.clone();
-                        for part in relative.components() {
-                            current.push(part);
-                            crumbs.push((
-                                part.as_os_str().to_string_lossy().into_owned(),
-                                current.clone(),
-                            ));
+                        if let Ok(relative) = path.strip_prefix(&self.root) {
+                            let mut current = self.root.clone();
+                            for part in relative.components() {
+                                current.push(part);
+                                crumbs.push((
+                                    part.as_os_str().to_string_lossy().into_owned(),
+                                    current.clone(),
+                                ));
+                            }
+                        } else {
+                            // A file outside the project: its own path from the drive (`C:`),
+                            // without the `\\?\` of canonical Windows paths nor a `\` crumb.
+                            crumbs.clear();
+                            let mut current = PathBuf::new();
+                            for part in project::simplify(&path).components() {
+                                current.push(part);
+                                if part == std::path::Component::RootDir {
+                                    continue;
+                                }
+                                crumbs.push((
+                                    part.as_os_str().to_string_lossy().into_owned(),
+                                    current.clone(),
+                                ));
+                            }
                         }
                     }
                     let last = crumbs.len() - 1;
@@ -5965,15 +6253,183 @@ impl Ide {
         self.builtins
             .iter()
             .filter(|p| self.builtin_enabled(p.id()))
-            .find_map(|p| p.file_icon_for(path))
-            .and_then(|key| crate::icon_set::source(key, dark))
+            .find_map(|p| {
+                p.file_image(path, dark).or_else(|| {
+                    p.file_icon_for(path)
+                        .and_then(|key| crate::icon_set::source(key, dark))
+                })
+            })
             .unwrap_or_else(|| icons::file(path, dark))
     }
 
+    /// Whether a built-in plugin runs: it is on, and so is its parent when it is a sub-plugin.
     fn builtin_enabled(&self, id: &str) -> bool {
         // The IDE's own tool windows cannot be turned off.
-        self.builtins.iter().any(|p| p.id() == id && p.core())
-            || !self.settings.disabled_builtins.contains(id)
+        let on = self.builtins.iter().any(|p| p.id() == id && p.core())
+            || !self.settings.disabled_builtins.contains(id);
+        on && self
+            .builtin_parents
+            .get(id)
+            .is_none_or(|parent| self.builtin_enabled(parent))
+    }
+
+    /// Whether `id` is `ancestor` or one of its sub-plugins.
+    fn builtin_within(&self, id: &str, ancestor: &str) -> bool {
+        id == ancestor
+            || self
+                .builtin_parents
+                .get(id)
+                .is_some_and(|parent| self.builtin_within(parent, ancestor))
+    }
+
+    /// Reads which plugins are on in the project, from the `plugins` section of
+    /// `.atelier/config.json`. A plugin it does not list yet gets its state there (with `write`):
+    /// Git is `"auto"`, on while the project has a `.git` (see [`Ide::follow_auto_plugins`]);
+    /// the others keep the state the settings of the IDE gave them before plugins were kept per
+    /// project, on for a built-in plugin and off for an external one by default.
+    fn load_project_plugins(&mut self, write: bool) {
+        use crate::atelier::PluginState;
+        let read = crate::atelier::plugin_states(&self.root);
+        let mut states = read.clone();
+        let (legacy_enabled, legacy_disabled) = &self.legacy_plugins;
+        for plugin in self.builtins.iter().filter(|p| !p.core() && !p.external()) {
+            let id = plugin.id();
+            states.builtin.entry(id.to_string()).or_insert_with(|| {
+                if id == "git" && !legacy_disabled.contains(id) {
+                    PluginState::AUTO
+                } else {
+                    PluginState::Set(!legacy_disabled.contains(id))
+                }
+            });
+        }
+        for plugin in &self.plugins {
+            let key = self.plugin_key(&plugin.id);
+            states
+                .external
+                .entry(plugin.id.clone())
+                // A plugin installed in the IDE is on in every project until turned off there.
+                .or_insert_with(|| plugin.installed || legacy_enabled.contains(&key));
+        }
+        self.auto_plugins = (states.builtin.iter())
+            .filter(|(_, state)| **state == PluginState::AUTO)
+            .map(|(id, _)| id.clone())
+            .collect();
+        let disabled: BTreeSet<String> = (states.builtin.iter())
+            .filter(|(id, state)| match state {
+                PluginState::Set(on) => !on,
+                PluginState::Auto(_) => !auto_on(&self.root, id),
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        let enabled: BTreeSet<String> = (states.external.iter())
+            .filter(|(_, on)| **on)
+            .map(|(id, _)| self.plugin_key(id))
+            .collect();
+        for draft in [&mut self.settings_draft, &mut self.settings_original] {
+            draft.disabled_builtins = disabled.clone();
+            draft.enabled_plugins = enabled.clone();
+        }
+        self.settings.disabled_builtins = disabled;
+        self.settings.enabled_plugins = enabled;
+        if write && states != read {
+            crate::atelier::set_plugin_states(&self.root, &states);
+        }
+        self.sync_native_plugins();
+    }
+
+    /// Loads the native plugins turned on in the project, and lets go of those turned off or
+    /// whose manifest went away. Every frame: the Plugins window turns them on and off. A library
+    /// that could not be loaded is tried again once the manifests are read again.
+    fn sync_native_plugins(&mut self) {
+        let wanted: Vec<usize> = (0..self.plugins.len())
+            .filter(|&i| {
+                let plugin = &self.plugins[i];
+                plugin.library.is_some()
+                    && !plugin.load_failed
+                    && (self.settings.enabled_plugins).contains(&self.plugin_key(&plugin.id))
+            })
+            .collect();
+        let before = self.builtins.len();
+        let plugins = &self.plugins;
+        self.builtins
+            .retain(|p| !p.external() || wanted.iter().any(|&i| plugins[i].id == p.id()));
+        let mut changed = self.builtins.len() != before;
+        for i in wanted {
+            let plugin = &self.plugins[i];
+            let loaded = match self.builtins.iter().find(|p| p.id() == plugin.id) {
+                Some(p) if p.external() => continue,
+                Some(_) => Err(trf!("native_id_taken", id = plugin.id)),
+                None => plugins::native::load(plugin),
+            };
+            match loaded {
+                Ok(native) => {
+                    self.builtins.push(Box::new(native));
+                    changed = true;
+                }
+                Err(e) => {
+                    self.plugins[i].load_failed = true;
+                    let name = self.plugins[i].name.clone();
+                    self.plugin_errors.push(e.clone());
+                    builtin::Host::balloon(self, &name, e, true);
+                }
+            }
+        }
+        if changed {
+            self.sync_plugin_languages();
+        }
+    }
+
+    /// Writes which plugins are on in the project to `.atelier/config.json`, keeping the
+    /// plugins it lists that this IDE does not know (a newer version, a removed manifest), and
+    /// `"auto"` for the plugins nobody turned on or off.
+    fn save_project_plugins(&self) {
+        use crate::atelier::PluginState;
+        if self.start_screen {
+            return;
+        }
+        let mut states = crate::atelier::plugin_states(&self.root);
+        for plugin in self.builtins.iter().filter(|p| !p.core() && !p.external()) {
+            let id = plugin.id();
+            let state = if self.auto_plugins.contains(id) {
+                PluginState::AUTO
+            } else {
+                PluginState::Set(!self.settings.disabled_builtins.contains(id))
+            };
+            states.builtin.insert(id.to_string(), state);
+        }
+        for plugin in &self.plugins {
+            let on = (self.settings.enabled_plugins).contains(&self.plugin_key(&plugin.id));
+            states.external.insert(plugin.id.clone(), on);
+        }
+        crate::atelier::set_plugin_states(&self.root, &states);
+    }
+
+    /// Turns the `"auto"` plugins on and off as the project changes, once a second at most: Git
+    /// comes on when a `.git` appears (`git init`, a clone into the folder) and goes off when it
+    /// goes away.
+    fn follow_auto_plugins(&mut self) {
+        if self.start_screen
+            || self.auto_plugins.is_empty()
+            || self.auto_checked.elapsed() < Duration::from_secs(1)
+        {
+            return;
+        }
+        self.auto_checked = Instant::now();
+        let ids: Vec<String> = self.auto_plugins.iter().cloned().collect();
+        for id in ids {
+            let on = auto_on(&self.root, &id);
+            if on != self.settings.disabled_builtins.contains(&id) {
+                continue;
+            }
+            self.set_builtin_enabled(&id, on);
+            for draft in [&mut self.settings_draft, &mut self.settings_original] {
+                if on {
+                    draft.disabled_builtins.remove(&id);
+                } else {
+                    draft.disabled_builtins.insert(id.clone());
+                }
+            }
+        }
     }
 
     fn set_builtin_enabled(&mut self, id: &str, enabled: bool) {
@@ -5982,20 +6438,26 @@ impl Ide {
             return;
         }
         self.settings.disabled_builtins.insert(id.to_string());
+        // The windows of its sub-plugins close with it.
         let owned = |tool: Option<&ToolWindow>| {
             tool.is_some_and(|t| {
-                self.builtins
-                    .iter()
-                    .any(|p| p.id() == id && p.tool_windows().iter().any(|w| w.id == t.id))
+                self.builtins.iter().any(|p| {
+                    self.builtin_within(p.id(), id) && p.tool_windows().iter().any(|w| w.id == t.id)
+                })
             })
         };
-        if owned(self.left_tool) {
+        let closed = [
+            owned(self.left_tool),
+            owned(self.right_tool),
+            owned(self.bottom_tool),
+        ];
+        if closed[0] {
             self.left_tool = None;
         }
-        if owned(self.right_tool) {
+        if closed[1] {
             self.right_tool = None;
         }
-        if owned(self.bottom_tool) {
+        if closed[2] {
             self.bottom_tool = None;
         }
     }
@@ -6096,8 +6558,13 @@ impl Ide {
         else {
             return gutter;
         };
-        for plugin in &mut self.builtins {
-            if self.settings.disabled_builtins.contains(plugin.id()) {
+        let enabled: Vec<bool> = self
+            .builtins
+            .iter()
+            .map(|p| self.builtin_enabled(p.id()))
+            .collect();
+        for (plugin, enabled) in self.builtins.iter_mut().zip(enabled) {
+            if !enabled {
                 continue;
             }
             let text = &self.documents[self.active].text;
@@ -6128,6 +6595,41 @@ impl Ide {
                 p.run_command(command, ide);
             }
         });
+    }
+
+    fn run_file_command(&mut self, plugin: &str, command: &str, path: &Path) {
+        self.each_builtin(|p, ide| {
+            if p.id() == plugin {
+                p.run_file_command(command, path, ide);
+            }
+        });
+    }
+
+    /// The languages the editor leaves uncolored: those every plugin that brings them is off
+    /// for. A language no plugin brings is colored by the IDE itself.
+    fn uncolored_languages(&self) -> Vec<&'static str> {
+        let (on, off): (Vec<_>, Vec<_>) = self
+            .builtins
+            .iter()
+            .partition(|p| self.builtin_enabled(p.id()));
+        off.iter()
+            .flat_map(|p| p.languages())
+            .filter(|language| !on.iter().any(|p| p.languages().contains(language)))
+            .copied()
+            .collect()
+    }
+
+    /// Gives the language service the formatters and the JSON schemas of the plugins that are on.
+    fn sync_plugin_languages(&self) {
+        let on = || {
+            self.builtins
+                .iter()
+                .filter(|p| self.builtin_enabled(p.id()))
+        };
+        self.languages
+            .set_formatters(on().flat_map(|p| p.formatters().iter().copied()).collect());
+        self.languages
+            .set_json_schemas(on().flat_map(|p| p.json_schemas()).collect());
     }
 
     fn dropped_files(&mut self, ctx: &egui::Context) {
@@ -6601,6 +7103,8 @@ impl eframe::App for Ide {
         self.track_recent_files();
         self.update_window_title(ctx);
         self.serve_command_line(ctx);
+        self.follow_auto_plugins();
+        self.sync_native_plugins();
         if let Some(project) = self.pending_start.take() {
             self.leave_start_screen(ctx, project);
         }
@@ -6618,6 +7122,7 @@ impl eframe::App for Ide {
             }
         }
         self.each_builtin(|plugin, ide| plugin.update(ctx, ide));
+        self.sync_plugin_languages();
         if ctx.input(|i| i.viewport().close_requested()) && !self.can_quit {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.request(Pending::Quit);

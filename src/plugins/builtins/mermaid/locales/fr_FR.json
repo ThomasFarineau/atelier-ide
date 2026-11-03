@@ -16,7 +16,6 @@
   "mermaid.image_too_large": "Image trop grande",
   "mermaid.invalid_diagram": "Diagramme invalide : {error}",
   "mermaid.invalid_mermaid_diagram": "Diagramme Mermaid invalide : {error}",
-  "mermaid.mermaid_diagrams_mmd_files_editor": "Diagrammes Mermaid : fichiers .mmd en éditeur, aperçu ou les deux, export PNG/SVG, et rendu des blocs ```mermaid dans l'aperçu Markdown.",
   "mermaid.mermaid_editor_only": "Mermaid : éditeur seul",
   "mermaid.mermaid_editor_preview": "Mermaid : éditeur et aperçu",
   "mermaid.mermaid_preview_only": "Mermaid : aperçu seul",

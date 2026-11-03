@@ -333,13 +333,13 @@ impl BuiltinPlugin for RuntimesPlugin {
         "runtimes"
     }
     fn name(&self) -> &'static str {
-        "Runtimes"
+        tr!("plugin.runtimes.name")
     }
     fn description(&self) -> &'static str {
-        tr!("runtimes.description")
+        tr!("plugin.runtimes.summary")
     }
     fn icon(&self) -> &'static str {
-        "runtimes/icon"
+        crate::plugins::builtin::card_icon("runtimes")
     }
     fn tool_windows(&self) -> &'static [ToolWindow] {
         &TOOL_WINDOWS

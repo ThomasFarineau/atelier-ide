@@ -51,7 +51,6 @@
   "msoffice.presentation_too_large_limit_128": "Présentation trop volumineuse (limite : 128 Mo)",
   "msoffice.read_only_sheet_cells": "Lecture seule · {count} feuille{plural} · {book} cellules",
   "msoffice.read_only_slide_words": "Lecture seule · {count} diapositive{plural} · {words} mots",
-  "msoffice.read_only_viewer_microsoft_office": "Visionneuse de documents Microsoft Office en lecture seule, sans suite bureautique installée : Word (.docx) avec titres, mise en forme, listes, liens, tableaux et images ; Excel (.xlsx) avec un onglet par feuille, formats de nombres et de dates, couleurs ; PowerPoint (.pptx) avec formes, textes, images et tableaux. Chaque document s'exporte en PDF.",
   "msoffice.read_only_words": "Lecture seule · {words} mots",
   "msoffice.relations_document": "relations du document",
   "msoffice.relations_workbook": "relations du classeur",

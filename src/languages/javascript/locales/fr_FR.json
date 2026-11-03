@@ -47,7 +47,6 @@
   "javascript.boolean.valueOf": "Valeur primitive.",
   "javascript.cannot_analyze": "Analyse impossible",
   "javascript.cannot_install_language_server": "Installation du serveur de langage impossible : {e}",
-  "javascript.completion_tooltips_syntax_errors_javascript": "Complétion, infobulles et erreurs de syntaxe pour JavaScript, par analyse locale ; avec typescript-language-server (installé dans ~/.atelier/lsp) pour la précision de TypeScript : types, JSDoc, node_modules.",
   "javascript.console.assert": "Affiche un message si la condition est fausse.",
   "javascript.console.clear": "Efface la console.",
   "javascript.console.count": "Compte les appels avec ce libellé.",

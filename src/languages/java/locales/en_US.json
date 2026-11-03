@@ -3,7 +3,6 @@
   "java.cannot_install_server": "Cannot install jdtls: {e}",
   "java.command_install": "Java: Install the Language Server (jdtls)",
   "java.command_restart": "Java: Restart the Language Server",
-  "java.description": "Errors, completion, tooltips, navigation, rename, quick fixes, Reformat Code and Optimize Imports for Java, with jdtls (Eclipse JDT Language Server, which understands Maven and Gradle projects); structure, syntax errors, the names of the file and templates (psvm, sout, fori…) by local analysis without it.",
   "java.installing_server": "Installing jdtls…",
   "java.java_missing": "jdtls needs Java {min} or later: install a JDK and set JAVA_HOME",
   "java.java_too_old": "jdtls needs Java {min} or later, and the Java found is version {version}: point JAVA_HOME to a newer JDK",

@@ -59,14 +59,17 @@ impl BuiltinPlugin for MarkdownPlugin {
     fn id(&self) -> &'static str {
         "markdown"
     }
+    fn languages(&self) -> &'static [&'static str] {
+        &["md"]
+    }
     fn name(&self) -> &'static str {
-        "Markdown"
+        tr!("plugin.markdown.name")
     }
     fn description(&self) -> &'static str {
-        tr!("markdown.preview_markdown_files_editor_only")
+        tr!("plugin.markdown.summary")
     }
     fn icon(&self) -> &'static str {
-        "editorPreview"
+        crate::plugins::builtin::card_icon("markdown")
     }
     fn extensions_dir(&self) -> Option<&'static str> {
         Some("markdown")

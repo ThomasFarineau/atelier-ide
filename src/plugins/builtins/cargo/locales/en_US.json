@@ -8,7 +8,6 @@
   "cargo.command_check": "Cargo: Check",
   "cargo.command_test": "Cargo: Test",
   "cargo.command_window": "Cargo: Show Cargo Projects",
-  "cargo.description": "The Cargo.toml files of the project (packages and workspaces) and their targets, binaries, examples, tests and benchmarks: run a target, build, check, test, lint with Clippy, format, update the dependencies.",
   "cargo.doc": "Open the Documentation",
   "cargo.fmt": "Format the Code",
   "cargo.jump_to_source": "Jump to Source",

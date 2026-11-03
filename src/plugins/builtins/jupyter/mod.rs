@@ -84,13 +84,13 @@ impl BuiltinPlugin for JupyterPlugin {
         "jupyter"
     }
     fn name(&self) -> &'static str {
-        "Jupyter"
+        tr!("plugin.jupyter.name")
     }
     fn description(&self) -> &'static str {
-        tr!("jupyter.description")
+        tr!("plugin.jupyter.summary")
     }
     fn icon(&self) -> &'static str {
-        "jupyter/icon"
+        crate::plugins::builtin::card_icon("jupyter")
     }
     fn extensions_dir(&self) -> Option<&'static str> {
         Some("jupyter")

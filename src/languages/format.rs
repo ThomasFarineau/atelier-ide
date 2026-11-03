@@ -5,6 +5,9 @@
 use super::TextEdit;
 use similar::{DiffOp, TextDiff};
 
+/// The new text of a document, or why it cannot be formatted (a syntax error…).
+pub type Formatter = fn(&str) -> Result<String, String>;
+
 /// The edits that turn `old` into `new`, one per changed run of lines.
 pub fn edits_between(old: &str, new: &str) -> Vec<TextEdit> {
     if old == new {

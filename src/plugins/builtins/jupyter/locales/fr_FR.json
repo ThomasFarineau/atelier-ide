@@ -6,7 +6,6 @@
   "jupyter.command_jupyterlab": "Jupyter : ouvrir JupyterLab",
   "jupyter.command_new_notebook": "Jupyter : nouveau notebook",
   "jupyter.delete_cell": "Supprimer la cellule",
-  "jupyter.description": "Les notebooks Jupyter (.ipynb) modifiés et exécutés dans l'IDE, dans un noyau du Python du projet (son .venv, sinon son Python, sinon celui du système) ; JupyterLab à portée de clic.",
   "jupyter.done_editing": "Terminé",
   "jupyter.double_click_edit": "Double-cliquez pour modifier",
   "jupyter.empty_markdown": "Cellule Markdown vide",

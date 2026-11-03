@@ -1,0 +1,330 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GitHub Actions workflow",
+  "description": "A workflow of GitHub Actions: the events that start it and the jobs it runs.",
+  "type": "object",
+  "required": ["on", "jobs"],
+  "additionalProperties": false,
+  "definitions": {
+    "expression": {
+      "type": "string",
+      "pattern": "^\\s*\\$\\{\\{(.|[\\r\\n])*\\}\\}\\s*$"
+    },
+    "strings": {
+      "anyOf": [
+        { "type": "string" },
+        { "type": "array", "items": { "type": "string" } }
+      ]
+    },
+    "env": {
+      "description": "Environment variables, for the steps of the scope.",
+      "anyOf": [
+        { "type": "object", "additionalProperties": { "type": ["string", "number", "boolean"] } },
+        { "$ref": "#/definitions/expression" }
+      ]
+    },
+    "permission": {
+      "type": "string",
+      "enum": ["read", "write", "none"]
+    },
+    "permissions": {
+      "description": "What the GITHUB_TOKEN may do: read-all, write-all, or by scope.",
+      "anyOf": [
+        { "type": "string", "enum": ["read-all", "write-all"] },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "actions": { "$ref": "#/definitions/permission" },
+            "attestations": { "$ref": "#/definitions/permission" },
+            "checks": { "$ref": "#/definitions/permission" },
+            "contents": { "$ref": "#/definitions/permission" },
+            "deployments": { "$ref": "#/definitions/permission" },
+            "discussions": { "$ref": "#/definitions/permission" },
+            "id-token": { "$ref": "#/definitions/permission" },
+            "issues": { "$ref": "#/definitions/permission" },
+            "models": { "$ref": "#/definitions/permission" },
+            "packages": { "$ref": "#/definitions/permission" },
+            "pages": { "$ref": "#/definitions/permission" },
+            "pull-requests": { "$ref": "#/definitions/permission" },
+            "repository-projects": { "$ref": "#/definitions/permission" },
+            "security-events": { "$ref": "#/definitions/permission" },
+            "statuses": { "$ref": "#/definitions/permission" }
+          }
+        }
+      ]
+    },
+    "concurrency": {
+      "description": "Runs of the same group wait for each other: only one runs at a time.",
+      "anyOf": [
+        { "type": "string" },
+        {
+          "type": "object",
+          "required": ["group"],
+          "properties": {
+            "group": { "type": "string", "description": "The name of the group, often with an expression: ${{ github.workflow }}-${{ github.ref }}." },
+            "cancel-in-progress": { "type": ["boolean", "string"], "description": "A new run cancels the one of the group in progress." }
+          }
+        }
+      ]
+    },
+    "defaults": {
+      "type": "object",
+      "description": "Default settings of the run steps.",
+      "properties": {
+        "run": {
+          "type": "object",
+          "properties": {
+            "shell": { "$ref": "#/definitions/shell" },
+            "working-directory": { "type": "string", "description": "The folder the commands run in." }
+          }
+        }
+      }
+    },
+    "shell": {
+      "type": "string",
+      "description": "The shell of the commands: bash, pwsh, python, sh, cmd, powershell, or a command with {0} for the script."
+    },
+    "branches": {
+      "type": "object",
+      "properties": {
+        "branches": { "$ref": "#/definitions/strings", "description": "Only these branches (glob patterns; ! excludes)." },
+        "branches-ignore": { "$ref": "#/definitions/strings", "description": "Not these branches." },
+        "tags": { "$ref": "#/definitions/strings", "description": "Only these tags." },
+        "tags-ignore": { "$ref": "#/definitions/strings", "description": "Not these tags." },
+        "paths": { "$ref": "#/definitions/strings", "description": "Only when a file of these paths changed." },
+        "paths-ignore": { "$ref": "#/definitions/strings", "description": "Not when only files of these paths changed." },
+        "types": { "$ref": "#/definitions/strings", "description": "The kinds of activity: opened, synchronize, reopened…" }
+      }
+    },
+    "activity": {
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "properties": {
+            "types": { "$ref": "#/definitions/strings", "description": "The kinds of activity that start the workflow." }
+          }
+        }
+      ]
+    },
+    "input": {
+      "type": "object",
+      "properties": {
+        "description": { "type": "string", "description": "What the input is for." },
+        "required": { "type": "boolean", "description": "The input must be given." },
+        "default": { "description": "The value when none is given." },
+        "type": {
+          "type": "string",
+          "enum": ["string", "boolean", "number", "choice", "environment"],
+          "description": "The kind of value."
+        },
+        "options": { "type": "array", "description": "The values of a choice." }
+      }
+    },
+    "step": {
+      "type": "object",
+      "description": "A step: a command (run) or an action (uses).",
+      "additionalProperties": false,
+      "anyOf": [{ "required": ["uses"] }, { "required": ["run"] }],
+      "properties": {
+        "id": { "type": "string", "description": "The name the expressions give the step by: steps.<id>.outputs." },
+        "if": { "type": ["string", "boolean"], "description": "The step runs only when this expression is true." },
+        "name": { "type": "string", "description": "The name shown in the logs." },
+        "uses": { "type": "string", "description": "The action to run: owner/repo@ref, ./path, or docker://image." },
+        "run": { "type": "string", "description": "The commands to run, in the shell of the step." },
+        "shell": { "$ref": "#/definitions/shell" },
+        "working-directory": { "type": "string", "description": "The folder the commands run in." },
+        "with": {
+          "type": "object",
+          "description": "The inputs of the action.",
+          "additionalProperties": { "type": ["string", "number", "boolean"] }
+        },
+        "env": { "$ref": "#/definitions/env" },
+        "continue-on-error": { "type": ["boolean", "string"], "description": "The job goes on when the step fails." },
+        "timeout-minutes": { "type": ["number", "string"], "description": "The step is stopped after these minutes." }
+      }
+    },
+    "job": {
+      "type": "object",
+      "description": "A job: steps on a runner, or a reusable workflow (uses).",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "description": "The name shown on GitHub." },
+        "needs": { "$ref": "#/definitions/strings", "description": "The jobs that must succeed before this one starts." },
+        "runs-on": {
+          "description": "The runner: ubuntu-latest, windows-latest, macos-latest, labels of self-hosted runners, or a group.",
+          "anyOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } },
+            {
+              "type": "object",
+              "properties": {
+                "group": { "type": "string", "description": "The group of runners." },
+                "labels": { "$ref": "#/definitions/strings", "description": "The labels of the runner." }
+              }
+            }
+          ]
+        },
+        "if": { "type": ["string", "boolean"], "description": "The job runs only when this expression is true." },
+        "permissions": { "$ref": "#/definitions/permissions" },
+        "environment": {
+          "description": "The environment of the deployment, with its rules and secrets.",
+          "anyOf": [
+            { "type": "string" },
+            {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string", "description": "The name of the environment." },
+                "url": { "type": "string", "description": "The address of the deployment." }
+              }
+            }
+          ]
+        },
+        "concurrency": { "$ref": "#/definitions/concurrency" },
+        "outputs": {
+          "type": "object",
+          "description": "Values the jobs that need this one read: needs.<job>.outputs.<name>.",
+          "additionalProperties": { "type": "string" }
+        },
+        "env": { "$ref": "#/definitions/env" },
+        "defaults": { "$ref": "#/definitions/defaults" },
+        "timeout-minutes": { "type": ["number", "string"], "description": "The job is stopped after these minutes (360 by default)." },
+        "continue-on-error": { "type": ["boolean", "string"], "description": "The workflow goes on when the job fails." },
+        "strategy": {
+          "type": "object",
+          "description": "How the job runs several times, once per combination of the matrix.",
+          "properties": {
+            "matrix": {
+              "description": "Variables and their values; include adds combinations, exclude removes some.",
+              "anyOf": [{ "type": "object" }, { "$ref": "#/definitions/expression" }]
+            },
+            "fail-fast": { "type": ["boolean", "string"], "description": "A failure cancels the other runs of the matrix (true by default)." },
+            "max-parallel": { "type": ["number", "string"], "description": "The most runs of the matrix at a time." }
+          }
+        },
+        "container": {
+          "description": "The container the steps run in: an image, or an object.",
+          "anyOf": [{ "type": "string" }, { "type": "object" }]
+        },
+        "services": {
+          "type": "object",
+          "description": "Containers next to the job, as a database."
+        },
+        "steps": {
+          "type": "array",
+          "description": "The steps of the job, in order.",
+          "items": { "$ref": "#/definitions/step" }
+        },
+        "uses": { "type": "string", "description": "A reusable workflow: owner/repo/.github/workflows/file.yml@ref, or ./.github/workflows/file.yml." },
+        "with": { "type": "object", "description": "The inputs of the reusable workflow." },
+        "secrets": {
+          "description": "The secrets of the reusable workflow, or inherit.",
+          "anyOf": [{ "type": "string", "enum": ["inherit"] }, { "type": "object" }]
+        }
+      }
+    }
+  },
+  "properties": {
+    "name": { "type": "string", "description": "The name of the workflow, in the Actions tab." },
+    "run-name": { "type": "string", "description": "The name of each run, with expressions: Deploy by @${{ github.actor }}." },
+    "on": {
+      "description": "The events that start the workflow: an event, a list of them, or events with their filters.",
+      "anyOf": [
+        { "type": "string" },
+        { "type": "array", "items": { "type": "string" } },
+        {
+          "type": "object",
+          "properties": {
+            "push": { "description": "A push of commits or tags.", "anyOf": [{ "type": "null" }, { "$ref": "#/definitions/branches" }] },
+            "pull_request": { "description": "Activity on a pull request, with the code of the merge.", "anyOf": [{ "type": "null" }, { "$ref": "#/definitions/branches" }] },
+            "pull_request_target": { "description": "Activity on a pull request, with the code and the secrets of the base branch.", "anyOf": [{ "type": "null" }, { "$ref": "#/definitions/branches" }] },
+            "workflow_dispatch": {
+              "description": "A run started by hand, from GitHub or the API.",
+              "anyOf": [
+                { "type": "null" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "inputs": { "type": "object", "description": "The values asked when the run starts.", "additionalProperties": { "$ref": "#/definitions/input" } }
+                  }
+                }
+              ]
+            },
+            "workflow_call": {
+              "description": "The workflow is called by another one (a reusable workflow).",
+              "anyOf": [
+                { "type": "null" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "inputs": { "type": "object", "description": "The values the caller gives.", "additionalProperties": { "$ref": "#/definitions/input" } },
+                    "secrets": { "type": "object", "description": "The secrets the caller gives." },
+                    "outputs": { "type": "object", "description": "The values given back to the caller." }
+                  }
+                }
+              ]
+            },
+            "workflow_run": {
+              "description": "Another workflow was requested or completed.",
+              "anyOf": [
+                { "type": "null" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "workflows": { "$ref": "#/definitions/strings", "description": "The names of the workflows." },
+                    "types": { "$ref": "#/definitions/strings", "description": "requested, in_progress or completed." },
+                    "branches": { "$ref": "#/definitions/strings", "description": "Only runs of these branches." }
+                  }
+                }
+              ]
+            },
+            "schedule": {
+              "type": "array",
+              "description": "Runs at times, in UTC.",
+              "items": {
+                "type": "object",
+                "required": ["cron"],
+                "properties": {
+                  "cron": { "type": "string", "description": "When, in cron syntax: minute hour day month weekday (\"0 6 * * 1\" is Mondays at 6:00)." }
+                }
+              }
+            },
+            "release": { "$ref": "#/definitions/activity", "description": "A release was published, created, edited…" },
+            "issues": { "$ref": "#/definitions/activity", "description": "Activity on an issue." },
+            "issue_comment": { "$ref": "#/definitions/activity", "description": "A comment on an issue or a pull request." },
+            "pull_request_review": { "$ref": "#/definitions/activity", "description": "A review of a pull request." },
+            "pull_request_review_comment": { "$ref": "#/definitions/activity", "description": "A comment of a review of a pull request." },
+            "merge_group": { "$ref": "#/definitions/activity", "description": "A pull request entered the merge queue." },
+            "create": { "$ref": "#/definitions/activity", "description": "A branch or a tag was created." },
+            "delete": { "$ref": "#/definitions/activity", "description": "A branch or a tag was deleted." },
+            "deployment": { "$ref": "#/definitions/activity", "description": "A deployment was created." },
+            "deployment_status": { "$ref": "#/definitions/activity", "description": "The state of a deployment changed." },
+            "discussion": { "$ref": "#/definitions/activity", "description": "Activity on a discussion." },
+            "fork": { "$ref": "#/definitions/activity", "description": "The repository was forked." },
+            "label": { "$ref": "#/definitions/activity", "description": "A label was created, edited or deleted." },
+            "milestone": { "$ref": "#/definitions/activity", "description": "Activity on a milestone." },
+            "page_build": { "$ref": "#/definitions/activity", "description": "GitHub Pages was built." },
+            "public": { "$ref": "#/definitions/activity", "description": "The repository became public." },
+            "registry_package": { "$ref": "#/definitions/activity", "description": "A package was published or updated." },
+            "repository_dispatch": { "$ref": "#/definitions/activity", "description": "An event sent with the API." },
+            "status": { "$ref": "#/definitions/activity", "description": "The status of a commit changed." },
+            "watch": { "$ref": "#/definitions/activity", "description": "Someone starred the repository." },
+            "check_run": { "$ref": "#/definitions/activity", "description": "Activity on a check run." },
+            "check_suite": { "$ref": "#/definitions/activity", "description": "Activity on a check suite." },
+            "branch_protection_rule": { "$ref": "#/definitions/activity", "description": "A branch protection rule changed." }
+          }
+        }
+      ]
+    },
+    "permissions": { "$ref": "#/definitions/permissions" },
+    "env": { "$ref": "#/definitions/env" },
+    "defaults": { "$ref": "#/definitions/defaults" },
+    "concurrency": { "$ref": "#/definitions/concurrency" },
+    "jobs": {
+      "type": "object",
+      "description": "The jobs of the workflow, by id. They run at the same time unless needs orders them.",
+      "additionalProperties": { "$ref": "#/definitions/job" }
+    }
+  }
+}

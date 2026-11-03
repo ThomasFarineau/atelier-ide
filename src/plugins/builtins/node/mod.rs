@@ -3,6 +3,7 @@
 //! script runs in a terminal of its own, from the folder of its `package.json`.
 
 use crate::i18n::Text;
+use crate::languages::json::Schema;
 use crate::plugins::builtin::{BuiltinPlugin, Command, Dock, Host, ToolWindow};
 use crate::ui;
 use eframe::egui::{self, FontId, RichText, Sense, vec2};
@@ -262,18 +263,32 @@ impl NodePlugin {
     }
 }
 
+/// The schema of `package.json`: its keys, their values and what they do.
+pub static PACKAGE_SCHEMA: [Schema; 1] = [Schema {
+    name: "package.json",
+    files: &["package.json"],
+    urls: &[
+        "https://json.schemastore.org/package.json",
+        "https://json.schemastore.org/package",
+    ],
+    text: include_str!("package.schema.json"),
+}];
+
 impl BuiltinPlugin for NodePlugin {
     fn id(&self) -> &'static str {
         "node"
     }
+    fn json_schemas(&self) -> &'static [Schema] {
+        &PACKAGE_SCHEMA
+    }
     fn name(&self) -> &'static str {
-        "Node.js"
+        tr!("plugin.node.name")
     }
     fn description(&self) -> &'static str {
-        tr!("node.description")
+        tr!("plugin.node.summary")
     }
     fn icon(&self) -> &'static str {
-        "node/icon"
+        crate::plugins::builtin::card_icon("node")
     }
     fn tool_windows(&self) -> &'static [ToolWindow] {
         &TOOL_WINDOWS

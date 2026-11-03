@@ -1,8 +1,9 @@
 //! Built-in plugins: compiled into the IDE, available in every project, enabled by default and
 //! switchable in the Plugins window.
 //!
-//! External plugins (`external.rs`) are JSON manifests stored in a project that can only run shell
-//! commands. A built-in plugin extends the interface itself through the hooks of
+//! External plugins (`external.rs`) are JSON manifests stored in a project that run shell
+//! commands, or bring a dynamic library (`native.rs`) whose plugin then takes part as a built-in
+//! one, through a narrower interface (`atelier-plugin-api`). A built-in plugin extends the interface itself through the hooks of
 //! [`BuiltinPlugin`]: tool windows, toolbar and status bar widgets, editor gutter, project tree
 //! colors, shortcuts and palette commands. It talks back to the IDE through [`Host`].
 
@@ -175,8 +176,23 @@ pub trait BuiltinPlugin {
     fn core(&self) -> bool {
         false
     }
+    /// Support for a programming language: its commands go in the Languages menu rather than
+    /// in the Plugins one.
+    fn language(&self) -> bool {
+        false
+    }
+    /// A native plugin of the project (`native.rs`): it is turned on and off with the external
+    /// plugins, and is present only while it is on.
+    fn external(&self) -> bool {
+        false
+    }
     fn name(&self) -> &'static str;
     fn description(&self) -> &'static str;
+    /// The plugin this one is a part of (`git` for GitHub): it is on only while its parent is,
+    /// and the Plugins page shows it under it. It is still turned on and off by itself.
+    fn parent(&self) -> Option<&'static str> {
+        None
+    }
     /// Whether the plugin has something to do in the open project (a `pom.xml` for Maven…).
     /// When it has not, its tool windows and its commands are hidden, as in IntelliJ; it still
     /// gets `update`, to notice when the project changes.
@@ -227,6 +243,11 @@ pub trait BuiltinPlugin {
     fn file_icon(&self, path: &Path) -> Option<&'static str> {
         None
     }
+    /// Icon of the files this plugin handles, when it brings the picture itself rather than the
+    /// key of an icon of the IDE (a native plugin). It wins over `file_icon`.
+    fn file_image(&self, path: &Path, dark: bool) -> Option<egui::ImageSource<'static>> {
+        None
+    }
     /// The icon of a file for this plugin: `file_icon`, else the one of its extension.
     fn file_icon_for(&self, path: &Path) -> Option<&'static str> {
         self.file_icon(path).or_else(|| {
@@ -250,7 +271,28 @@ pub trait BuiltinPlugin {
     fn gutter_commands(&self, path: &Path) -> Vec<Command> {
         Vec::new()
     }
-    /// Icon of the plugin in the settings, from the IntelliJ set.
+    /// Entries of the project tree menu of a file, under the name of the plugin.
+    fn file_commands(&self, path: &Path) -> Vec<Command> {
+        Vec::new()
+    }
+    fn run_file_command(&mut self, id: &str, path: &Path, host: &mut dyn Host) {}
+    /// The languages (as `project::language` names them) whose syntax coloring this plugin
+    /// brings: the editor colors them only while the plugin is on. A language no plugin brings is
+    /// colored by the IDE itself.
+    fn languages(&self) -> &'static [&'static str] {
+        &[]
+    }
+    /// Reformat Code (Ctrl+Alt+L) of languages that have no language server: each language with
+    /// the function that gives the new text of a document.
+    fn formatters(&self) -> &'static [(&'static str, crate::languages::format::Formatter)] {
+        &[]
+    }
+    /// The schemas of the JSON files this plugin knows (`package.json` for Node.js): they check
+    /// the values of those files, complete their keys and describe them under the mouse.
+    fn json_schemas(&self) -> &'static [crate::languages::json::Schema] {
+        &[]
+    }
+    /// Icon of the plugin in the settings: [`card_icon`] for a plugin with a documentation card.
     fn icon(&self) -> &'static str {
         "settings"
     }
@@ -274,18 +316,28 @@ pub trait BuiltinPlugin {
     fn preview(&mut self, ui: &mut egui::Ui, path: &Path, text: &mut String, scroll: Option<f32>) {}
 }
 
+/// The icon of a plugin, by the name of its folder: the one of the front matter of its
+/// documentation (`doc/en-US.md`), which the catalog of the documentation shows too; the gear
+/// without one.
+pub fn card_icon(plugin: &str) -> &'static str {
+    crate::icon_set::plugin_icon(plugin).unwrap_or("settings")
+}
+
 pub fn all() -> Vec<Box<dyn BuiltinPlugin>> {
     vec![
         Box::new(crate::plugins::builtins::git::GitPlugin::default()),
+        Box::new(crate::plugins::builtins::git::github::GitHubPlugin::default()),
         Box::new(crate::plugins::builtins::markdown::MarkdownPlugin::default()),
         Box::new(crate::plugins::builtins::mermaid::MermaidPlugin::default()),
         Box::new(crate::plugins::builtins::mcp::McpPlugin::default()),
         Box::new(crate::plugins::builtins::svg::SvgPlugin::default()),
         Box::new(crate::plugins::builtins::csv::CsvPlugin::default()),
+        Box::new(crate::plugins::builtins::yaml::YamlPlugin),
         Box::new(crate::languages::javascript::JavaScriptPlugin),
         Box::new(crate::languages::rust::RustPlugin),
         Box::new(crate::languages::java::JavaPlugin),
         Box::new(crate::languages::css::CssPlugin),
+        Box::new(crate::languages::html::HtmlPlugin),
         Box::new(crate::languages::python::PythonPlugin),
         Box::new(crate::features::search::SearchPlugin::default()),
         Box::new(crate::features::problems::ProblemsPlugin::default()),
@@ -293,6 +345,7 @@ pub fn all() -> Vec<Box<dyn BuiltinPlugin>> {
         Box::new(crate::plugins::builtins::image::ImagePlugin::default()),
         Box::new(crate::plugins::builtins::media::MediaPlugin::default()),
         Box::new(crate::plugins::builtins::k8s::K8sPlugin::default()),
+        Box::new(crate::plugins::builtins::database::DatabasePlugin::default()),
         Box::new(crate::plugins::builtins::node::NodePlugin::default()),
         Box::new(crate::plugins::builtins::cargo::CargoPlugin::default()),
         Box::new(crate::plugins::builtins::runtimes::RuntimesPlugin::default()),

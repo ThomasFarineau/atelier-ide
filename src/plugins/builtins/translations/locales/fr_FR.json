@@ -14,7 +14,6 @@
   "translations.command_window": "Traductions : fenêtre",
   "translations.copy_key": "Copier la clé",
   "translations.delete_key": "Supprimer la clé dans toutes les langues",
-  "translations.description": "Les fichiers de traduction (i18n) du projet, à partir d'un fichier choisi comme source : toutes les clés dans toutes les langues, les clés manquantes, vides ou en trop et les variables qui diffèrent de la source ; modification en place, ajout d'une langue ou d'une clé. Fichiers JSON (plats ou imbriqués) et .properties. L'outil MCP « i18n » permet à une IA de vérifier les langues ou d'en ajouter une.",
   "translations.filter": "Filtrer les clés et les textes",
   "translations.folder_empty": "aucun fichier .json ou .properties dans ce dossier",
   "translations.folder_not_language": "le dossier doit porter le nom d'une langue (ex. locales/fr)",

@@ -74,13 +74,13 @@ impl BuiltinPlugin for ImagePlugin {
         "image"
     }
     fn name(&self) -> &'static str {
-        tr!("image.image_viewer")
+        tr!("plugin.image.name")
     }
     fn description(&self) -> &'static str {
-        tr!("image.shows_images_png_jpeg_gif")
+        tr!("plugin.image.summary")
     }
     fn icon(&self) -> &'static str {
-        "editorPreview"
+        crate::plugins::builtin::card_icon("image")
     }
     fn extensions_dir(&self) -> Option<&'static str> {
         Some("image")

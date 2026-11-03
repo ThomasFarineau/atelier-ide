@@ -20,6 +20,8 @@ const ROW_HEIGHT: f32 = 52.0;
 /// What the list and the detail pane need to know about a built-in plugin.
 struct Builtin {
     id: &'static str,
+    /// The plugin it is a part of.
+    parent: Option<&'static str>,
     name: &'static str,
     description: &'static str,
     icon: &'static str,
@@ -111,7 +113,9 @@ fn plugin_icon(
     }
 }
 
-/// One row of the list. Returns (row clicked, checkbox clicked).
+/// One row of the list. Returns (row clicked, checkbox clicked). A sub-plugin is drawn under its
+/// parent, shifted right, and dimmed while its parent is off (`active`); its check still shows
+/// its own switch.
 #[allow(clippy::too_many_arguments)]
 fn list_row(
     ui: &mut egui::Ui,
@@ -121,20 +125,24 @@ fn list_row(
     subtitle: &str,
     selected: bool,
     enabled: bool,
+    sub: bool,
+    active: bool,
 ) -> (bool, bool) {
     let (rect, response) =
         ui.allocate_exact_size(vec2(ui.available_width(), ROW_HEIGHT), Sense::click());
     ui::paint_row(ui, rect, selected, response.hovered());
-    let icon_rect = Rect::from_min_size(rect.left_top() + vec2(10.0, 10.0), vec2(32.0, 32.0));
-    plugin_icon(ui, t, icon, name, icon_rect, enabled);
+    let shift = if sub { 24.0 } else { 0.0 };
+    let icon_rect =
+        Rect::from_min_size(rect.left_top() + vec2(10.0 + shift, 10.0), vec2(32.0, 32.0));
+    plugin_icon(ui, t, icon, name, icon_rect, enabled && active);
     let check =
         Rect::from_center_size(pos2(rect.right() - 18.0, rect.center().y), vec2(16.0, 16.0));
     let text_area = Rect::from_min_max(
-        pos2(rect.left() + 52.0, rect.top()),
+        pos2(rect.left() + 52.0 + shift, rect.top()),
         pos2(check.left() - 8.0, rect.bottom()),
     );
     let painter = ui.painter().with_clip_rect(text_area);
-    let (main, sub) = if enabled {
+    let (main, sub) = if enabled && active {
         (t.text, t.text_secondary)
     } else {
         (t.text_disabled, t.text_disabled)
@@ -268,12 +276,13 @@ impl Ide {
         t: Theme,
         command: &mut Option<String>,
     ) {
-        let builtins: Vec<Builtin> = self
+        let mut builtins: Vec<Builtin> = self
             .builtins
             .iter()
-            .filter(|p| !p.core())
+            .filter(|p| !p.core() && !p.external())
             .map(|p| Builtin {
                 id: p.id(),
+                parent: p.parent(),
                 name: p.name(),
                 description: p.description(),
                 icon: p.icon(),
@@ -293,6 +302,21 @@ impl Ide {
                     .collect(),
             })
             .collect();
+        // Each sub-plugin right under its parent.
+        let parents: Vec<&'static str> =
+            builtins.iter().map(|b| b.parent.unwrap_or(b.id)).collect();
+        let order: Vec<usize> = {
+            let mut order: Vec<usize> = (0..builtins.len()).collect();
+            let first = |id: &str| parents.iter().position(|p| *p == id).unwrap_or(usize::MAX);
+            order.sort_by_key(|&i| (first(parents[i]), builtins[i].parent.is_some()));
+            order
+        };
+        let mut sorted = Vec::with_capacity(builtins.len());
+        let mut slots: Vec<Option<Builtin>> = builtins.into_iter().map(Some).collect();
+        for i in order {
+            sorted.extend(slots[i].take());
+        }
+        builtins = sorted;
 
         // Tabs, as in IntelliJ. Only the installed plugins exist here: there is no marketplace.
         ui.horizontal(|ui| {
@@ -300,6 +324,9 @@ impl Ide {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if ui::icon_button(ui, "refresh", tr!("reload_project_extensions")).clicked() {
                     (self.plugins, self.plugin_errors) = plugins::load(&self.root);
+                }
+                if ui::icon_button(ui, "add", tr!("install_plugin_file")).clicked() {
+                    self.install_plugin_file();
                 }
             });
         });
@@ -374,6 +401,7 @@ impl Ide {
                         for b in &visible_builtins {
                             let key = format!("b:{}", b.id);
                             let subtitle = trf!("builtin_short_version", version = b.version);
+                            let disabled = &self.settings_draft.disabled_builtins;
                             let (clicked, toggle) = list_row(
                                 ui,
                                 &t,
@@ -381,7 +409,9 @@ impl Ide {
                                 b.name,
                                 &subtitle,
                                 selected == key,
-                                !self.settings_draft.disabled_builtins.contains(b.id),
+                                !disabled.contains(b.id),
+                                b.parent.is_some(),
+                                b.parent.is_none_or(|p| !disabled.contains(p)),
                             );
                             if toggle {
                                 toggled = Some(key.clone());
@@ -412,7 +442,11 @@ impl Ide {
                                 .settings_draft
                                 .enabled_plugins
                                 .contains(&self.plugin_key(&plugin.id));
-                            let subtitle = trf!("project_2", version = plugin.version);
+                            let subtitle = if plugin.installed {
+                                trf!("installed_plugin_version", version = plugin.version)
+                            } else {
+                                trf!("project_2", version = plugin.version)
+                            };
                             let (clicked, toggle) = list_row(
                                 ui,
                                 &t,
@@ -421,6 +455,8 @@ impl Ide {
                                 &subtitle,
                                 selected == key,
                                 enabled,
+                                false,
+                                true,
                             );
                             if toggle {
                                 toggled = Some(key.clone());
@@ -457,11 +493,67 @@ impl Ide {
             self.plugin_selected = Some(key);
         }
         if let Some(key) = toggled {
-            self.toggle_plugin(&key);
+            match key.strip_prefix("u:") {
+                Some(id) => self.uninstall_plugin(id),
+                None => self.toggle_plugin(&key),
+            }
         }
         for error in &self.plugin_errors {
             ui.colored_label(t.error, error);
         }
+    }
+
+    /// Installs a plugin from its file (`.atelier-plugin`), chosen in a dialog, and turns it on.
+    fn install_plugin_file(&mut self) {
+        let Some(file) = rfd::FileDialog::new()
+            .add_filter(tr!("plugin_file_filter"), &[plugins::PACKAGE_EXTENSION])
+            .pick_file()
+        else {
+            return;
+        };
+        let title = tr!("plugins").to_string();
+        match plugins::install(&file) {
+            Ok(installed) => {
+                let text = match installed {
+                    plugins::Installed::Now(name) => trf!("plugin_installed", name = name),
+                    plugins::Installed::AtNextStart(name) => {
+                        trf!("plugin_installed_restart", name = name)
+                    }
+                };
+                self.reload_plugins();
+                crate::plugins::builtin::Host::balloon(self, &title, text, false);
+            }
+            Err(e) => crate::plugins::builtin::Host::balloon(self, &title, e, true),
+        }
+    }
+
+    /// Uninstalls a plugin of the IDE (not one of the project).
+    fn uninstall_plugin(&mut self, id: &str) {
+        let Some(name) = (self.plugins.iter())
+            .find(|p| p.id == id && p.installed)
+            .map(|p| p.name.clone())
+        else {
+            return;
+        };
+        let title = tr!("plugins").to_string();
+        match plugins::uninstall(id) {
+            Ok(gone) => {
+                let text = match gone {
+                    true => trf!("plugin_uninstalled", name = name),
+                    false => trf!("plugin_uninstalled_restart", name = name),
+                };
+                self.reload_plugins();
+                crate::plugins::builtin::Host::balloon(self, &title, text, false);
+            }
+            Err(e) => crate::plugins::builtin::Host::balloon(self, &title, e, true),
+        }
+    }
+
+    /// Reads the manifests again, and the state of the plugins in the project: a plugin just
+    /// installed is turned on, one uninstalled goes (`sync_native_plugins`).
+    fn reload_plugins(&mut self) {
+        (self.plugins, self.plugin_errors) = plugins::load(&self.root);
+        self.load_project_plugins(!self.start_screen);
     }
 
     fn toggle_plugin(&mut self, key: &str) {
@@ -549,6 +641,22 @@ impl Ide {
                 }
                 if tabs(ui) == 0 {
                     ui.add(egui::Label::new(b.description).wrap());
+                    if let Some(parent) = b.parent.and_then(|p| builtins.iter().find(|o| o.id == p))
+                    {
+                        ui.add_space(10.0);
+                        let part = trf!("plugin_part_of", parent = parent.name);
+                        ui.label(RichText::new(part).color(t.text_secondary));
+                        if self.settings_draft.disabled_builtins.contains(parent.id) {
+                            let off = trf!("plugin_parent_off", parent = parent.name);
+                            ui.label(RichText::new(off).color(t.text_secondary));
+                        }
+                    }
+                    if self.auto_plugins.contains(id) {
+                        // Git while the project leaves it to the IDE (`"auto"`).
+                        ui.add_space(10.0);
+                        let auto = RichText::new(tr!("plugin_auto_git")).color(t.text_secondary);
+                        ui.add(egui::Label::new(auto).wrap());
+                    }
                     if !enabled {
                         ui.add_space(10.0);
                         ui.label(RichText::new(tr!("plugin_disabled")).color(t.text_secondary));
@@ -590,13 +698,42 @@ impl Ide {
                 if tabs(ui) == 0 {
                     ui.add(egui::Label::new(&plugin.description).wrap());
                     ui.add_space(10.0);
-                    ui.add(
-                        egui::Label::new(
-                            RichText::new(tr!("these_commands_run_your_local"))
+                    if let Some(version) = &plugin.atelier {
+                        ui.label(
+                            RichText::new(trf!("installed_plugin_built_for", version = version))
                                 .small()
                                 .color(t.text_secondary),
-                        )
-                        .wrap(),
+                        );
+                        ui.add_space(4.0);
+                    }
+                    if plugin.installed && ui::button(ui, tr!("plugin_uninstall")).clicked() {
+                        // Handled with the toggles, once the page is drawn.
+                        *toggled = Some(format!("u:{id}"));
+                    }
+                    if plugin.installed {
+                        ui.add_space(8.0);
+                    }
+                    let warning = match plugin.library_path() {
+                        Some(library) => {
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(trf!(
+                                        "native_plugin_library",
+                                        path = library.display()
+                                    ))
+                                    .small()
+                                    .monospace(),
+                                )
+                                .wrap(),
+                            );
+                            ui.add_space(4.0);
+                            tr!("native_plugin_warning")
+                        }
+                        None => tr!("these_commands_run_your_local"),
+                    };
+                    ui.add(
+                        egui::Label::new(RichText::new(warning).small().color(t.text_secondary))
+                            .wrap(),
                     );
                 } else {
                     ui::section(ui, tr!("commands"));

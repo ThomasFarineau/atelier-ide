@@ -1,9 +1,22 @@
 name: Release
 
 # Merging the "chore: prepare release" pull request (opened by `prepare-release.yml`) builds the
-# IDE and its bootstrap, then `knope release` tags `vX.Y.Z` and publishes the GitHub release with
-# the notes of CHANGELOG.md and the files. The bootstrap (`atelier`) is what users start: it finds
-# the latest release by itself and updates the IDE before running it (src/bin/atelier.rs).
+# IDE and its bootstrap, then publishes them twice:
+# - in `atelier-ide-org/releases`, the repository of the downloads, as `app/vX.Y.Z`, where the
+#   bootstrap looks for updates (src/bin/atelier.rs);
+# - here, with `knope release`, which tags `vX.Y.Z` and publishes the notes of CHANGELOG.md. The
+#   bootstraps installed before the move to `releases` still look here, through the redirection
+#   of `ThomasFarineau/atelier-ide`, until they update themselves (see MIGRATION.md).
+# The release of `releases` is a draft until both are done: a bootstrap never sees it without
+# its files.
+#
+# It also shares with the native plugins what they need to be built like this IDE: the build kit
+# (Cargo.toml, Cargo.lock, rust-toolchain.toml), in `vX.Y.Z/` of the `kits` branch of
+# atelier-ide-org/api. The CI of each plugin builds it with that kit, then publishes it as
+# `plugins/<name>/vX.Y.Z` in `releases`: the IDE never waits for its plugins.
+#
+# The secret ATELIER_RELEASES (a token of the organization) writes the contents of `releases`
+# and `api`.
 #
 # Started by hand on `main`, it releases the version of Cargo.toml if it has no release yet
 # (to finish a release whose publication failed).
@@ -30,12 +43,12 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
           fetch-depth: 0
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
@@ -46,6 +59,34 @@ jobs:
           sha256sum atelier-ide-* > SHA256SUMS
           cat SHA256SUMS
 
+      - name: Version
+        id: version
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          # In the repository of the downloads, the releases of the IDE are `app/vX.Y.Z`, those of
+          # the plugins `plugins/<name>/vX.Y.Z` (src/bin/atelier.rs looks for the first ones).
+          echo "download_tag=app/v$version" >> "$GITHUB_OUTPUT"
+
+      # The notes of the version in CHANGELOG.md: from its title to the next one.
+      - name: Draft in the repository of the downloads
+        env:
+          GH_TOKEN: ${{ secrets.ATELIER_RELEASES }}
+          TAG: ${{ steps.version.outputs.download_tag }}
+          VERSION: ${{ steps.version.outputs.tag }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::The secret ATELIER_RELEASES is missing: nothing was published."
+            exit 1
+          fi
+          awk -v v="${VERSION#v}" '$0 ~ "^## " v "( |$)" {on=1; next} /^## / && on {exit} on' CHANGELOG.md > notes.md
+          if gh release view "$TAG" --repo atelier-ide-org/releases > /dev/null 2>&1; then
+            gh release upload "$TAG" artifacts/* --clobber --repo atelier-ide-org/releases
+          else
+            gh release create "$TAG" artifacts/* --draft --title "Atelier ${VERSION#v}" --notes-file notes.md \
+              --repo atelier-ide-org/releases
+          fi
+
       - uses: knope-dev/action@v2.1.2
         with:
           version: 0.23.0
@@ -54,3 +95,46 @@ jobs:
         run: knope release --verbose
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish in the repository of the downloads
+        env:
+          GH_TOKEN: ${{ secrets.ATELIER_RELEASES }}
+        run: gh release edit "${{ steps.version.outputs.download_tag }}" --draft=false --latest --repo atelier-ide-org/releases
+
+  # What a native plugin needs to be built like this IDE: the versions and features of its crates
+  # (Cargo.toml, Cargo.lock), its compiler and its profiles. No code of the IDE: the plugins build
+  # an empty package with these dependencies, and their crates come out the same.
+  kit:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+          path: app
+      - uses: actions/checkout@v7
+        with:
+          repository: atelier-ide-org/api
+          token: ${{ secrets.ATELIER_RELEASES }}
+          path: api
+          fetch-depth: 0
+      - name: Share the build kit with the plugins
+        run: |
+          version="v$(sed -n 's/^version = "\(.*\)"/\1/p' app/Cargo.toml | head -1)"
+          cd api
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # A branch of its own, apart from the code of the API: Cargo reads every Cargo.toml of
+          # the branch it takes the API from.
+          if git ls-remote --exit-code --heads origin kits > /dev/null; then
+            git checkout kits
+          else
+            git checkout --orphan kits
+            git rm -rfq .
+          fi
+          mkdir -p "$version/plugins"
+          cp ../app/Cargo.toml ../app/Cargo.lock ../app/rust-toolchain.toml "$version/"
+          cp ../app/plugins/README.md "$version/plugins/"
+          git add "$version"
+          git commit -m "kit: Atelier $version" || exit 0
+          git push origin kits

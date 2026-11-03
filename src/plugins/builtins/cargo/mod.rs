@@ -324,14 +324,17 @@ impl BuiltinPlugin for CargoPlugin {
     fn id(&self) -> &'static str {
         "cargo"
     }
+    fn languages(&self) -> &'static [&'static str] {
+        &["cargo-lock"]
+    }
     fn name(&self) -> &'static str {
-        "Cargo"
+        tr!("plugin.cargo.name")
     }
     fn description(&self) -> &'static str {
-        tr!("cargo.description")
+        tr!("plugin.cargo.summary")
     }
     fn icon(&self) -> &'static str {
-        "cargo/icon"
+        crate::plugins::builtin::card_icon("cargo")
     }
     fn tool_windows(&self) -> &'static [ToolWindow] {
         &TOOL_WINDOWS

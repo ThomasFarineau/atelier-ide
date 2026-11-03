@@ -2,7 +2,6 @@
   "rust.cannot_install_server": "Cannot install rust-analyzer: {e}",
   "rust.command_install": "Rust: Install the Language Server (rustup component add rust-analyzer)",
   "rust.command_restart": "Rust: Restart the Language Server",
-  "rust.description": "Errors, completion, tooltips, navigation, rename and quick fixes for Rust, with rust-analyzer (a rustup component) and cargo check on save; structure, syntax errors and the names of the file by local analysis without it.",
   "rust.installing_server": "Installing rust-analyzer…",
   "rust.rename_needs_server": "Renaming in Rust needs rust-analyzer: install it from Search Everywhere ('Rust: Install')",
   "rust.rustfmt_failed": "rustfmt could not format the file: {error}",
