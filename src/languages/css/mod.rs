@@ -132,6 +132,9 @@ impl BuiltinPlugin for CssPlugin {
     fn language(&self) -> bool {
         true
     }
+    fn file_extensions(&self) -> &'static [&'static str] {
+        &["css", "scss", "sass", "less"]
+    }
     fn id(&self) -> &'static str {
         "css"
     }

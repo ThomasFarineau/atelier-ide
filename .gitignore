@@ -22,3 +22,7 @@ desktop.ini
 # Environnement
 .env
 .env.*
+/.codex/
+/.claude/
+/.codex/config.toml
+/.mcp.json

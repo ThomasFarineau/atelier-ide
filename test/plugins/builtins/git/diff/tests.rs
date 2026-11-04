@@ -53,11 +53,13 @@ fn gutter_marks_ignore_line_endings() {
         [
             LineMark {
                 line: 1,
-                kind: MarkKind::Modified
+                kind: MarkKind::Modified,
+                before: Some("b".into()),
             },
             LineMark {
                 line: 3,
-                kind: MarkKind::Added
+                kind: MarkKind::Added,
+                before: None,
             },
         ]
     );
@@ -66,7 +68,8 @@ fn gutter_marks_ignore_line_endings() {
         marks,
         [LineMark {
             line: 1,
-            kind: MarkKind::Deleted
+            kind: MarkKind::Deleted,
+            before: Some("b".into()),
         }]
     );
 }

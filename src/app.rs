@@ -278,8 +278,38 @@ const MAX_RECENT: usize = 50;
 
 /// Whether an `"auto"` plugin is on in the project at `root`: Git while it has a `.git` (a
 /// folder, or the file of a worktree or a submodule), the others always.
-fn auto_on(root: &Path, id: &str) -> bool {
-    id != "git" || root.join(".git").exists()
+/// The extensions of the files of a project (lowercase), out of its dependencies, build output and
+/// hidden folders, for the languages left to the IDE. A huge project is read in part only.
+pub(crate) fn project_extensions(root: &Path) -> BTreeSet<String> {
+    const MAX_ENTRIES: usize = 50_000;
+    let mut found = BTreeSet::new();
+    let mut stack = vec![root.to_path_buf()];
+    let mut seen = 0;
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            seen += 1;
+            if seen > MAX_ENTRIES {
+                return found;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') || crate::project::is_library(&name) {
+                continue;
+            }
+            match entry.file_type() {
+                Ok(t) if t.is_dir() => stack.push(entry.path()),
+                Ok(_) => {
+                    if let Some((_, extension)) = name.rsplit_once('.') {
+                        found.insert(extension.to_ascii_lowercase());
+                    }
+                }
+                Err(_) => {}
+            }
+        }
+    }
+    found
 }
 
 fn settings_path() -> PathBuf {
@@ -411,6 +441,9 @@ pub struct Ide {
     /// checked whether they should be on.
     auto_plugins: BTreeSet<String>,
     auto_checked: Instant,
+    /// The extensions of the files of the project, for the languages left to the IDE, and
+    /// when they were read.
+    project_extensions: Option<(Instant, BTreeSet<String>)>,
     root: PathBuf,
     documents: Vec<Document>,
     active: usize,
@@ -709,6 +742,7 @@ impl Ide {
             ),
             auto_plugins: BTreeSet::new(),
             auto_checked: Instant::now(),
+            project_extensions: None,
             settings,
             expanded: BTreeSet::from([root.clone()]),
             root,
@@ -3852,8 +3886,20 @@ impl Ide {
         }
         x += 18.0;
         let icon_rect = Rect::from_min_size(pos2(x, center_y - 8.0), vec2(16.0, 16.0));
+        let folder_mark = is_dir
+            .then(|| {
+                self.builtins
+                    .iter()
+                    .filter(|p| self.builtin_enabled(p.id()))
+                    .find_map(|p| p.folder_mark(path))
+            })
+            .flatten();
         if is_dir {
-            ui::paint_icon(ui, "folder", icon_rect);
+            ui::paint_icon(
+                ui,
+                folder_mark.as_ref().map_or("folder", |m| m.icon),
+                icon_rect,
+            );
         } else {
             egui::Image::new(self.file_icon(ui.ctx(), path)).paint_at(ui, icon_rect);
         }
@@ -3881,6 +3927,16 @@ impl Ide {
         };
         let font = FontId::proportional(13.0);
         let end = ui::paint_text(ui, rect, x, &name, color, font);
+        if let Some(mark) = &folder_mark {
+            ui::paint_text(
+                ui,
+                rect,
+                end + 8.0,
+                &mark.label,
+                t.text_secondary,
+                FontId::proportional(12.5),
+            );
+        }
         if path == self.root {
             ui::paint_text(
                 ui,
@@ -3891,10 +3947,11 @@ impl Ide {
                 FontId::proportional(12.5),
             );
         }
-        // Which ignore file ignores it.
-        match self.ignored_by(path) {
-            Some(by) => response.on_hover_text(trf!("ignored_by_file", file = by)),
-            None => response,
+        // Which ignore file ignores it, or what the folder is.
+        match (self.ignored_by(path), folder_mark) {
+            (Some(by), _) => response.on_hover_text(trf!("ignored_by_file", file = by)),
+            (None, Some(mark)) => response.on_hover_text(mark.tooltip),
+            (None, None) => response,
         }
     }
 
@@ -5438,6 +5495,9 @@ impl Ide {
     fn status_bar(&mut self, ctx: &egui::Context) {
         let t = self.theme(ctx);
         let mut open_problems = false;
+        // Chosen in the menus of the encoding and of the line endings.
+        let mut encoding_change: Option<(crate::encoding::TextEncoding, bool)> = None;
+        let mut ending_change: Option<crate::encoding::LineEnding> = None;
         egui::TopBottomPanel::bottom("status")
             .exact_height(STATUS_HEIGHT)
             .frame(
@@ -5597,15 +5657,48 @@ impl Ide {
                                 trf!("spaces", width = width)
                             };
                             ui::status_text(ui, &indent);
-                            ui::status_text(ui, "UTF-8");
-                            ui::status_text(
-                                ui,
-                                if doc.text.contains("\r\n") {
-                                    "CRLF"
-                                } else {
-                                    "LF"
-                                },
-                            );
+                            let encoding = ui::status_text(ui, &doc.encoding.label())
+                                .on_hover_text(tr!("encoding_tooltip"));
+                            let ending = crate::encoding::LineEnding::of(&doc.text);
+                            let endings = ui::status_text(ui, ending.label())
+                                .on_hover_text(tr!("line_endings_tooltip"));
+                            let current = doc.encoding;
+                            egui::Popup::menu(&encoding)
+                                .id(egui::Id::new("status_encoding"))
+                                .show(|ui| {
+                                    ui::menu_begin(ui);
+                                    for (title, reopen) in [
+                                        (tr!("encoding_reopen"), true),
+                                        (tr!("encoding_convert"), false),
+                                    ] {
+                                        ui::menu_title(ui, title);
+                                        for choice in crate::encoding::ALL {
+                                            let icon =
+                                                (choice == current).then_some("greenCheckmark");
+                                            if ui::menu_item(ui, icon, &choice.label(), None, false)
+                                                .clicked()
+                                            {
+                                                encoding_change = Some((choice, reopen));
+                                                ui.close();
+                                            }
+                                        }
+                                    }
+                                });
+                            egui::Popup::menu(&endings)
+                                .id(egui::Id::new("status_line_endings"))
+                                .show(|ui| {
+                                    ui::menu_begin(ui);
+                                    ui::menu_title(ui, tr!("line_endings"));
+                                    for choice in crate::encoding::LineEnding::ALL {
+                                        let icon = (choice == ending).then_some("greenCheckmark");
+                                        if ui::menu_item(ui, icon, choice.label(), None, false)
+                                            .clicked()
+                                        {
+                                            ending_change = Some(choice);
+                                            ui.close();
+                                        }
+                                    }
+                                });
                             ui::status_text(ui, &format!("{}:{}", self.cursor.0, self.cursor.1));
                             let (errors, warnings) = self.problems;
                             if errors + warnings > 0 {
@@ -5654,6 +5747,26 @@ impl Ide {
             });
         if open_problems {
             self.open_tool(&crate::features::problems::TOOL_WINDOWS[0]);
+        }
+        if let Some(doc) = self.documents.get_mut(self.active) {
+            if let Some(ending) = ending_change {
+                // Through the editor: one step of undo.
+                let new = ending.apply(&doc.text);
+                if new != doc.text {
+                    doc.view.replace_text(&mut doc.text, &new);
+                }
+            }
+            if let Some((encoding, reopen)) = encoding_change {
+                let done = if reopen {
+                    doc.reopen_with(encoding)
+                } else {
+                    doc.convert_to(encoding)
+                };
+                if let Err(e) = done {
+                    let title = tr!("encoding_tooltip").to_string();
+                    builtin::Host::balloon(self, &title, e.to_string(), true);
+                }
+            }
         }
     }
 
@@ -6327,8 +6440,9 @@ impl Ide {
         let (legacy_enabled, legacy_disabled) = &self.legacy_plugins;
         for plugin in self.builtins.iter().filter(|p| !p.core() && !p.external()) {
             let id = plugin.id();
+            let automatic = id == "git" || plugin.language();
             states.builtin.entry(id.to_string()).or_insert_with(|| {
-                if id == "git" && !legacy_disabled.contains(id) {
+                if automatic && !legacy_disabled.contains(id) {
                     PluginState::AUTO
                 } else {
                     PluginState::Set(!legacy_disabled.contains(id))
@@ -6347,12 +6461,13 @@ impl Ide {
             .filter(|(_, state)| **state == PluginState::AUTO)
             .map(|(id, _)| id.clone())
             .collect();
-        let disabled: BTreeSet<String> = (states.builtin.iter())
+        self.project_extensions = None;
+        let disabled: BTreeSet<String> = (states.builtin.clone().into_iter())
             .filter(|(id, state)| match state {
                 PluginState::Set(on) => !on,
-                PluginState::Auto(_) => !auto_on(&self.root, id),
+                PluginState::Auto(_) => !self.auto_on(id),
             })
-            .map(|(id, _)| id.clone())
+            .map(|(id, _)| id)
             .collect();
         let enabled: BTreeSet<String> = (states.external.iter())
             .filter(|(_, on)| **on)
@@ -6450,7 +6565,7 @@ impl Ide {
         self.auto_checked = Instant::now();
         let ids: Vec<String> = self.auto_plugins.iter().cloned().collect();
         for id in ids {
-            let on = auto_on(&self.root, &id);
+            let on = self.auto_on(&id);
             if on != self.settings.disabled_builtins.contains(&id) {
                 continue;
             }
@@ -6463,6 +6578,27 @@ impl Ide {
                 }
             }
         }
+    }
+
+    /// Whether a plugin left to the IDE (`"auto"`) is on: Git while the project has a `.git`, a
+    /// language while it has one of its files (read again every 5 seconds at most).
+    fn auto_on(&mut self, id: &str) -> bool {
+        if id == "git" {
+            return self.root.join(".git").exists();
+        }
+        let extensions = match self.builtins.iter().find(|p| p.id() == id) {
+            Some(plugin) if !plugin.file_extensions().is_empty() => plugin.file_extensions(),
+            _ => return true,
+        };
+        let stale = self
+            .project_extensions
+            .as_ref()
+            .is_none_or(|(at, _)| at.elapsed() > Duration::from_secs(30));
+        if stale {
+            self.project_extensions = Some((Instant::now(), project_extensions(&self.root)));
+        }
+        let found = &self.project_extensions.as_ref().expect("just read").1;
+        extensions.iter().any(|e| found.contains(*e))
     }
 
     fn set_builtin_enabled(&mut self, id: &str, enabled: bool) {

@@ -40,7 +40,7 @@ In the title bar: the current branch, the commits ahead and behind, the operatio
 
 ## In the editor and the tree
 
-Markers for the lines added, changed or deleted since HEAD, and **Git Blame** annotations, from a right click on the line numbers. The project tree is colored by Git status.
+Markers for the lines added, changed or deleted since HEAD, one continuous bar over neighbouring lines; the mouse on the marker of a change or of a deletion shows what the lines were. **Git Blame** annotations come from a right click on the line numbers. The project tree is colored by Git status, and the submodules (`.gitmodules`) have an icon and a color of their own, with their address under the mouse.
 
 ## More
 

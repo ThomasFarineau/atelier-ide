@@ -182,6 +182,9 @@ impl BuiltinPlugin for HtmlPlugin {
     fn language(&self) -> bool {
         true
     }
+    fn file_extensions(&self) -> &'static [&'static str] {
+        &["html", "htm", "xhtml", "pug", "jade"]
+    }
     fn id(&self) -> &'static str {
         "html"
     }

@@ -37,7 +37,7 @@ Dans la barre de titre : la branche courante, les commits en avance et en retard
 
 ## Dans l'éditeur et l'arborescence
 
-Des marqueurs pour les lignes ajoutées, modifiées ou supprimées depuis HEAD, et les annotations **Git Blame**, par un clic droit sur les numéros de ligne. L'arborescence du projet est colorée selon le statut Git.
+Des marqueurs pour les lignes ajoutées, modifiées ou supprimées depuis HEAD, une barre continue sur les lignes voisines ; la souris sur le marqueur d'une modification ou d'une suppression montre ce qu'étaient les lignes. Les annotations **Git Blame** viennent d'un clic droit sur les numéros de ligne. L'arborescence du projet est colorée selon le statut Git, et les sous-modules (`.gitmodules`) ont une icône et une couleur à eux, avec leur adresse sous la souris.
 
 ## Et aussi
 

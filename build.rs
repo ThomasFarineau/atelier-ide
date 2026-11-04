@@ -8,7 +8,7 @@
 //! - `assets/icons/ui/<name>`       → `<name>`       (interface)
 //! - `assets/icons/extensions/<ext>` → `file/extensions/<ext>` (file types)
 //! - `src/plugins/builtins/<path>`  → `<path>`       (a plugin's own icons, e.g. `git/icons/branch`
-//!   or `media/icon`)
+//!   or `cargo/icon`)
 //! - `src/languages/<path>`         → `languages/<path>` (a language's own icons)
 //!
 //! Interface and plugin icons can also be asked for by their last word (`branch`), unless it is

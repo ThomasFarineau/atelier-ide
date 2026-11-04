@@ -13,3 +13,6 @@
 [submodule "plugins/msoffice-viewer"]
 	path = plugins/msoffice-viewer
 	url = https://github.com/atelier-ide-org/plugin-msoffice-viewer.git
+[submodule "plugins/media-viewer"]
+	path = plugins/media-viewer
+	url = https://github.com/atelier-ide-org/plugin-media-viewer.git

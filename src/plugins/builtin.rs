@@ -40,10 +40,13 @@ pub enum MarkKind {
 }
 
 /// Change marker drawn next to the line numbers (0-based line).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct LineMark {
     pub line: usize,
     pub kind: MarkKind,
+    /// What the lines were before a change or a deletion, shown under the mouse: the same text
+    /// for every line of a block.
+    pub before: Option<std::sync::Arc<str>>,
 }
 
 impl MarkKind {
@@ -63,6 +66,16 @@ pub enum EditorLayout {
     #[default]
     Split,
     Preview,
+}
+
+/// How the project tree shows a folder a plugin knows (a Git submodule).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FolderMark {
+    /// The key of its icon (`icon_set`), instead of the folder.
+    pub icon: &'static str,
+    /// A short word after its name, in the secondary color.
+    pub label: String,
+    pub tooltip: String,
 }
 
 /// Entry of the command palette or of the editor gutter menu.
@@ -181,6 +194,11 @@ pub trait BuiltinPlugin {
     fn language(&self) -> bool {
         false
     }
+    /// The extensions of the files of a language (lowercase, without the dot): the language is
+    /// `"auto"` in a project by default, on while the project has such a file.
+    fn file_extensions(&self) -> &'static [&'static str] {
+        &[]
+    }
     /// A native plugin (`native.rs`): it is turned on and off with the external plugins, and
     /// is present only while it is on.
     fn external(&self) -> bool {
@@ -226,6 +244,10 @@ pub trait BuiltinPlugin {
     fn file_color(&self, path: &Path) -> Option<Color32> {
         None
     }
+    /// A folder this plugin shows differently in the project tree (a Git submodule).
+    fn folder_mark(&self, path: &Path) -> Option<FolderMark> {
+        None
+    }
     /// The ignore file that ignores `path` (`.gitignore`, `.dockerignore`…), when a plugin knows
     /// one does. The project tree shows what is ignored dimmed, with the name of the file that
     /// ignores it in a tooltip, and hides it when the user turns the eye off. Any plugin that
@@ -234,7 +256,7 @@ pub trait BuiltinPlugin {
         None
     }
     /// Folder of the plugin whose `extensions` icons apply to every file of that extension
-    /// (`media` for `media/extensions/mp3.svg`).
+    /// (`image` for `image/extensions/png.svg`).
     fn extensions_dir(&self) -> Option<&'static str> {
         None
     }
@@ -337,7 +359,6 @@ pub fn all() -> Vec<Box<dyn BuiltinPlugin>> {
         Box::new(crate::features::search::SearchPlugin::default()),
         Box::new(crate::features::problems::ProblemsPlugin::default()),
         Box::new(crate::plugins::builtins::image::ImagePlugin::default()),
-        Box::new(crate::plugins::builtins::media::MediaPlugin::default()),
         Box::new(crate::plugins::builtins::k8s::K8sPlugin::default()),
         Box::new(crate::plugins::builtins::node::NodePlugin::default()),
         Box::new(crate::plugins::builtins::cargo::CargoPlugin::default()),

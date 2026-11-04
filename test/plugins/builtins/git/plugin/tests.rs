@@ -311,3 +311,19 @@ fn git_says_which_ignored_entries_it_still_tracks() {
     let rels = ["kept.txt", "logs", "new.txt"].map(String::from);
     assert_eq!(temp.repo.tracked(&rels), ["kept.txt", "logs"]);
 }
+
+#[test]
+fn submodules_are_read_from_gitmodules() {
+    let text = "[submodule \"api\"]\n\tpath = api\n\turl = https://example.org/api.git\n[core]\n\tpath = no\n[submodule \"plugins/db\"]\n\turl = git@example.org:db.git\n\tpath = plugins/db\n";
+    assert_eq!(
+        submodules(text),
+        [
+            ("api".to_string(), "https://example.org/api.git".to_string()),
+            (
+                "plugins/db".to_string(),
+                "git@example.org:db.git".to_string()
+            ),
+        ]
+    );
+    assert!(submodules("").is_empty());
+}

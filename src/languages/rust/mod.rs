@@ -89,6 +89,9 @@ impl BuiltinPlugin for RustPlugin {
     fn language(&self) -> bool {
         true
     }
+    fn file_extensions(&self) -> &'static [&'static str] {
+        &["rs"]
+    }
     fn id(&self) -> &'static str {
         "rust"
     }

@@ -88,3 +88,36 @@ fn reload_follows_disk_only_when_unmodified() {
     assert_eq!(doc.text, "edited");
     fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn a_file_keeps_its_encoding_and_can_be_converted() {
+    let dir = std::env::temp_dir().join(format!("atelier-encoding-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("old.txt");
+    fs::write(&path, b"caf\xE9\r\n").unwrap();
+    let mut doc = Document::open(path.clone()).unwrap();
+    assert_eq!(doc.text, "café\r\n");
+    assert_eq!(doc.encoding.label(), "windows-1252");
+    assert!(!doc.dirty());
+    // Saved as it was read.
+    doc.text.push_str("ok\r\n");
+    doc.save(path.clone(), false).unwrap();
+    assert_eq!(fs::read(&path).unwrap(), b"caf\xE9\r\nok\r\n");
+    // Converted: modified until saved, then written in UTF-8.
+    doc.convert_to(crate::encoding::UTF8).unwrap();
+    assert!(doc.dirty());
+    doc.save(path.clone(), false).unwrap();
+    assert_eq!(fs::read(&path).unwrap(), "café\r\nok\r\n".as_bytes());
+    // Read again with another encoding: the bytes of é in UTF-8 are two letters in Windows-1252.
+    let latin = crate::encoding::ALL[4];
+    doc.reopen_with(latin).unwrap();
+    assert_eq!(doc.text, "cafÃ©\r\nok\r\n");
+    assert!(doc.convert_to(latin).is_ok());
+    doc.text.push('日');
+    assert!(
+        doc.save(path, false).is_err(),
+        "Windows-1252 cannot write 日"
+    );
+    let _ = fs::remove_dir_all(&dir);
+}

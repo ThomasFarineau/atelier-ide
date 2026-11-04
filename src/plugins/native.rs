@@ -59,11 +59,46 @@ pub fn load(manifest: &Manifest) -> Result<NativePlugin, String> {
         tool_windows: &[],
         commands: Vec::new(),
         icons: HashMap::new(),
+        extension_icons: extension_icons(manifest),
+        extensions: manifest.extensions.clone(),
         surfaces: HashMap::new(),
         ctx: None,
     };
     plugin.refresh_info();
     Ok(plugin)
+}
+
+/// The icons of the files of a plugin, from its `extensions/` folder: `glb+gltf.svg` (with
+/// `glb+gltf.dark.svg` for the dark themes) is the icon of `.glb` and `.gltf` files. By extension
+/// or file name, lowercase, as keys of the icon set of the IDE.
+fn extension_icons(manifest: &Manifest) -> HashMap<String, &'static str> {
+    let mut icons = HashMap::new();
+    let dir = manifest.dir.join("extensions");
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return icons;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+        let Some(stem) = name.strip_suffix(".svg") else {
+            continue;
+        };
+        if stem.ends_with(".dark") || stem.ends_with(".light") {
+            continue;
+        }
+        let Ok(svg) = std::fs::read(entry.path()) else {
+            continue;
+        };
+        let dark = std::fs::read(dir.join(format!("{stem}.dark.svg"))).ok();
+        let key = crate::icon_set::register(
+            &format!("plugin:{}/extensions/{stem}", manifest.id),
+            &svg,
+            dark.as_deref(),
+        );
+        for token in stem.split('+').filter(|t| !t.is_empty()) {
+            icons.insert(token.to_string(), key);
+        }
+    }
+    icons
 }
 
 /// Opens a library and checks the version of its interface.
@@ -356,6 +391,10 @@ pub struct NativePlugin {
     commands: Vec<Command>,
     /// The keys of the IDE's icon set of the icons of the plugin, by their name.
     icons: HashMap<String, &'static str>,
+    /// The icons of its `extensions/` folder, by extension or file name.
+    extension_icons: HashMap<String, &'static str>,
+    /// The extensions its manifest lists.
+    extensions: Vec<String>,
     surfaces: HashMap<(u32, String), Surface>,
     ctx: Option<egui::Context>,
 }
@@ -423,6 +462,19 @@ impl NativePlugin {
             .file_types
             .iter()
             .find(|t| t.extensions.contains(&extension))
+    }
+
+    /// The icon of a file from the `extensions/` folder of the plugin: by file name, then by
+    /// extension, for a file of an extension of its manifest.
+    fn extension_icon(&self, path: &Path) -> Option<&'static str> {
+        let name = path.file_name()?.to_str()?.to_ascii_lowercase();
+        let extension = name.rsplit_once('.').map(|(_, e)| e);
+        let known = extension.is_some_and(|e| self.extensions.iter().any(|x| x == e));
+        self.extension_icons.get(&name).copied().or_else(|| {
+            extension
+                .filter(|_| known || self.extensions.is_empty())
+                .and_then(|e| self.extension_icons.get(e).copied())
+        })
     }
 
     /// The look of the IDE, kept for the plugin when it changes.
@@ -1064,6 +1116,13 @@ impl BuiltinPlugin for NativePlugin {
             project.active_file = host.active_file();
             project.data_dir = crate::cli::data_dir();
         }
+        let open_files = host
+            .open_documents()
+            .into_iter()
+            .filter_map(|d| d.path)
+            .collect();
+        self.instance
+            .call_json(protocol::UPDATE, &protocol::Update { open_files });
         let requests = std::mem::take(&mut *self.instance.shared.requests.lock().unwrap());
         for request in requests {
             match request {
@@ -1106,8 +1165,10 @@ impl BuiltinPlugin for NativePlugin {
         self.file_type(path).is_some_and(|t| t.layout_switch)
     }
     fn file_icon(&self, path: &Path) -> Option<&'static str> {
-        let name = self.file_type(path)?.icon.as_ref()?;
-        self.icons.get(name).copied()
+        self.extension_icon(path).or_else(|| {
+            let name = self.file_type(path)?.icon.as_ref()?;
+            self.icons.get(name).copied()
+        })
     }
     fn file_closed(&mut self, _ctx: &egui::Context, path: &Path) {
         let key = path.to_string_lossy().into_owned();

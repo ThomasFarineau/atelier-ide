@@ -207,3 +207,20 @@ fn a_plugin_draws_its_tool_window() {
     // Its command opens the tool window through the host, at the next frame.
     plugin.run_command("database.open", &mut host);
 }
+
+#[test]
+fn the_icons_of_the_files_come_from_the_extensions_folder() {
+    let dir = folder("extensions");
+    std::fs::create_dir_all(dir.join("extensions")).unwrap();
+    let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"/>"#;
+    std::fs::write(dir.join("extensions/glb+GLTF.svg"), svg).unwrap();
+    std::fs::write(dir.join("extensions/glb+gltf.dark.svg"), svg).unwrap();
+    std::fs::write(dir.join("extensions/notes.txt"), b"not an icon").unwrap();
+    let icons = extension_icons(&manifest(&dir, "viewer"));
+    assert_eq!(icons.len(), 2, "{icons:?}");
+    let key = icons["glb"];
+    assert_eq!(icons["gltf"], key);
+    let icon = crate::icon_set::find(key).unwrap();
+    assert!(icon.variant(true).unwrap().uri.contains("dark"));
+    assert!(icon.variant(false).unwrap().uri.contains("light"));
+}

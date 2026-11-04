@@ -28,6 +28,10 @@ pub struct Plugin {
     /// (`atelier_plugin_api::abi::VERSION`): it loads in every Atelier of that version.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub abi: Option<u32>,
+    /// The extensions of the files a native plugin shows (lowercase, without the dot). Their
+    /// icons are in its `extensions/` folder (`glb+gltf.svg`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<String>,
     /// The version of Atelier a plugin of the first interface was built for (Atelier 0.2): still
     /// read, so that such a plugin is listed, and refused with a message that says why.
     #[serde(default, skip_serializing)]

@@ -36,7 +36,7 @@ Another MCP client can connect with the address and the secret (`mcp.json` in th
 | `search_in_project` | Searches the project, off the interface thread (the window does not freeze) |
 | `i18n` | [Translations](./translations) |
 | `graph_overview`, `graph_query`, `graph_node`, `graph_path` | The [context graph](../ai/context-graph) |
-| `git_commit_plan`, `git_diff`, `git_commit`, `git_rework_plan`, `git_show`, `git_rework_apply` | [Commits by AI](../ai/commits) |
+| `git_commit_plan`, `git_diff`, `git_commit`, `git_rework_plan`, `git_show`, `git_rework_apply`, `git_pr_plan`, `git_pull_request` | [Commits by AI](../ai/commits) |
 | `session_note`, `get_session_context`, `list_sessions` | AI sessions, below |
 
 ## AI sessions

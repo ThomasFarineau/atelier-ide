@@ -872,6 +872,9 @@ impl BuiltinPlugin for JavaScriptPlugin {
     fn language(&self) -> bool {
         true
     }
+    fn file_extensions(&self) -> &'static [&'static str] {
+        &["js", "mjs", "cjs", "jsx", "ts", "tsx", "mts", "cts"]
+    }
     fn id(&self) -> &'static str {
         "javascript"
     }
