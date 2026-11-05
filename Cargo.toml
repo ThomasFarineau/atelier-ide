@@ -16,7 +16,7 @@ default-run = "atelier-ide"
 eframe = { version = "0.33", features = ["persistence"] }
 egui_extras = { version = "0.33", features = ["syntect", "svg", "svg_text", "image", "file"] }
 # Same version as the one the diagram renderer uses: the picture of a diagram is drawn off the interface.
-resvg = { version = "0.47", default-features = false, features = ["text"] }
+resvg = { version = "0.49", default-features = false, features = ["text"] }
 mermaid-rs-renderer = { version = "0.3", default-features = false, features = ["png"] }
 egui_commonmark = { version = "0.22", features = ["better_syntax_highlighting", "svg"] }
 # The parser of egui_commonmark: where the HTML of a Markdown document is.
