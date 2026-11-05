@@ -28,7 +28,7 @@ rfd = "0.17"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 portable-pty = "0.9"
-vt100 = "0.16"
+vt100 = "0.18"
 # The text a program of the terminal copies arrives in base64 (OSC 52).
 base64 = "0.23"
 anyhow = "1"
