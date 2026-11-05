@@ -10,6 +10,7 @@
 pub mod agents;
 mod commits;
 mod pr;
+mod quality;
 mod rework;
 mod server;
 mod sessions;
@@ -610,6 +611,52 @@ fn limit_row(ui: &mut egui::Ui, limit: &usage::Limit) {
     });
 }
 
+/// The text of a quality run in the status bar: the gate, and the mutants once they run.
+fn quality_label(run: &quality::Progress, paused: bool) -> String {
+    let gate = if run.gate.is_empty() {
+        &run.tool
+    } else {
+        &run.gate
+    };
+    let count = if run.total > 0 {
+        format!(" {}/{}", run.done, run.total)
+    } else {
+        String::new()
+    };
+    if paused {
+        trf!("mcp.quality_paused", gate = gate, count = count)
+    } else {
+        format!("{gate}{count}…")
+    }
+}
+
+/// A quality run, at the bottom right: its icon, its progress, and the button that pauses or
+/// resumes it (right to left, as the status bar lays out).
+fn quality_status(ui: &mut egui::Ui, run: &quality::Progress) {
+    let paused = quality::paused();
+    let (icon, tooltip) = if paused {
+        ("run", tr!("mcp.quality_resume"))
+    } else {
+        ("mcp/icons/pause", tr!("mcp.quality_pause"))
+    };
+    if ui::icon_button(ui, icon, tooltip).clicked() {
+        quality::set_paused(!paused);
+    }
+    let details = trf!(
+        "mcp.quality_running",
+        tool = run.tool,
+        gate = run.gate,
+        phase = run.phase,
+        elapsed = quality::fmt_duration(run.elapsed())
+    );
+    ui::status_text(ui, &quality_label(run, paused)).on_hover_text(&details);
+    ui.add(ui::icon(ui, "mcp/icons/quality"))
+        .on_hover_text(details);
+    ui.add_space(6.0);
+    ui.ctx()
+        .request_repaint_after(std::time::Duration::from_millis(500));
+}
+
 impl BuiltinPlugin for McpPlugin {
     fn id(&self) -> &'static str {
         "mcp"
@@ -697,6 +744,9 @@ impl BuiltinPlugin for McpPlugin {
                 address = address,
                 served = self.served
             ));
+        }
+        if let Some(run) = quality::current() {
+            quality_status(ui, &run);
         }
     }
 

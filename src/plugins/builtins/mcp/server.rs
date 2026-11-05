@@ -52,6 +52,7 @@ fn background_tool(name: &str, root: &Path, args: &Value) -> Option<Result<Strin
     super::commits::tool(name, args, root)
         .or_else(|| super::rework::tool(name, args, root))
         .or_else(|| super::pr::tool(name, args, root))
+        .or_else(|| super::quality::tool(name, args, root))
         .or_else(|| super::tools::graph(name, args))
         .or_else(|| crate::plugins::builtins::translations::mcp_tool(name, args, root))
 }
@@ -394,7 +395,7 @@ fn handle(
         }
         "ping" => json!({}),
         "prompts/list" => {
-            json!({"prompts": super::commits::prompts().into_iter().chain(super::rework::prompts()).chain(super::pr::prompts()).collect::<Vec<_>>()})
+            json!({"prompts": super::commits::prompts().into_iter().chain(super::rework::prompts()).chain(super::pr::prompts()).chain(super::quality::prompts()).collect::<Vec<_>>()})
         }
         "prompts/get" => {
             let name = params["name"].as_str().unwrap_or("");
@@ -405,6 +406,7 @@ fn handle(
             match super::commits::prompt(name, &arguments)
                 .or_else(|| super::rework::prompt(name, &arguments))
                 .or_else(|| super::pr::prompt(name, &arguments))
+                .or_else(|| super::quality::prompt(name, &arguments))
             {
                 Some(text) => {
                     json!({"description": format!("Atelier : {name}"), "messages": [{"role": "user", "content": {"type": "text", "text": text}}]})
