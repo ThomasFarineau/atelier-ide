@@ -209,6 +209,9 @@ pub fn specs() -> Vec<Value> {
         }),
         crate::plugins::builtins::translations::mcp_spec(),
     ]
+    .into_iter()
+    .chain(super::quality::specs())
+    .collect()
 }
 
 fn pretty(value: Value) -> Result<String, String> {

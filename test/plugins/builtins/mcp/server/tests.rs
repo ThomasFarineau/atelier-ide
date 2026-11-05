@@ -235,7 +235,14 @@ fn the_commit_commands_are_offered_as_prompts_and_the_commit_tools_are_listed() 
             "commit-all",
             "commit-by-context",
             "rework-commit",
-            "pr"
+            "pr",
+            "crapper",
+            "dryer",
+            "verifier",
+            "mutator",
+            "checker",
+            "cleaner",
+            "ub-mode"
         ]
     );
     let (_, body) = post(

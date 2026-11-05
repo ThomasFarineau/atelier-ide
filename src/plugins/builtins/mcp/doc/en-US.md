@@ -38,6 +38,22 @@ Another MCP client can connect with the address and the secret (`mcp.json` in th
 | `graph_overview`, `graph_query`, `graph_node`, `graph_path` | The [context graph](../ai/context-graph) |
 | `git_commit_plan`, `git_diff`, `git_commit`, `git_rework_plan`, `git_show`, `git_rework_apply`, `git_pr_plan`, `git_pull_request` | [Commits by AI](../ai/commits) |
 | `session_note`, `get_session_context`, `list_sessions` | AI sessions, below |
+| `crapper`, `dryer`, `verifier`, `mutator`, `checker`, `cleaner` | Quality gates, below |
+
+## Quality gates
+
+Four gates check the TypeScript, JavaScript and Rust code of the project, and write their snapshots under `.metrics/`:
+
+| Tool | Checks | Fails when |
+| --- | --- | --- |
+| `crapper` | The CRAP score of every function (complexity × lack of coverage), after measuring the coverage (npm/vitest/c8, `cargo llvm-cov` or `cargo tarpaulin`) | a function is above 10 |
+| `dryer` | Duplicate functions, by the shape of their syntax | a pair is 0.8 similar or more |
+| `verifier` | Functions a split left that only fragment the code: called once, pastable as they are, CRAP plus the caller's under 8 | a merge is proposed |
+| `mutator` | Mutation testing, in copies of the project (`target/mutation-workers`) | a mutant survives |
+
+`checker` runs `crapper`, `dryer` and `verifier`; `cleaner` adds `mutator`. The coverage is measured once for all of them. Each tool is also a command of the agent (an MCP prompt: `/mcp__atelier__checker` in Claude Code) that runs it and fixes what it finds, and `ub-mode` gives the agent the whole practice they belong to.
+
+A run can take a long time (the mutator runs the tests once per mutant). While it lasts, the status bar shows it at the bottom right, with its gate and its progress; its button pauses it (the tests already running finish first, nothing new starts) and resumes it. One run at a time.
 
 ## AI sessions
 
