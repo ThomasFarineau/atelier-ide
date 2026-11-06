@@ -30,12 +30,14 @@ pub static SCHEMAS: [Schema; 2] = [
         files: &[".github/workflows/*.yml", ".github/workflows/*.yaml"],
         urls: &["https://json.schemastore.org/github-workflow.json"],
         text: include_str!("workflow.schema.json"),
+        values: None,
     },
     Schema {
         name: "Dependabot",
         files: &[".github/dependabot.yml", ".github/dependabot.yaml"],
         urls: &["https://json.schemastore.org/dependabot-2.0.json"],
         text: include_str!("dependabot.schema.json"),
+        values: None,
     },
 ];
 

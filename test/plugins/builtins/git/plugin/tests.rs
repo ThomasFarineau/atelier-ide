@@ -250,7 +250,13 @@ fn gutter_marks_and_tree_colors() {
     t.write("src/a.txt", "1\ntwo\n3\n");
     let mut plugin = plugin(&t);
     let path = t.repo.abs("src/a.txt");
-    let marks = plugin.line_marks(&path, "1\ntwo\n3\nfour\n");
+    // The text at HEAD is read in the background: the marks come once it is there.
+    let started = std::time::Instant::now();
+    let mut marks = plugin.line_marks(&path, "1\ntwo\n3\nfour\n");
+    while marks.is_empty() && started.elapsed() < std::time::Duration::from_secs(10) {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        marks = plugin.line_marks(&path, "1\ntwo\n3\nfour\n");
+    }
     assert_eq!(marks.len(), 2);
     assert_eq!(plugin.file_color(&path), Some(plugin.theme.modified));
     assert!(plugin.file_color(&t.repo.abs("src")).is_some());

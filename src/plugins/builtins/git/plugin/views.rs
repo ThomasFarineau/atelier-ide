@@ -361,6 +361,92 @@ fn paint_sync(ui: &Ui, painter: &egui::Painter, x: f32, y: f32, ahead: u32, behi
     x
 }
 
+/// The current branch in the title bar and in the status bar: one hover area where the icon,
+/// the name (cut with `…` when long), the commits to push and pull, the state of the repository
+/// and the chevron are all centered on the same line.
+struct BranchChip {
+    height: f32,
+    /// Space before the icon and after the last part.
+    pad: f32,
+    icon: f32,
+    font: FontId,
+    color: egui::Color32,
+    chevron: bool,
+}
+
+/// The widest a branch name is shown before it is cut.
+const MAX_BRANCH_WIDTH: f32 = 240.0;
+
+impl BranchChip {
+    fn show(
+        &self,
+        ui: &mut Ui,
+        name: &str,
+        (ahead, behind): (u32, u32),
+        state: Option<&str>,
+        open: bool,
+    ) -> Response {
+        let t = kit::theme(ui.ctx());
+        let gap = 6.0;
+        let name = kit::elided(ui, name, self.font.clone(), self.color, MAX_BRANCH_WIDTH);
+        let sync = if ahead > 0 || behind > 0 {
+            sync_width(ui, ahead, behind) - 4.0
+        } else {
+            0.0
+        };
+        let state = state.map(|s| {
+            ui.painter()
+                .layout_no_wrap(s.to_string(), self.font.clone(), t.warning)
+        });
+        let mut width = self.pad + self.icon + gap + name.size().x;
+        if sync > 0.0 {
+            width += gap + sync;
+        }
+        if let Some(state) = &state {
+            width += gap + state.size().x;
+        }
+        width += if self.chevron {
+            2.0 + 16.0 + 4.0
+        } else {
+            self.pad
+        };
+        let (rect, response) = ui.allocate_exact_size(vec2(width, self.height), Sense::click());
+        kit::paint_hover(ui, rect, &response, open);
+        let y = rect.center().y;
+        let mut x = rect.left() + self.pad;
+        kit::paint_icon(
+            ui,
+            "branch",
+            Rect::from_center_size(pos2(x + self.icon / 2.0, y), Vec2::splat(self.icon)),
+        );
+        x += self.icon + gap;
+        let w = name.size().x;
+        ui.painter()
+            .galley(pos2(x, y - name.size().y / 2.0), name, self.color);
+        x += w;
+        if sync > 0.0 {
+            x += gap;
+            paint_sync(ui, ui.painter(), x, y, ahead, behind);
+            x += sync;
+        }
+        if let Some(state) = state {
+            x += gap;
+            let w = state.size().x;
+            ui.painter()
+                .galley(pos2(x, y - state.size().y / 2.0), state, t.warning);
+            x += w;
+        }
+        if self.chevron {
+            kit::paint_icon(
+                ui,
+                "chevronDown",
+                Rect::from_center_size(pos2(x + 2.0 + 8.0, y), Vec2::splat(16.0)),
+            );
+        }
+        response
+    }
+}
+
 fn sync_width(ui: &Ui, ahead: u32, behind: u32) -> f32 {
     [ahead, behind]
         .iter()
@@ -475,42 +561,42 @@ impl GitPlugin {
             }
             return;
         }
+        let t = self.theme;
+        let chip = BranchChip {
+            height: 28.0,
+            pad: 8.0,
+            icon: 16.0,
+            font: FontId::proportional(13.0),
+            color: t.text,
+            chevron: true,
+        };
         let label = self.head_label();
-        let r = kit::icon_text_button(ui, Some("branch"), &label, true)
-            .on_hover_text(tr!("git.git_branches"));
         let (ahead, behind) = (self.snap.head.ahead, self.snap.head.behind);
-        let mut clicked = r.clicked();
-        let mut anchor = r.rect;
-        if ahead > 0 || behind > 0 {
-            let (rect, sync) = ui.allocate_exact_size(
-                vec2(sync_width(ui, ahead, behind) + 4.0, 28.0),
-                Sense::click(),
-            );
-            paint_sync(
-                ui,
-                ui.painter(),
-                rect.left(),
-                rect.center().y,
-                ahead,
-                behind,
-            );
-            clicked |= sync
-                .on_hover_text(trf!(
+        let r = chip.show(
+            ui,
+            &label,
+            (ahead, behind),
+            self.state_label(),
+            self.branch_popup.is_some(),
+        );
+        let tip = if ahead > 0 || behind > 0 {
+            format!(
+                "{}\n{}",
+                tr!("git.git_branches"),
+                trf!(
                     "git.push_pull",
                     ahead = plural(ahead as usize, "commit", "commits"),
                     behind = plural(behind as usize, "commit", "commits")
-                ))
-                .clicked();
-            anchor = anchor.union(rect);
-        }
-        if let Some(state) = self.state_label() {
-            let t = self.theme;
-            ui.label(RichText::new(state).color(t.warning));
-        }
-        if clicked {
+                )
+            )
+        } else {
+            tr!("git.git_branches").to_string()
+        };
+        let r = r.on_hover_text(tip);
+        if r.clicked() {
             self.toggle_branch_popup(
                 ui.ctx(),
-                anchor.left_bottom() + vec2(0.0, 4.0),
+                r.rect.left_bottom() + vec2(0.0, 4.0),
                 Align2::LEFT_TOP,
             );
         }
@@ -520,45 +606,51 @@ impl GitPlugin {
     pub(super) fn status_widget(&mut self, ui: &mut Ui, _host: &mut dyn Host) {
         let t = self.theme;
         if self.repo.is_some() {
+            // The same as the other items of the status bar: 24 px high, 12.5 px text.
+            let chip = BranchChip {
+                height: 24.0,
+                pad: 7.0,
+                icon: 14.0,
+                font: FontId::proportional(12.5),
+                color: t.text_secondary,
+                chevron: false,
+            };
             let label = self.head_label();
-            let font = FontId::proportional(12.5);
-            let width = text_width(ui, &label, font.clone()) + 34.0;
-            let (rect, response) = ui.allocate_exact_size(vec2(width, 22.0), Sense::click());
-            kit::paint_hover(ui, rect, &response, self.branch_popup.is_some());
-            kit::paint_icon(
+            let (ahead, behind) = (self.snap.head.ahead, self.snap.head.behind);
+            let response = chip.show(
                 ui,
-                "branch",
-                Rect::from_min_size(
-                    pos2(rect.left() + 6.0, rect.center().y - 8.0),
-                    Vec2::splat(16.0),
-                ),
-            );
-            ui.painter().text(
-                pos2(rect.left() + 26.0, rect.center().y),
-                Align2::LEFT_CENTER,
                 &label,
-                font,
-                t.text_secondary,
+                (ahead, behind),
+                self.state_label(),
+                self.branch_popup.is_some(),
             );
-            if response
-                .on_hover_text(tr!("git.current_git_branch"))
-                .clicked()
-            {
+            let response = response.on_hover_text(tr!("git.current_git_branch"));
+            if response.clicked() {
                 self.toggle_branch_popup(
                     ui.ctx(),
-                    rect.right_top() - vec2(0.0, 4.0),
+                    response.rect.right_top() - vec2(0.0, 4.0),
                     Align2::RIGHT_BOTTOM,
                 );
             }
         }
         if let Some(job) = &self.job {
-            ui.add_space(6.0);
-            ui.label(
-                RichText::new(format!("{}…", job.label))
-                    .size(12.5)
-                    .color(t.text_secondary),
+            ui.add_space(4.0);
+            let (rect, _) = ui.allocate_exact_size(vec2(16.0, 24.0), Sense::hover());
+            egui::Spinner::new()
+                .size(12.0)
+                .color(t.accent)
+                .paint_at(ui, Rect::from_center_size(rect.center(), Vec2::splat(12.0)));
+            let font = FontId::proportional(12.5);
+            let text = format!("{}…", job.label);
+            let width = text_width(ui, &text, font.clone());
+            let (rect, _) = ui.allocate_exact_size(vec2(width + 6.0, 24.0), Sense::hover());
+            ui.painter().text(
+                pos2(rect.left() + 3.0, rect.center().y),
+                Align2::LEFT_CENTER,
+                text,
+                font,
+                t.text_secondary,
             );
-            ui.add(egui::Spinner::new().size(12.0).color(t.accent));
         }
     }
 

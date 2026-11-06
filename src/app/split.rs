@@ -1,9 +1,6 @@
-//! Split Right and Split Down: a second editor beside or under the first. It shows the file that was active when it was
-//! opened, with a view of its own (caret, scroll, folds): the text is the document's, so what is
-//! typed in one editor shows in the other. Another file can be put there by making it active and
-//! splitting again.
+//! An editor of a file with a view of its own (caret, scroll, folds), for the editor groups:
+//! the text is the document's, so what is typed in one editor shows in the others.
 
-use super::Ide;
 use crate::{
     editor::{Assist, EditorState, Options},
     languages::{DocRef, Service},
@@ -17,46 +14,21 @@ pub struct SplitPane {
     /// The file shown; the pane goes away when it is closed.
     pub path: PathBuf,
     pub view: EditorState,
-    /// Under the first editor rather than beside it.
-    pub down: bool,
     /// The revision of the document's own view the last time this one was drawn: a change means
     /// the text moved under it.
     seen: u64,
 }
 
-impl Ide {
-    /// Split Right (or Down): the active file in a second editor.
-    pub(super) fn split_to(&mut self, down: bool) {
-        let Some(doc) = self.documents.get(self.active) else {
-            return;
-        };
-        let Some(path) = doc.path.clone() else {
-            self.status = tr!("split_needs_file").into();
-            return;
-        };
+impl SplitPane {
+    /// A view of the file at `path`, its caret at `cursor`.
+    pub fn new(path: PathBuf, cursor: usize) -> Self {
         let mut view = EditorState::default();
-        view.select(doc.view.cursor, doc.view.cursor);
-        self.split = Some(SplitPane {
+        view.select(cursor, cursor);
+        Self {
             path,
             view,
-            down,
             seen: u64::MAX,
-        });
-    }
-
-    /// The index of the document the split shows when it is not the active one. Closes the split
-    /// when its file is no longer open.
-    pub(super) fn split_other(&mut self) -> Option<usize> {
-        let path = self.split.as_ref()?.path.clone();
-        let Some(index) = self
-            .documents
-            .iter()
-            .position(|d| d.path.as_ref() == Some(&path))
-        else {
-            self.split = None;
-            return None;
-        };
-        (index != self.active).then_some(index)
+        }
     }
 }
 
@@ -69,31 +41,36 @@ pub fn show(
     pane: &mut SplitPane,
     doc: &mut Document,
     service: Option<&Service>,
+    bar: bool,
     highlight: bool,
     settings: &super::Settings,
     theme: ui::Theme,
     font: FontId,
 ) -> bool {
     let mut close = false;
-    // The bar.
-    let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
-    let painter = ui.painter_at(bar);
-    painter.rect_filled(bar, 0.0, theme.island);
-    painter.line_segment(
-        [bar.left_bottom(), bar.right_bottom()],
-        Stroke::new(1.0_f32, theme.separator),
-    );
-    painter.text(
-        pos2(bar.left() + 10.0, bar.center().y),
-        egui::Align2::LEFT_CENTER,
-        doc.title(),
-        FontId::proportional(12.5),
-        theme.text,
-    );
-    let button = egui::Rect::from_min_size(pos2(bar.right() - 24.0, bar.top()), vec2(24.0, 24.0));
-    let mut bar_ui = ui.new_child(egui::UiBuilder::new().max_rect(button));
-    if ui::icon_button(&mut bar_ui, "closeSmall", tr!("close")).clicked() {
-        close = true;
+    // The bar, unless the caller draws tabs of its own.
+    if bar {
+        // The bar.
+        let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
+        let painter = ui.painter_at(bar);
+        painter.rect_filled(bar, 0.0, theme.island);
+        painter.line_segment(
+            [bar.left_bottom(), bar.right_bottom()],
+            Stroke::new(1.0_f32, theme.separator),
+        );
+        painter.text(
+            pos2(bar.left() + 10.0, bar.center().y),
+            egui::Align2::LEFT_CENTER,
+            doc.title(),
+            FontId::proportional(12.5),
+            theme.text,
+        );
+        let button =
+            egui::Rect::from_min_size(pos2(bar.right() - 24.0, bar.top()), vec2(24.0, 24.0));
+        let mut bar_ui = ui.new_child(egui::UiBuilder::new().max_rect(button));
+        if ui::icon_button(&mut bar_ui, "closeSmall", tr!("close")).clicked() {
+            close = true;
+        }
     }
     if doc.loading.is_some() || doc.binary {
         return close;

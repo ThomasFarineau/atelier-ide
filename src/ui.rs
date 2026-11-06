@@ -873,6 +873,24 @@ pub fn paint_text(ui: &Ui, rect: Rect, x: f32, text: &str, color: Color32, font:
     x + width
 }
 
+/// Text on one line, cut with `…` when it is wider than `max_width`.
+pub fn elided(
+    ui: &Ui,
+    text: &str,
+    font: FontId,
+    color: Color32,
+    max_width: f32,
+) -> std::sync::Arc<egui::Galley> {
+    let mut job = egui::text::LayoutJob::simple_singleline(text.into(), font, color);
+    job.wrap = egui::text::TextWrapping {
+        max_width,
+        max_rows: 1,
+        break_anywhere: true,
+        overflow_character: Some('…'),
+    };
+    ui.painter().layout_job(job)
+}
+
 /// Rounded label, e.g. a branch or tag on a commit.
 pub fn paint_badge(
     ui: &Ui,

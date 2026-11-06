@@ -16,6 +16,7 @@ The package manager of each `package.json` is the one of its `packageManager` fi
 - Context menu of a `package.json`: install or update the dependencies, see the outdated packages, open the file. Of a script: run it or go to its line.
 - Dependencies declared but not installed are reported once, by a notification.
 - The plugin brings the [schema](../languages/json#schemas) of `package.json`: its values are checked, its keys completed and described under the mouse.
+- **Ctrl+Space** in the version of a dependency (`dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies`) offers its versions from the npm registry (or the one of `npm_config_registry`): `latest` first, then the newest, with the `^` or `~` already typed kept, the other dist-tags and deprecated versions marked.
 - Search Everywhere: **Node.js: Install Dependencies**, **Node.js: npm Scripts**.
 
 What the window starts becomes a temporary [run configuration](../guide/running), to run again with Shift+F10.

@@ -345,10 +345,7 @@ impl Ide {
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 2.0;
                 for path in projects {
-                    let name = path
-                        .file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| path.display().to_string());
+                    let name = project::display_name(&path);
                     let exists = path.is_dir();
                     let current = project::simplify(&path) == project::simplify(&self.root);
                     let (rect, response) = ui.allocate_exact_size(
@@ -393,7 +390,7 @@ impl Ide {
                     painter.text(
                         pos2(x, rect.top() + 27.0),
                         Align2::LEFT_TOP,
-                        project::simplify(&path).display().to_string(),
+                        project::display_path(&path),
                         FontId::proportional(11.5),
                         t.text_secondary,
                     );

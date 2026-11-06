@@ -191,7 +191,14 @@ impl LineEnding {
     }
 
     /// The ending of the first line that has one, LF without any.
+    /// The ending of the first line break, looked for in the first megabyte only: the status
+    /// bar asks on every frame, and a minified file of 20 MB has none to find.
     pub fn of(text: &str) -> Self {
+        let mut end = text.len().min(1024 * 1024);
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        let text = &text[..end];
         match text.find(['\r', '\n']) {
             Some(i) if text[i..].starts_with("\r\n") => Self::CrLf,
             Some(i) if text[i..].starts_with('\r') => Self::Cr,

@@ -196,6 +196,7 @@ fn schemas_apply_to_names_and_ends_of_paths() {
         files: &["package.json", ".github/workflows/*.yml"],
         urls: &[],
         text: "{}",
+        values: None,
     };
     assert!(schema.applies_to(Path::new("a/package.json")));
     assert!(schema.applies_to(Path::new("repo/.github/workflows/ci.yml")));

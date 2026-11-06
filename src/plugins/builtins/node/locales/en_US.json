@@ -1,6 +1,7 @@
 {
   "node.command_install": "Node.js: Install Dependencies",
   "node.command_scripts": "Node.js: npm Scripts",
+  "node.deprecated": "deprecated",
   "node.install_dependencies": "Install Dependencies",
   "node.jump_to_source": "Jump to Source",
   "node.modules_missing": "The dependencies of {package} are not installed: run '{manager} install' from the npm window.",

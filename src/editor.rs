@@ -2710,7 +2710,11 @@ impl EditorState {
 
                 let first =
                     ((viewport.min.y / row).floor().max(0.0) as usize).min(self.row_count());
-                let last = (((viewport.max.y / row).ceil() as usize) + 1).min(self.row_count());
+                // The viewport may be unbounded on the first frame of a tab: `as usize` then
+                // gives usize::MAX, and `+ 1` wrapped to 0 in release, an empty frame.
+                let last = ((viewport.max.y / row).ceil() as usize)
+                    .saturating_add(1)
+                    .min(self.row_count());
                 self.hints_frame(
                     ui,
                     text,

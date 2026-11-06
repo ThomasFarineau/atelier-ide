@@ -296,6 +296,61 @@ pub fn simplify(path: &Path) -> PathBuf {
     }
 }
 
+/// The name of a project folder, for the lists: its last part, or the distribution for the root
+/// of a WSL share.
+pub fn display_name(path: &Path) -> String {
+    let path = simplify(path);
+    if let Some(wsl) = crate::wsl::parse(&path)
+        && wsl.linux == "/"
+    {
+        return wsl.distro;
+    }
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string())
+}
+
+/// Where a project is, for the lists: `Ubuntu: ~/workspace/app` for a WSL share (the Linux
+/// path, not `\\wsl.localhost\…`), `~\private\app` under the home folder of the user.
+pub fn display_path(path: &Path) -> String {
+    let path = simplify(path);
+    if let Some(wsl) = crate::wsl::parse(&path) {
+        return format!("{}: {}", wsl.distro, linux_home(&wsl.linux));
+    }
+    let text = path.display().to_string();
+    let home =
+        std::env::var(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).unwrap_or_default();
+    let home = home.trim_end_matches(['\\', '/']);
+    if !home.is_empty()
+        && text.len() >= home.len()
+        && text.is_char_boundary(home.len())
+        && text[..home.len()].eq_ignore_ascii_case(home)
+        && text[home.len()..]
+            .chars()
+            .next()
+            .is_none_or(|c| c == '\\' || c == '/')
+    {
+        return format!("~{}", &text[home.len()..]);
+    }
+    text
+}
+
+/// `/home/<user>/a` as `~/a`, `/root/a` as `~/a`.
+fn linux_home(linux: &str) -> String {
+    let rest = if let Some(rest) = linux.strip_prefix("/home/") {
+        match rest.split_once('/') {
+            Some((_, rest)) => Some(format!("/{rest}")),
+            None if !rest.is_empty() => Some(String::new()),
+            None => None,
+        }
+    } else if linux == "/root" {
+        Some(String::new())
+    } else {
+        linux.strip_prefix("/root/").map(|r| format!("/{r}"))
+    };
+    rest.map_or_else(|| linux.to_string(), |rest| format!("~{rest}"))
+}
+
 pub fn modified(path: &Path) -> Option<SystemTime> {
     fs::metadata(path).and_then(|m| m.modified()).ok()
 }
@@ -473,6 +528,58 @@ pub fn move_into(from: &Path, dest: &Path) -> Result<PathBuf> {
     }
     fs::rename(from, &target).with_context(|| trf!("cannot_move", from = from.display()))?;
     Ok(target)
+}
+
+/// Copies `from` (a file, or a folder with everything in it) into the folder `dest`. When the
+/// name is taken there (a copy into its own folder), the copy is named `name copy.ext`, then
+/// `name copy 2.ext`… Returns the new path.
+pub fn copy_into(from: &Path, dest: &Path) -> Result<PathBuf> {
+    if !dest.is_dir() {
+        bail!(tr!("destination_not_folder"));
+    }
+    if from.is_dir() && dest.starts_with(from) {
+        bail!(tr!("cannot_move_folder_into_itself"));
+    }
+    let name = from.file_name().context(tr!("invalid_path"))?;
+    let target = free_name(dest, &name.to_string_lossy(), from.is_dir());
+    copy_all(from, &target).with_context(|| trf!("cannot_move", from = from.display()))?;
+    Ok(target)
+}
+
+/// `name` in `dir`, or `name copy`, `name copy 2`… the first that is not taken.
+pub fn free_name(dir: &Path, name: &str, is_dir: bool) -> PathBuf {
+    let first = dir.join(name);
+    if !first.exists() {
+        return first;
+    }
+    let (stem, ext) = match name.rfind('.') {
+        Some(at) if at > 0 && !is_dir => (&name[..at], &name[at..]),
+        _ => (name, ""),
+    };
+    (1..)
+        .map(|n| {
+            let copy = if n == 1 {
+                format!("{stem} copy{ext}")
+            } else {
+                format!("{stem} copy {n}{ext}")
+            };
+            dir.join(copy)
+        })
+        .find(|p| !p.exists())
+        .unwrap_or(first)
+}
+
+fn copy_all(from: &Path, to: &Path) -> std::io::Result<()> {
+    if from.is_dir() && !from.is_symlink() {
+        fs::create_dir_all(to)?;
+        for entry in fs::read_dir(from)? {
+            let entry = entry?;
+            copy_all(&entry.path(), &to.join(entry.file_name()))?;
+        }
+        Ok(())
+    } else {
+        fs::copy(from, to).map(|_| ())
+    }
 }
 
 /// Creates the folder `name` (relative to the project, missing parents included).

@@ -50,6 +50,9 @@ fn language_id(path: &Path) -> Option<&'static str> {
 
 enum Server {
     NotStarted,
+    /// The server is looked for and started in the background: finding it may ask npm, and
+    /// starting a process takes tens of milliseconds on Windows. None when there is none.
+    Starting(Oneshot<Option<Result<Arc<Client>, String>>>),
     Missing,
     Running(Arc<Client>),
     Failed(String),
@@ -113,6 +116,20 @@ impl JavaScript {
     }
 
     fn ensure_server(&mut self) {
+        if let Server::Starting(slot) = &self.server {
+            let Some(found) = slot.take() else { return };
+            self.server = match found {
+                None => Server::Missing,
+                Some(Ok(client)) => Server::Running(client),
+                Some(Err(e)) => Server::Failed(e),
+            };
+            // The documents opened meanwhile are told now.
+            let keys: Vec<u64> = self.docs.keys().copied().collect();
+            for key in keys {
+                self.sync(key);
+            }
+            return;
+        }
         if !matches!(self.server, Server::NotStarted) {
             if let Server::Running(client) = &self.server {
                 let failure = client.failure().or_else(|| {
@@ -142,14 +159,17 @@ impl JavaScript {
             self.server = Server::Missing;
             return;
         }
-        let Some(launch) = server::launch(&self.root) else {
-            self.server = Server::Missing;
-            return;
-        };
-        self.server = match Client::start(&launch, &self.root, self.repaint.clone()) {
-            Ok(client) => Server::Running(client),
-            Err(e) => Server::Failed(format!("{e:#}")),
-        };
+        let slot = Oneshot::pending();
+        let answer = slot.clone();
+        let (root, repaint) = (self.root.clone(), self.repaint.clone());
+        std::thread::spawn(move || {
+            let started = server::launch(&root).map(|launch| {
+                Client::start(&launch, &root, repaint.clone()).map_err(|e| format!("{e:#}"))
+            });
+            answer.fulfill(started);
+            repaint();
+        });
+        self.server = Server::Starting(slot);
     }
 
     /// Tells the server about the current text of a document.
@@ -323,6 +343,11 @@ impl Provider for JavaScript {
 
     fn diagnostics(&mut self, key: u64) -> Arc<Vec<Diagnostic>> {
         self.poll_control();
+        // Asked on every frame: a server started in the background is taken without waiting
+        // for the next edit.
+        if matches!(self.server, Server::Starting(_)) {
+            self.ensure_server();
+        }
         let generation = self.client().map_or(0, |c| c.generation());
         let client = self.client().cloned();
         let Some(data) = self.docs.get_mut(&key) else {
@@ -853,6 +878,7 @@ impl Provider for JavaScript {
         }
         match &self.server {
             Server::NotStarted => String::new(),
+            Server::Starting(_) => "tsserver…".into(),
             Server::Running(client) if client.ready() => "tsserver".into(),
             Server::Running(_) => "tsserver…".into(),
             Server::Missing => tr!("javascript.js_local_analysis").into(),

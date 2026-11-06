@@ -14,6 +14,7 @@ Le gestionnaire de paquets de chaque `package.json` est celui de son champ `pack
 - Menu contextuel d'un `package.json` : installer ou mettre à jour les dépendances, voir les paquets obsolètes, ouvrir le fichier. D'un script : l'exécuter ou aller à sa ligne.
 - Des dépendances déclarées mais pas installées sont signalées une fois, par une notification.
 - Le plugin apporte le [schéma](../languages/json#schemas) de `package.json` : ses valeurs sont vérifiées, ses clés complétées et décrites sous la souris.
+- **Ctrl+Espace** dans la version d'une dépendance (`dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies`) propose ses versions depuis le registre npm (ou celui de `npm_config_registry`) : `latest` d'abord, puis les plus récentes, en gardant le `^` ou `~` déjà tapé, les autres dist-tags et les versions obsolètes signalés.
 - Rechercher partout : **Node.js : installer les dépendances**, **Node.js : scripts npm**.
 
 Ce que lance la fenêtre devient une [configuration d'exécution](../guide/running) temporaire, à relancer avec Maj+F10.

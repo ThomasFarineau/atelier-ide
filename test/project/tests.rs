@@ -121,3 +121,37 @@ fn a_file_keeps_its_encoding_and_can_be_converted() {
     );
     let _ = fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn wsl_projects_show_their_distribution_and_linux_path() {
+    let path = Path::new(r"\\?\UNC\wsl.localhost\Ubuntu\home\thomas\workspace\app");
+    assert_eq!(display_path(path), "Ubuntu: ~/workspace/app");
+    assert_eq!(display_name(path), "app");
+    assert_eq!(
+        display_path(Path::new(r"\\wsl$\Debian\opt\srv")),
+        "Debian: /opt/srv"
+    );
+    assert_eq!(
+        display_path(Path::new(r"\\wsl.localhost\Ubuntu\root")),
+        "Ubuntu: ~"
+    );
+    assert_eq!(display_name(Path::new(r"\\wsl.localhost\Ubuntu")), "Ubuntu");
+}
+
+#[test]
+fn a_copy_into_its_own_folder_gets_a_free_name() {
+    let dir = std::env::temp_dir().join(format!("atelier-copy-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(dir.join("sub/inner")).unwrap();
+    fs::write(dir.join("a.txt"), "a").unwrap();
+    fs::write(dir.join("sub/inner/b.txt"), "b").unwrap();
+    let first = copy_into(&dir.join("a.txt"), &dir).unwrap();
+    assert_eq!(first, dir.join("a copy.txt"));
+    let second = copy_into(&dir.join("a.txt"), &dir).unwrap();
+    assert_eq!(second, dir.join("a copy 2.txt"));
+    let folder = copy_into(&dir.join("sub"), &dir).unwrap();
+    assert_eq!(folder, dir.join("sub copy"));
+    assert_eq!(fs::read_to_string(folder.join("inner/b.txt")).unwrap(), "b");
+    assert!(copy_into(&dir.join("sub"), &dir.join("sub/inner")).is_err());
+    let _ = fs::remove_dir_all(&dir);
+}

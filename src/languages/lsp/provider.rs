@@ -123,8 +123,9 @@ pub trait Language: Send + Sync + 'static {
 
 enum Server {
     NotStarted,
-    /// The language is asked where the server is, in the background.
-    Looking(Oneshot<Option<Launch>>),
+    /// The server is looked for and started in the background: starting a process takes tens
+    /// of milliseconds on Windows. None when there is none.
+    Looking(Oneshot<Option<Result<Arc<Client>, String>>>),
     Missing,
     Running(Arc<Client>),
     Failed(String),
@@ -142,6 +143,14 @@ struct DocData {
     /// What the diagnostics were computed for: the text version and the server's generation.
     analyzed: Option<(u64, u64)>,
     diagnostics: Arc<Vec<Diagnostic>>,
+    /// The syntax errors found without the server, for a version of the text: they are looked
+    /// for in the background, as reading a big file takes tens of milliseconds, on every edit.
+    native: Option<(u64, Native)>,
+}
+
+enum Native {
+    Running(std::thread::JoinHandle<Vec<Diagnostic>>),
+    Done(Arc<Vec<Diagnostic>>),
 }
 
 pub struct LspProvider<L: Language> {
@@ -235,7 +244,10 @@ impl<L: Language> LspProvider<L> {
                 let (lang, root, repaint) =
                     (self.lang.clone(), self.root.clone(), self.repaint.clone());
                 std::thread::spawn(move || {
-                    answer.fulfill(lang.find_server(&root));
+                    let started = lang.find_server(&root).map(|launch: Launch| {
+                        Client::start(&launch, &root, repaint.clone()).map_err(|e| format!("{e:#}"))
+                    });
+                    answer.fulfill(started);
                     repaint();
                 });
                 self.server = Server::Looking(slot);
@@ -244,12 +256,8 @@ impl<L: Language> LspProvider<L> {
                 let Some(found) = slot.take() else { return };
                 self.server = match found {
                     None => Server::Missing,
-                    Some(launch) => {
-                        match Client::start(&launch, &self.root, self.repaint.clone()) {
-                            Ok(client) => Server::Running(client),
-                            Err(e) => Server::Failed(format!("{e:#}")),
-                        }
-                    }
+                    Some(Ok(client)) => Server::Running(client),
+                    Some(Err(e)) => Server::Failed(e),
                 };
                 // The documents opened while looking are told now.
                 let keys: Vec<u64> = self.docs.keys().copied().collect();
@@ -370,6 +378,7 @@ impl<L: Language> Provider for LspProvider<L> {
             opened: false,
             analyzed: None,
             diagnostics: Arc::default(),
+            native: None,
         });
         // Saved under another name: the server sees a new document.
         if data.path != doc.path {
@@ -418,6 +427,30 @@ impl<L: Language> Provider for LspProvider<L> {
         if data.analyzed == Some((data.version, generation)) {
             return data.diagnostics.clone();
         }
+        // The syntax errors of this version: looked for in the background; until they are
+        // there, the diagnostics of the version before stay.
+        let version = data.version;
+        let native = match data.native.take() {
+            Some((v, Native::Done(found))) if v == version => found,
+            Some((v, Native::Running(handle))) if v == version && handle.is_finished() => {
+                Arc::new(handle.join().unwrap_or_default())
+            }
+            Some((v, running @ Native::Running(_))) if v == version => {
+                data.native = Some((v, running));
+                return data.diagnostics.clone();
+            }
+            _ => {
+                let (text, lang, repaint) = (data.text.clone(), lang.clone(), self.repaint.clone());
+                let handle = std::thread::spawn(move || {
+                    let found = lang.syntax_errors(&text);
+                    repaint();
+                    found
+                });
+                data.native = Some((version, Native::Running(handle)));
+                return data.diagnostics.clone();
+            }
+        };
+        data.native = Some((version, Native::Done(native.clone())));
         let mut all: Vec<Diagnostic> = Vec::new();
         if let (Some(client), Some(uri)) = (&client, &data.uri) {
             let (found, _) = client.diagnostics(&lsp::normalize_uri(uri));
@@ -436,7 +469,7 @@ impl<L: Language> Provider for LspProvider<L> {
                 });
             }
         }
-        for native in lang.syntax_errors(&data.text) {
+        for native in native.iter().cloned() {
             // The server already says it, better.
             let covered = all.iter().any(|d| {
                 d.severity == Severity::Error
@@ -603,9 +636,17 @@ impl<L: Language> Provider for LspProvider<L> {
     }
 
     fn symbols(&mut self, doc: &DocRef, text: &str) -> Oneshot<Vec<Symbol>> {
-        let local = self.lang.symbols(text);
+        // Read without the server in the background: a big file takes tens of milliseconds.
+        let lang = self.lang.clone();
         let Some((client, uri)) = self.target(doc.key) else {
-            return Oneshot::ready(local);
+            let answer = Oneshot::pending();
+            let slot = answer.clone();
+            let (snapshot, repaint) = (text.to_string(), self.repaint.clone());
+            std::thread::spawn(move || {
+                slot.fulfill(lang.symbols(&snapshot));
+                repaint();
+            });
+            return answer;
         };
         let answer = Oneshot::pending();
         let slot = answer.clone();
@@ -618,7 +659,7 @@ impl<L: Language> Provider for LspProvider<L> {
                     .map(|r| symbols_from_server(&r, &snapshot))
                     .unwrap_or_default();
                 slot.fulfill(if from_server.is_empty() {
-                    local
+                    lang.symbols(&snapshot)
                 } else {
                     from_server
                 });

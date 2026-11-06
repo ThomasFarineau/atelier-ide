@@ -2,6 +2,8 @@
 //! package manager (npm, pnpm, Yarn or Bun), as IntelliJ's npm tool window shows them. A
 //! script runs in a terminal of its own, from the folder of its `package.json`.
 
+pub mod versions;
+
 use crate::i18n::Text;
 use crate::languages::json::Schema;
 use crate::plugins::builtin::{BuiltinPlugin, Command, Dock, Host, ToolWindow};
@@ -272,6 +274,7 @@ pub static PACKAGE_SCHEMA: [Schema; 1] = [Schema {
         "https://json.schemastore.org/package",
     ],
     text: include_str!("package.schema.json"),
+    values: Some(versions::complete),
 }];
 
 impl BuiltinPlugin for NodePlugin {

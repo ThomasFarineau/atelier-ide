@@ -339,6 +339,11 @@ pub struct Selection {
 }
 
 impl Selection {
+    /// Some text is selected.
+    pub fn any(&self) -> bool {
+        self.range().is_some()
+    }
+
     fn range(&self) -> Option<((u16, u16), (u16, u16))> {
         let anchor = self.anchor?;
         (anchor != self.head).then(|| (anchor.min(self.head), anchor.max(self.head)))
@@ -427,6 +432,16 @@ pub fn show(
     } else {
         response
     };
+    // A right click on a selection copies it, as in Windows Terminal; the caller then shows no
+    // menu.
+    if response.secondary_clicked()
+        && let Some((from, to)) = selection.range()
+    {
+        ui.ctx()
+            .copy_text(selected_text(term.screen_ref(), from, to));
+        *selection = Selection::default();
+        response.request_focus();
+    }
     if let Some(p) = response.interact_pointer_pos() {
         if response.drag_started() || response.clicked() {
             // A drag is known once the pointer has moved: it starts where the button went down.

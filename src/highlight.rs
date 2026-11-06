@@ -176,6 +176,14 @@ fn theme(scheme: &Scheme) -> Theme {
 /// their plugin is on, as the others.
 const PLUGIN_SYNTAXES: &[&str] = &[crate::plugins::builtins::yaml::TOML_SYNTAX];
 
+/// Loads the syntaxes and themes in the background, so that the first file shown does not wait
+/// for them (more than 100 ms).
+pub fn preload() {
+    std::thread::spawn(|| {
+        settings();
+    });
+}
+
 fn settings() -> &'static SyntectSettings {
     static SETTINGS: OnceLock<SyntectSettings> = OnceLock::new();
     SETTINGS.get_or_init(|| {

@@ -36,7 +36,13 @@ pub struct Schema {
     pub urls: &'static [&'static str],
     /// The schema itself, in JSON.
     pub text: &'static str,
+    /// Values the plugin finds itself for a place of a JSON file, beyond those of the schema
+    /// (the versions of a dependency on the npm registry): from the place, the text typed in
+    /// the string and whether the caret is in quotes. None where it has nothing to offer.
+    pub values: Option<ValuesHook>,
 }
+
+pub type ValuesHook = fn(&[parse::Step], &str, bool) -> Option<Oneshot<Vec<CompletionItem>>>;
 
 impl Schema {
     pub fn applies_to(&self, path: &Path) -> bool {
@@ -214,6 +220,26 @@ impl Json {
         let path = path?;
         let found = schemas.iter().find(|s| s.applies_to(path))?;
         Some((found.name.to_string(), self.plugin_schema(found)?))
+    }
+
+    /// The values hook of the plugin schema of a document, found as `schema_of` finds it.
+    fn hook_of(&self, path: Option<&Path>, named: Option<&str>) -> Option<ValuesHook> {
+        let (_, schemas) = self.registry.get();
+        let bare = |a: &str| {
+            a.trim_end_matches('#')
+                .trim_start_matches("https://")
+                .trim_start_matches("http://")
+                .to_string()
+        };
+        let found = match named {
+            Some(address) => schemas
+                .iter()
+                .find(|s| s.urls.iter().any(|u| bare(u) == bare(address))),
+            None => schemas
+                .iter()
+                .find(|s| path.is_some_and(|p| s.applies_to(p))),
+        };
+        found.and_then(|s| s.values)
     }
 
     fn check(&mut self, language: &str, text: &str, path: Option<&Path>) -> Vec<Diagnostic> {
@@ -400,6 +426,7 @@ impl Provider for Json {
         } else {
             read(&doc.language, text).named
         };
+        let hook = self.hook_of(doc.path.as_deref(), named.as_deref());
         let Some((_, root)) = self.schema_of(doc.path.as_deref(), named.as_deref()) else {
             return Oneshot::ready(None);
         };
@@ -420,13 +447,24 @@ impl Provider for Json {
             let from = spot.in_string.unwrap_or(word);
             (spot, from)
         };
+        let from = from.min(offset);
+        let found = hook
+            .filter(|_| !yaml && !spot.key)
+            .and_then(|hook| hook(&spot.path, &text[from..offset], spot.in_string.is_some()));
         let mut items = self.items(&root, &spot, yaml);
         // In YAML, `- ` alone is a key of an item or a value of a list: what the schema says.
         if items.is_empty() && yaml && spot.key {
             let value = Spot { key: false, ..spot };
             items = self.items(&root, &value, yaml);
         }
-        let from = from.min(offset);
+        if let Some(found) = found {
+            // The values of the plugin first, those of the schema after them.
+            return super::join(vec![found], None, move |mut got| {
+                let mut all = got.pop().flatten().unwrap_or_default();
+                all.extend(items);
+                (!all.is_empty()).then_some(Completion { from, items: all })
+            });
+        }
         Oneshot::ready((!items.is_empty()).then_some(Completion { from, items }))
     }
 

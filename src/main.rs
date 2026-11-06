@@ -34,6 +34,7 @@ mod wsl;
 fn main() -> eframe::Result {
     i18n::set(i18n::system());
     crash::install();
+    allow_ctrl_c();
     if std::env::args_os().any(|a| a == dev::FLAG) {
         if let Err(e) = dev::supervise() {
             eprintln!("[dev] {e:#}");
@@ -80,4 +81,16 @@ fn main() -> eframe::Result {
     );
     crash::clean_exit();
     result
+}
+
+/// Ctrl+C works again in the processes the IDE starts. The launcher starts the IDE in a process
+/// group of its own, and Windows then turns Ctrl+C off in it: the shells of the terminals and
+/// their programs inherit that, and the ^C a terminal sends interrupted nothing. The IDE has no
+/// console of its own, so this changes nothing for it.
+fn allow_ctrl_c() {
+    #[cfg(windows)]
+    // SAFETY: no handler is given; the call only resets the flag that ignores Ctrl+C.
+    unsafe {
+        windows_sys::Win32::System::Console::SetConsoleCtrlHandler(None, 0);
+    }
 }

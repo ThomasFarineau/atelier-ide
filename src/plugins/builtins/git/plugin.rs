@@ -323,6 +323,11 @@ pub struct GitPlugin {
     annotated: BTreeSet<PathBuf>,
     blame: HashMap<PathBuf, String>,
     blame_jobs: HashMap<PathBuf, JoinHandle<Result<String>>>,
+    /// The texts at HEAD being read for the marks of the gutter: `git show` takes up to a few
+    /// hundred milliseconds on Windows, too long for the thread of the window.
+    base_jobs: HashMap<PathBuf, JoinHandle<Option<String>>>,
+    /// A diff being read and computed, shown when it is ready.
+    diff_job: Option<JoinHandle<DiffView>>,
 }
 
 impl Default for GitPlugin {
@@ -378,6 +383,8 @@ impl Default for GitPlugin {
             annotated: BTreeSet::new(),
             blame: HashMap::new(),
             blame_jobs: HashMap::new(),
+            base_jobs: HashMap::new(),
+            diff_job: None,
         }
     }
 }
@@ -415,6 +422,8 @@ impl GitPlugin {
         self.stale = true;
         self.log.stale = true;
         self.bases.clear();
+        // Bases read for the HEAD before: their answers are dropped.
+        self.base_jobs.clear();
         self.marks.clear();
         self.blame.clear();
     }
@@ -542,6 +551,24 @@ impl GitPlugin {
         {
             self.finish(job, host);
         }
+        let read: Vec<_> = self
+            .base_jobs
+            .iter()
+            .filter(|(_, h)| h.is_finished())
+            .map(|(p, _)| p.clone())
+            .collect();
+        for path in read {
+            if let Some(Ok(base)) = self.base_jobs.remove(&path).map(JoinHandle::join) {
+                self.bases.insert(path, base);
+                ctx.request_repaint();
+            }
+        }
+        if self.diff_job.as_ref().is_some_and(JoinHandle::is_finished)
+            && let Some(Ok(view)) = self.diff_job.take().map(JoinHandle::join)
+        {
+            self.diff = Some(view);
+            ctx.request_repaint();
+        }
         let finished: Vec<_> = self
             .blame_jobs
             .iter()
@@ -585,7 +612,9 @@ impl GitPlugin {
         let busy = self.refresh.is_some()
             || self.job.is_some()
             || self.log.loading.is_some()
-            || !self.blame_jobs.is_empty();
+            || !self.blame_jobs.is_empty()
+            || !self.base_jobs.is_empty()
+            || self.diff_job.is_some();
         ctx.request_repaint_after(if busy {
             Duration::from_millis(100)
         } else {
@@ -803,6 +832,12 @@ impl GitPlugin {
             .inspect_files(&files)
             .into_iter()
             .filter(|p| p.severity == 1)
+            .collect();
+        // A deleted file is not added: `git add` refuses a deletion already staged (the path is
+        // nowhere then), and the commit of its path records the deletion anyway.
+        let add: Vec<String> = add
+            .into_iter()
+            .filter(|p| host.root().join(p).symlink_metadata().is_ok())
             .collect();
         let task = move |git: &Repo| -> Result<String> {
             if !add.is_empty() {
@@ -1286,50 +1321,57 @@ impl GitPlugin {
     // ---- Diff, conflicts, blame ---------------------------------------------------------
 
     fn open_diff(&mut self, source: DiffSource) {
-        let Some(repo) = &self.repo else { return };
-        let (change, old, new, left_title, right_title) = match source {
-            DiffSource::WorkingTree(change) => {
-                let base = change.orig.as_deref().unwrap_or(&change.path);
-                let old = repo.show("HEAD", base).unwrap_or_default();
-                let new = std::fs::read(repo.abs(&change.path))
-                    .map(|b| String::from_utf8_lossy(&b).into_owned())
-                    .unwrap_or_default();
-                (
-                    change,
-                    old,
-                    new,
-                    "HEAD".to_string(),
-                    tr!("git.working_copy").to_string(),
-                )
-            }
-            DiffSource::Revision { from, to, change } => {
-                let base = change.orig.as_deref().unwrap_or(&change.path);
-                let old = from
-                    .as_deref()
-                    .and_then(|f| repo.show(f, base))
-                    .unwrap_or_default();
-                let new = repo.show(&to, &change.path).unwrap_or_default();
-                let short = |r: &str| r.get(..10).unwrap_or(r).to_string();
-                let left = from.as_deref().map_or("(vide)".into(), short);
-                (change, old, new, left, short(&to))
-            }
+        let Some(repo) = self.repo.clone() else {
+            return;
         };
-        let mut view = DiffView {
-            path: change.path,
-            left_title,
-            right_title,
-            binary: old.contains('\0') || new.contains('\0'),
-            old,
-            new,
-            side_by_side: self.diff.as_ref().is_none_or(|d| d.side_by_side),
-            collapse: self.diff.as_ref().is_some_and(|d| d.collapse),
-            rows: Vec::new(),
-            starts: Vec::new(),
-            current: 0,
-            scroll_to: None,
-        };
-        view.rebuild();
-        self.diff = Some(view);
+        let side_by_side = self.diff.as_ref().is_none_or(|d| d.side_by_side);
+        let collapse = self.diff.as_ref().is_some_and(|d| d.collapse);
+        // `git show` and the diff itself run in the background; the view opens when ready.
+        self.diff_job = Some(thread::spawn(move || {
+            let (change, old, new, left_title, right_title) = match source {
+                DiffSource::WorkingTree(change) => {
+                    let base = change.orig.as_deref().unwrap_or(&change.path);
+                    let old = repo.show("HEAD", base).unwrap_or_default();
+                    let new = std::fs::read(repo.abs(&change.path))
+                        .map(|b| String::from_utf8_lossy(&b).into_owned())
+                        .unwrap_or_default();
+                    (
+                        change,
+                        old,
+                        new,
+                        "HEAD".to_string(),
+                        tr!("git.working_copy").to_string(),
+                    )
+                }
+                DiffSource::Revision { from, to, change } => {
+                    let base = change.orig.as_deref().unwrap_or(&change.path);
+                    let old = from
+                        .as_deref()
+                        .and_then(|f| repo.show(f, base))
+                        .unwrap_or_default();
+                    let new = repo.show(&to, &change.path).unwrap_or_default();
+                    let short = |r: &str| r.get(..10).unwrap_or(r).to_string();
+                    let left = from.as_deref().map_or("(vide)".into(), short);
+                    (change, old, new, left, short(&to))
+                }
+            };
+            let mut view = DiffView {
+                path: change.path,
+                left_title,
+                right_title,
+                binary: old.contains('\0') || new.contains('\0'),
+                old,
+                new,
+                side_by_side,
+                collapse,
+                rows: Vec::new(),
+                starts: Vec::new(),
+                current: 0,
+                scroll_to: None,
+            };
+            view.rebuild();
+            view
+        }));
     }
 
     fn open_resolver(&mut self, path: String) {
@@ -1451,6 +1493,7 @@ impl BuiltinPlugin for GitPlugin {
     fn file_closed(&mut self, _ctx: &egui::Context, path: &Path) {
         // The text of the file at the last commit, and a copy of the open one.
         self.bases.remove(path);
+        self.base_jobs.remove(path);
         self.marks.remove(path);
         self.blame.remove(path);
         self.blame_jobs.remove(path);
@@ -1676,19 +1719,35 @@ impl BuiltinPlugin for GitPlugin {
         let Some(repo) = &self.repo else {
             return Vec::new();
         };
+        // A base read since the last frame is taken right away.
+        if self
+            .base_jobs
+            .get(path)
+            .is_some_and(JoinHandle::is_finished)
+            && let Some(Ok(base)) = self.base_jobs.remove(path).map(JoinHandle::join)
+        {
+            self.bases.insert(path.to_path_buf(), base);
+        }
         if !self.bases.contains_key(path) {
-            let Some(rel) = repo.rel(path) else {
-                return Vec::new();
-            };
-            let base = repo.show("HEAD", &rel).or_else(|| {
+            if !self.base_jobs.contains_key(path) {
+                let Some(rel) = repo.rel(path) else {
+                    return Vec::new();
+                };
                 // A new file added to Git: every line is an addition.
-                self.snap
+                let added = self
+                    .snap
                     .changes
                     .iter()
-                    .any(|c| c.path == rel && c.kind == Kind::Added)
-                    .then(String::new)
-            });
-            self.bases.insert(path.to_path_buf(), base);
+                    .any(|c| c.path == rel && c.kind == Kind::Added);
+                let repo = repo.clone();
+                self.base_jobs.insert(
+                    path.to_path_buf(),
+                    thread::spawn(move || {
+                        repo.show("HEAD", &rel).or_else(|| added.then(String::new))
+                    }),
+                );
+            }
+            return Vec::new();
         }
         let Some(Some(base)) = self.bases.get(path) else {
             return Vec::new();

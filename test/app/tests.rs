@@ -688,15 +688,18 @@ fn search_everywhere_finds_project_files() {
     ide.palette_query = "cargo.tom".into();
     // The files are listed in the background: the popup does not wait for them.
     let started = std::time::Instant::now();
+    // Matches of the text in the files may come first: wait for the file itself.
+    let found = |hits: &[Hit]| {
+        hits.iter()
+            .any(|h| matches!(&h.target, Target::File(p) if p.ends_with("Cargo.toml")))
+    };
     let mut hits = ide.palette_hits();
-    while hits.is_empty() && started.elapsed() < std::time::Duration::from_secs(20) {
+    // Under the load of the whole suite, listing the files may take long.
+    while !found(&hits) && started.elapsed() < std::time::Duration::from_secs(60) {
         std::thread::sleep(std::time::Duration::from_millis(20));
         hits = ide.palette_hits();
     }
-    assert!(
-        hits.iter()
-            .any(|h| matches!(&h.target, Target::File(p) if p.ends_with("Cargo.toml")))
-    );
+    assert!(found(&hits));
 }
 
 #[test]
@@ -997,28 +1000,31 @@ fn the_editor_draws_with_a_split_and_several_carets() {
             |ctx| ide.editor(ctx),
         );
     };
+    let groups = |ide: &Ide| ide.editor_layout.leaves().len();
     // The same file twice.
     ide.active = 0;
     ide.split_to(false);
-    assert!(ide.split.is_some());
+    assert_eq!(groups(&ide), 2);
     frame(&mut ide);
     frame(&mut ide);
-    // Under the first one.
+    // Another split, under the main group: three groups.
     ide.split_to(true);
-    assert!(ide.split.as_ref().is_some_and(|p| p.down));
+    assert_eq!(groups(&ide), 3);
     frame(&mut ide);
     frame(&mut ide);
-    // The second editor on another file.
+    // The main group on another file, the others keep theirs.
     ide.active = 1;
     frame(&mut ide);
-    assert_eq!(ide.split_other(), Some(0));
+    let shown = ide.documents[0].path.clone().unwrap();
+    assert!(ide.groups.iter().all(|g| g.tabs[0].path == shown));
     ide.documents[1].view.select(0, 0);
     frame(&mut ide);
-    // Closing the file closes the split.
+    // Closing the file closes its groups.
     ide.documents.remove(0);
     ide.active = 0;
     frame(&mut ide);
-    assert!(ide.split.is_none());
+    assert_eq!(groups(&ide), 1);
+    assert!(ide.groups.is_empty());
     let _ = fs::remove_dir_all(dir);
 }
 

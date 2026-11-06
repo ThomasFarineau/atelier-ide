@@ -18,6 +18,9 @@ pub struct Entry {
     pub path: PathBuf,
     /// The file name in lower case, to compare with what is typed.
     pub name: String,
+    /// The path from the root of the project in lower case, with `/`: a query with a `/` is
+    /// compared with it (`src/app` finds `src/app.rs`).
+    pub rel: String,
 }
 
 #[derive(Default)]
@@ -66,6 +69,12 @@ impl Index {
                         .file_name()
                         .unwrap_or_default()
                         .to_string_lossy()
+                        .to_lowercase(),
+                    rel: path
+                        .strip_prefix(&root)
+                        .unwrap_or(&path)
+                        .to_string_lossy()
+                        .replace('\\', "/")
                         .to_lowercase(),
                     path,
                 })
